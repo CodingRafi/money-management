@@ -11,7 +11,7 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
-import { LogOut, Shield, Wallet, Tag } from "lucide-react"
+import { LogOut, Shield, Wallet } from "lucide-react"
 import Link from "next/link"
 
 interface NavbarProps {
@@ -77,13 +77,6 @@ export function Navbar({ user, isAdmin }: NavbarProps) {
                 </DropdownMenuItem>
               </>
             )}
-            <DropdownMenuSeparator />
-            <DropdownMenuItem asChild className="cursor-pointer">
-              <Link href="/settings/categories" className="flex items-center gap-2">
-                <Tag className="h-4 w-4" />
-                Kategori &amp; Budget
-              </Link>
-            </DropdownMenuItem>
             <DropdownMenuSeparator />
             <DropdownMenuItem onSelect={handleSignOut} className="cursor-pointer text-destructive focus:text-destructive">
               <LogOut className="h-4 w-4" />

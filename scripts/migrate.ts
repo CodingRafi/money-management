@@ -12,6 +12,9 @@ const migrations = [
   "005_remove_devices.sql",
   "006_categories.sql",
   "007_type_allocations.sql",
+  "008_wallets.sql",
+  "009_wallets_remove_balance.sql",
+  "010_transactions.sql",
 ]
 
 async function run() {
