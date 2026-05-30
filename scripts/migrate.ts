@@ -7,6 +7,9 @@ const pool = new Pool({ connectionString: process.env.DATABASE_URL })
 const migrations = [
   "001_better_auth.sql",
   "002_roles_permissions.sql",
+  "003_licence_system.sql",
+  "004_licence_price.sql",
+  "005_remove_devices.sql",
 ]
 
 async function run() {
