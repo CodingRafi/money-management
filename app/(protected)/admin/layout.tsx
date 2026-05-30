@@ -3,11 +3,12 @@ import { headers } from "next/headers"
 import { redirect } from "next/navigation"
 import { userHasPermission } from "@/lib/permissions"
 import Link from "next/link"
-import { LayoutDashboard, Shield, Key, Users, TicketCheck } from "lucide-react"
+import { LayoutDashboard, Shield, Key, Users, TicketCheck, FolderOpen } from "lucide-react"
 
 const navItems = [
   { href: "/admin", label: "Overview", icon: LayoutDashboard },
   { href: "/admin/licences", label: "Licences", icon: TicketCheck },
+  { href: "/admin/master", label: "Master Data", icon: FolderOpen },
   { href: "/admin/roles", label: "Roles", icon: Shield },
   { href: "/admin/permissions", label: "Permissions", icon: Key },
   { href: "/admin/users", label: "Users", icon: Users },

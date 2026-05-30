@@ -10,6 +10,8 @@ const migrations = [
   "003_licence_system.sql",
   "004_licence_price.sql",
   "005_remove_devices.sql",
+  "006_categories.sql",
+  "007_type_allocations.sql",
 ]
 
 async function run() {

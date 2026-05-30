@@ -4,6 +4,7 @@ import { headers } from "next/headers"
 import { revalidatePath } from "next/cache"
 import { auth } from "@/lib/auth"
 import { pool } from "@/lib/db"
+import { seedUserCategories } from "@/lib/seedUserCategories"
 
 async function requireUser() {
   const session = await auth.api.getSession({ headers: await headers() })
@@ -41,6 +42,10 @@ export async function claimLicence(_prev: unknown, formData: FormData) {
        VALUES (gen_random_uuid()::text, $1, 'CLAIMED', $2, NOW())`,
       [lic.id, `Diklaim oleh ${session.user.email}`],
     )
+
+    await seedUserCategories(session.user.id).catch((err) => {
+      console.error("seedUserCategories failed:", err)
+    })
 
     revalidatePath("/")
     return { success: true }
