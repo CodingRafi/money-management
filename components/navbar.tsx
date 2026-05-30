@@ -11,7 +11,8 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
-import { LogOut, Wallet } from "lucide-react"
+import { LogOut, Shield, Wallet } from "lucide-react"
+import Link from "next/link"
 
 interface NavbarProps {
   user: {
@@ -19,9 +20,10 @@ interface NavbarProps {
     email: string
     image?: string | null
   }
+  isAdmin?: boolean
 }
 
-export function Navbar({ user }: NavbarProps) {
+export function Navbar({ user, isAdmin }: NavbarProps) {
   const handleSignOut = () => {
     authClient.signOut({
       fetchOptions: {
@@ -42,10 +44,10 @@ export function Navbar({ user }: NavbarProps) {
   return (
     <header className="sticky top-0 z-40 border-b border-border bg-background/95 backdrop-blur">
       <div className="mx-auto flex h-14 max-w-7xl items-center justify-between px-4">
-        <div className="flex items-center gap-2">
+        <Link href="/" className="flex items-center gap-2">
           <Wallet className="h-5 w-5 text-primary" />
           <span className="font-semibold text-foreground">Money Management</span>
-        </div>
+        </Link>
 
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
@@ -64,6 +66,17 @@ export function Navbar({ user }: NavbarProps) {
                 <p className="text-xs leading-none text-muted-foreground">{user.email}</p>
               </div>
             </DropdownMenuLabel>
+            {isAdmin && (
+              <>
+                <DropdownMenuSeparator />
+                <DropdownMenuItem asChild className="cursor-pointer">
+                  <Link href="/admin" className="flex items-center gap-2">
+                    <Shield className="h-4 w-4" />
+                    Admin Panel
+                  </Link>
+                </DropdownMenuItem>
+              </>
+            )}
             <DropdownMenuSeparator />
             <DropdownMenuItem onSelect={handleSignOut} className="cursor-pointer text-destructive focus:text-destructive">
               <LogOut className="h-4 w-4" />
