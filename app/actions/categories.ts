@@ -152,6 +152,7 @@ export async function createUserIncomeCategory(formData: FormData) {
     [name, session.user.id, color, orderRes.rows[0].max, year],
   )
   revalidatePath("/settings/categories")
+  revalidatePath("/rekap", "layout")
 }
 
 export async function updateUserIncomeCategory(id: string, formData: FormData) {
@@ -163,7 +164,9 @@ export async function updateUserIncomeCategory(id: string, formData: FormData) {
     `UPDATE income_categories SET name = $1, color = $2 WHERE id = $3 AND user_id = $4`,
     [name, color, id, session.user.id],
   )
-  redirect("/settings/categories?tab=income")
+  const backUrl = formData.get("back_url") as string | null
+  if (backUrl?.startsWith("/")) redirect(backUrl)
+  else redirect("/settings/categories?tab=income")
 }
 
 export async function toggleUserIncomeCategoryVisibility(id: string) {
@@ -173,6 +176,7 @@ export async function toggleUserIncomeCategoryVisibility(id: string) {
     [id, session.user.id],
   )
   revalidatePath("/settings/categories")
+  revalidatePath("/rekap", "layout")
 }
 
 export async function deleteUserIncomeCategory(id: string) {
@@ -182,6 +186,7 @@ export async function deleteUserIncomeCategory(id: string) {
     [id, session.user.id],
   )
   revalidatePath("/settings/categories")
+  revalidatePath("/rekap", "layout")
 }
 
 // ── User: Expense Categories ────────────────────────────────────────────────
@@ -203,6 +208,7 @@ export async function createUserExpenseCategory(formData: FormData) {
     [name, typeId, session.user.id, orderRes.rows[0].max, year],
   )
   revalidatePath("/settings/categories")
+  revalidatePath("/rekap", "layout")
 }
 
 export async function updateUserExpenseCategory(id: string, formData: FormData) {
@@ -213,7 +219,9 @@ export async function updateUserExpenseCategory(id: string, formData: FormData) 
     `UPDATE expense_categories SET name = $1 WHERE id = $2 AND user_id = $3`,
     [name, id, session.user.id],
   )
-  redirect("/settings/categories?tab=expense")
+  const backUrl = formData.get("back_url") as string | null
+  if (backUrl?.startsWith("/")) redirect(backUrl)
+  else redirect("/settings/categories?tab=expense")
 }
 
 export async function toggleUserExpenseCategoryVisibility(id: string) {
@@ -223,6 +231,7 @@ export async function toggleUserExpenseCategoryVisibility(id: string) {
     [id, session.user.id],
   )
   revalidatePath("/settings/categories")
+  revalidatePath("/rekap", "layout")
 }
 
 export async function deleteUserExpenseCategory(id: string) {
@@ -232,4 +241,5 @@ export async function deleteUserExpenseCategory(id: string) {
     [id, session.user.id],
   )
   revalidatePath("/settings/categories")
+  revalidatePath("/rekap", "layout")
 }

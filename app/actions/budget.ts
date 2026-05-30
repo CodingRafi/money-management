@@ -39,11 +39,14 @@ export async function setBudget(formData: FormData) {
     [session.user.id, categoryId, pct, month, year],
   )
   revalidatePath("/settings/categories")
+  revalidatePath("/rekap", "layout")
 }
 
 export async function setTypeAllocations(formData: FormData) {
   const session = await requireUser()
   const year    = parseInt(formData.get("year") as string) || new Date().getFullYear()
+  const rawBack = formData.get("back_url") as string | null
+  const backUrl = rawBack?.startsWith("/") ? rawBack : "/settings/categories?tab=expense"
 
   // Collect indexed pairs: type_0/pct_0, type_1/pct_1, ...
   const pairs: Array<{ typeId: string; pct: number }> = []
@@ -57,7 +60,7 @@ export async function setTypeAllocations(formData: FormData) {
 
   const total = pairs.reduce((s, p) => s + p.pct, 0)
   if (Math.abs(total - 100) > 0.01) {
-    redirect("/settings/categories?tab=expense&alloc_error=1")
+    redirect(`${backUrl}&alloc_error=1`)
   }
 
   for (const { typeId, pct } of pairs) {
@@ -74,5 +77,5 @@ export async function setTypeAllocations(formData: FormData) {
     )
   }
 
-  redirect("/settings/categories?tab=expense")
+  redirect(backUrl)
 }

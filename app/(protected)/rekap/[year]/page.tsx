@@ -341,16 +341,23 @@ export default async function YearDetailPage({
   return (
     <div className="space-y-5">
       {/* Header */}
-      <div className="flex items-center gap-3">
-        <Button asChild variant="ghost" size="icon" className="h-8 w-8">
-          <Link href="/rekap">
-            <ArrowLeft className="h-4 w-4" />
+      <div className="flex items-center justify-between gap-3">
+        <div className="flex items-center gap-3">
+          <Button asChild variant="ghost" size="icon" className="h-8 w-8">
+            <Link href="/rekap">
+              <ArrowLeft className="h-4 w-4" />
+            </Link>
+          </Button>
+          <div>
+            <h1 className="text-2xl font-bold">Rekap {year}</h1>
+            <p className="text-sm text-muted-foreground">Detail keuangan per bulan</p>
+          </div>
+        </div>
+        <Button asChild variant="outline" size="sm">
+          <Link href={`${base}/kategori-budget`}>
+            Kategori &amp; Budget
           </Link>
         </Button>
-        <div>
-          <h1 className="text-2xl font-bold">Rekap {year}</h1>
-          <p className="text-sm text-muted-foreground">Detail keuangan per bulan</p>
-        </div>
       </div>
 
       {/* Top menu */}

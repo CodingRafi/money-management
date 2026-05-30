@@ -45,7 +45,7 @@ export default async function RekapPage() {
             <Link href="/dompet">Dompet</Link>
           </Button>
           <Button asChild variant="outline" size="sm">
-            <Link href="/settings/categories">Kategori &amp; Budget</Link>
+            <Link href={`/rekap/${new Date().getFullYear()}?view=kategori`}>Kategori &amp; Budget</Link>
           </Button>
         </div>
       </div>
