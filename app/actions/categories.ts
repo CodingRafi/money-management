@@ -139,15 +139,17 @@ export async function createUserIncomeCategory(formData: FormData) {
   const session = await requireUser()
   const name    = (formData.get("name") as string)?.trim().toUpperCase()
   const color   = (formData.get("color") as string)?.trim() || null
+  const year    = parseInt(formData.get("year") as string) || new Date().getFullYear()
   if (!name) throw new Error("Name is required")
   const orderRes = await pool.query<{ max: number }>(
-    `SELECT COALESCE(MAX(sort_order), 0) + 1 AS max FROM income_categories WHERE user_id = $1`,
-    [session.user.id],
+    `SELECT COALESCE(MAX(sort_order), 0) + 1 AS max
+     FROM income_categories WHERE user_id = $1 AND year = $2`,
+    [session.user.id, year],
   )
   await pool.query(
-    `INSERT INTO income_categories (name, is_default, user_id, color, sort_order)
-     VALUES ($1, false, $2, $3, $4)`,
-    [name, session.user.id, color, orderRes.rows[0].max],
+    `INSERT INTO income_categories (name, is_default, user_id, color, sort_order, year)
+     VALUES ($1, false, $2, $3, $4, $5)`,
+    [name, session.user.id, color, orderRes.rows[0].max, year],
   )
   revalidatePath("/settings/categories")
 }
@@ -188,6 +190,7 @@ export async function createUserExpenseCategory(formData: FormData) {
   const session = await requireUser()
   const name    = (formData.get("name") as string)?.trim().toUpperCase()
   const typeId  = formData.get("type_id") as string
+  const year    = parseInt(formData.get("year") as string) || new Date().getFullYear()
   if (!name || !typeId) throw new Error("Name and type are required")
   const orderRes = await pool.query<{ max: number }>(
     `SELECT COALESCE(MAX(sort_order), 0) + 1 AS max
@@ -195,9 +198,9 @@ export async function createUserExpenseCategory(formData: FormData) {
     [session.user.id, typeId],
   )
   await pool.query(
-    `INSERT INTO expense_categories (name, type_id, is_default, user_id, sort_order)
-     VALUES ($1, $2, false, $3, $4)`,
-    [name, typeId, session.user.id, orderRes.rows[0].max],
+    `INSERT INTO expense_categories (name, type_id, is_default, user_id, sort_order, year)
+     VALUES ($1, $2, false, $3, $4, $5)`,
+    [name, typeId, session.user.id, orderRes.rows[0].max, year],
   )
   revalidatePath("/settings/categories")
 }

@@ -15,6 +15,9 @@ const migrations = [
   "008_wallets.sql",
   "009_wallets_remove_balance.sql",
   "010_transactions.sql",
+  "011_yearly_recap.sql",
+  "012_yearly_recap_jsonb.sql",
+  "013_yearly_categories.sql",
 ]
 
 async function run() {

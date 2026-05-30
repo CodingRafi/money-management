@@ -2,6 +2,7 @@ import { auth } from "@/lib/auth"
 import { headers } from "next/headers"
 import { redirect } from "next/navigation"
 import { pool } from "@/lib/db"
+import { ensureYearlyCategories } from "@/lib/ensureYearlyCategories"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -55,25 +56,29 @@ export default async function CategoriesPage({
   const editExpense = typeof sp.edit_expense === "string" ? sp.edit_expense : null
   const allocError  = sp.alloc_error === "1"
 
-  const now   = new Date()
-  const month = now.getMonth() + 1
-  const year  = now.getFullYear()
+  const now        = new Date()
+  const month      = now.getMonth() + 1
+  const currentYear = now.getFullYear()
+
+  // Ensure current year has category data (auto-duplicates from previous year if needed)
+  await ensureYearlyCategories(userId, currentYear)
 
   const [incomeRes, typesRes, expenseCatRes] = await Promise.all([
     pool.query<IncomeCat>(
       `SELECT id, name, color, is_hidden
        FROM income_categories
-       WHERE user_id = $1
+       WHERE user_id = $1 AND year = $2
        ORDER BY sort_order, name`,
-      [userId],
+      [userId, currentYear],
     ),
     pool.query<ExpenseType>(
       `SELECT et.id, et.name, COALESCE(ta.percentage, 0)::text AS allocation
        FROM expense_types et
-       LEFT JOIN type_allocations ta ON ta.type_id = et.id AND ta.user_id = $1
-       WHERE et.user_id = $1
+       LEFT JOIN type_allocations ta
+         ON ta.type_id = et.id AND ta.user_id = $1 AND ta.year = $2
+       WHERE et.user_id = $1 AND et.year = $2
        ORDER BY et.sort_order, et.name`,
-      [userId],
+      [userId, currentYear],
     ),
     pool.query<ExpenseCat>(
       `SELECT ec.id, ec.name, ec.type_id, et.name AS type_name, ec.is_hidden,
@@ -85,9 +90,9 @@ export default async function CategoriesPage({
          AND b.user_id = $1
          AND b.month   = $2
          AND b.year    = $3
-       WHERE ec.user_id = $1
+       WHERE ec.user_id = $1 AND ec.year = $3
        ORDER BY ec.sort_order, ec.name`,
-      [userId, month, year],
+      [userId, month, currentYear],
     ),
   ])
 
@@ -101,9 +106,8 @@ export default async function CategoriesPage({
 
   const allocTotal = types.reduce((s, t) => s + parseFloat(t.allocation), 0)
   const allocOk    = Math.abs(allocTotal - 100) <= 0.01
-  const monthLabel = now.toLocaleDateString("id-ID", { month: "long", year: "numeric" })
+  const monthLabel = now.toLocaleDateString("id-ID", { month: "long" })
 
-  // ── Tab link helper — clears edit/error params ──────────────────────────────
   const tabHref = (tab: string) => `/settings/categories?tab=${tab}`
 
   return (
@@ -111,7 +115,8 @@ export default async function CategoriesPage({
       <div>
         <h1 className="text-2xl font-bold">Kategori &amp; Budget</h1>
         <p className="text-sm text-muted-foreground">
-          Kelola kategori dan target anggaran untuk {monthLabel}
+          Konfigurasi tahun <span className="font-medium text-foreground">{currentYear}</span>
+          {" "}· Budget aktif untuk {monthLabel}
         </p>
       </div>
 
@@ -172,6 +177,7 @@ export default async function CategoriesPage({
             </CardHeader>
             <CardContent>
               <form action={createUserIncomeCategory} className="flex flex-wrap gap-3">
+                <input type="hidden" name="year" value={currentYear} />
                 <Input name="name" placeholder="Nama kategori" required className="max-w-xs" />
                 <Input name="color" placeholder="Warna hex (opsional)" className="w-40" />
                 <Button type="submit" size="sm">
@@ -288,6 +294,7 @@ export default async function CategoriesPage({
               </CardHeader>
               <CardContent>
                 <form action={setTypeAllocations} className="space-y-3">
+                  <input type="hidden" name="year" value={currentYear} />
                   {types.map((type, i) => (
                     <div key={type.id} className="flex items-center gap-3">
                       <input type="hidden" name={`type_${i}`} value={type.id} />
@@ -384,7 +391,7 @@ export default async function CategoriesPage({
                           <form action={setBudget} className="flex items-center gap-1.5 shrink-0">
                             <input type="hidden" name="category_id" value={cat.id} />
                             <input type="hidden" name="month" value={month} />
-                            <input type="hidden" name="year" value={year} />
+                            <input type="hidden" name="year" value={currentYear} />
                             <Input
                               name="percentage"
                               type="number"
@@ -442,6 +449,7 @@ export default async function CategoriesPage({
                     className="flex items-center gap-2 border-t pt-3"
                   >
                     <input type="hidden" name="type_id" value={type.id} />
+                    <input type="hidden" name="year" value={currentYear} />
                     <Input
                       name="name"
                       placeholder="Tambah kategori baru..."

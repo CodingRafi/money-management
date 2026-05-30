@@ -43,6 +43,7 @@ export async function setBudget(formData: FormData) {
 
 export async function setTypeAllocations(formData: FormData) {
   const session = await requireUser()
+  const year    = parseInt(formData.get("year") as string) || new Date().getFullYear()
 
   // Collect indexed pairs: type_0/pct_0, type_1/pct_1, ...
   const pairs: Array<{ typeId: string; pct: number }> = []
@@ -66,10 +67,10 @@ export async function setTypeAllocations(formData: FormData) {
     )
     if (check.rows.length === 0) continue
     await pool.query(
-      `INSERT INTO type_allocations (user_id, type_id, percentage)
-       VALUES ($1, $2, $3)
-       ON CONFLICT (user_id, type_id) DO UPDATE SET percentage = EXCLUDED.percentage`,
-      [session.user.id, typeId, pct],
+      `INSERT INTO type_allocations (user_id, type_id, percentage, year)
+       VALUES ($1, $2, $3, $4)
+       ON CONFLICT (user_id, type_id, year) DO UPDATE SET percentage = EXCLUDED.percentage`,
+      [session.user.id, typeId, pct, year],
     )
   }
 

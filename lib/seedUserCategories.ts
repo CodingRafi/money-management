@@ -20,14 +20,18 @@ export async function seedUserCategories(userId: string): Promise<void> {
       return
     }
 
+    const now   = new Date()
+    const month = now.getMonth() + 1
+    const year  = now.getFullYear()
+
     // Copy income categories
     await client.query(
-      `INSERT INTO income_categories (name, is_default, user_id, color, sort_order)
-       SELECT name, false, $1, color, sort_order
+      `INSERT INTO income_categories (name, is_default, user_id, color, sort_order, year)
+       SELECT name, false, $1, color, sort_order, $2
        FROM income_categories
        WHERE is_default = true AND user_id IS NULL
        ORDER BY sort_order`,
-      [userId],
+      [userId, year],
     )
 
     // Copy expense types + categories + set type allocations
@@ -37,25 +41,21 @@ export async function seedUserCategories(userId: string): Promise<void> {
        ORDER BY sort_order`,
     )
 
-    const now   = new Date()
-    const month = now.getMonth() + 1
-    const year  = now.getFullYear()
-
     for (const type of typesRes.rows) {
       const newTypeRes = await client.query<{ id: string }>(
-        `INSERT INTO expense_types (name, is_default, user_id, sort_order)
-         VALUES ($1, false, $2, $3) RETURNING id`,
-        [type.name, userId, type.sort_order],
+        `INSERT INTO expense_types (name, is_default, user_id, sort_order, year)
+         VALUES ($1, false, $2, $3, $4) RETURNING id`,
+        [type.name, userId, type.sort_order, year],
       )
       const newTypeId = newTypeRes.rows[0].id
 
       // Default type allocation (40/20/40)
       const allocPct = DEFAULT_TYPE_ALLOCATIONS[type.name] ?? 0
       await client.query(
-        `INSERT INTO type_allocations (user_id, type_id, percentage)
-         VALUES ($1, $2, $3)
-         ON CONFLICT (user_id, type_id) DO NOTHING`,
-        [userId, newTypeId, allocPct],
+        `INSERT INTO type_allocations (user_id, type_id, percentage, year)
+         VALUES ($1, $2, $3, $4)
+         ON CONFLICT (user_id, type_id, year) DO NOTHING`,
+        [userId, newTypeId, allocPct, year],
       )
 
       // Copy expense categories for this type
@@ -71,9 +71,9 @@ export async function seedUserCategories(userId: string): Promise<void> {
 
       for (const cat of catsRes.rows) {
         const newCatRes = await client.query<{ id: string }>(
-          `INSERT INTO expense_categories (name, type_id, is_default, user_id, sort_order)
-           VALUES ($1, $2, false, $3, $4) RETURNING id`,
-          [cat.name, newTypeId, userId, cat.sort_order],
+          `INSERT INTO expense_categories (name, type_id, is_default, user_id, sort_order, year)
+           VALUES ($1, $2, false, $3, $4, $5) RETURNING id`,
+          [cat.name, newTypeId, userId, cat.sort_order, year],
         )
         const pct = parseFloat(cat.default_percentage)
         if (pct > 0) {
