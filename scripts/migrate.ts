@@ -24,6 +24,7 @@ const migrations = [
   "017_remove_menabung_type.sql",
   "018_wallet_initial_balance.sql",
   "019_feature_permissions.sql",
+  "020_expense_monthly.sql",
 ]
 
 // Postgres error codes that mean "this object already exists" — safe to skip
@@ -52,7 +53,7 @@ async function run() {
         continue
       }
 
-      const sql = readFileSync(join(import.meta.dir, "../migrations", file), "utf-8")
+      const sql = readFileSync(join(process.cwd(), "migrations", file), "utf-8")
       console.log(`Running ${file}...`)
 
       await client.query("SAVEPOINT migration_sp")

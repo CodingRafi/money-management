@@ -13,6 +13,9 @@ import { ExpenseForm } from "./_components/expense-form"
 import { LoanGivenForm } from "./_components/loan-given-form"
 import { LoanTakenForm } from "./_components/loan-taken-form"
 import { ReportTab } from "./_components/report-tab"
+import { StatChart } from "./_components/stat-chart"
+import { IncomeDetailTabs } from "./_components/income-detail-tabs"
+import { ExpenseDetailTabs } from "./_components/expense-detail-tabs"
 import { InvestmentAssetForm } from "./_components/investment-asset-form"
 import { TransferForm } from "./_components/transfer-form"
 import {
@@ -64,6 +67,7 @@ type YearlyRecapRow = {
   total_expense: string
   balance: string
   income_monthly: Record<string, number>
+  expense_monthly: Record<string, number>
   expense_breakdown: ExpenseBdCat[]
 }
 
@@ -138,10 +142,14 @@ export default async function YearDetailPage({
   const showNew    = sp.new === "1" && isActive
   const editId     = typeof sp.edit === "string" && isActive ? sp.edit as string : null
   const showReport = sp.report === "1" && tab === "pengeluaran"
+  const stat       = sp.stat === "income_growth"  ? "income_growth"
+                   : sp.stat === "expense_ratio"   ? "expense_ratio"
+                   : sp.stat === "wealth_growth"   ? "wealth_growth"
+                   : null
 
   // Reference data for forms + yearly recap
   // For categories, use the best available year: exact match, else nearest year before, else any year
-  const [incomeCatsRes, expenseCatsRes, walletsRes, yearlyRecapRes] = await Promise.all([
+  const [incomeCatsRes, expenseCatsRes, walletsRes, yearlyRecapRes, prevYearRecapRes] = await Promise.all([
     pool.query<{ id: string; name: string }>(
       `WITH best_year AS (
          SELECT COALESCE(
@@ -179,10 +187,16 @@ export default async function YearDetailPage({
     ),
     pool.query<YearlyRecapRow>(
       `SELECT total_income::text, total_expense::text, balance::text,
-              COALESCE(income_monthly, '{}') AS income_monthly,
+              COALESCE(income_monthly, '{}')    AS income_monthly,
+              COALESCE(expense_monthly, '{}')   AS expense_monthly,
               COALESCE(expense_breakdown, '[]') AS expense_breakdown
        FROM yearly_recap WHERE user_id = $1 AND year = $2`,
       [userId, year],
+    ),
+    pool.query<{ income_monthly: Record<string, number> }>(
+      `SELECT COALESCE(income_monthly, '{}') AS income_monthly
+       FROM yearly_recap WHERE user_id = $1 AND year = $2`,
+      [userId, year - 1],
     ),
   ])
 
@@ -403,6 +417,92 @@ export default async function YearDetailPage({
   }))
   const catChart = catChartRes.rows.map((r) => ({ label: r.label, total: parseFloat(r.total) }))
 
+  // Income growth per month vs prev month (Jan vs Dec of prev year)
+  const expenseMo     = yearlyRecap?.expense_monthly ?? {}
+  const prevYearRecap = prevYearRecapRes.rows[0] ?? null
+
+  const growthData: { label: string; value: number }[] = []
+  for (let m = 1; m <= 12; m++) {
+    const current = Number(incomeMo[String(m)] ?? 0)
+    if (current === 0) continue
+    let prev: number
+    if (m === 1) {
+      if (!prevYearRecap) continue
+      prev = Number(prevYearRecap.income_monthly?.["12"] ?? 0)
+    } else {
+      prev = Number(incomeMo[String(m - 1)] ?? 0)
+    }
+    growthData.push({ label: MONTHS[m - 1].substring(0, 3), value: current - prev })
+  }
+  const avgIncomeGrowth = growthData.length > 0
+    ? growthData.reduce((s, d) => s + d.value, 0) / growthData.length
+    : null
+
+  // Expense ratio per month (expense / income * 100)
+  const ratioData: { label: string; value: number }[] = []
+  for (let m = 1; m <= 12; m++) {
+    const income  = Number(incomeMo[String(m)]  ?? 0)
+    const expense = Number(expenseMo[String(m)] ?? 0)
+    if (income <= 0) continue
+    ratioData.push({ label: MONTHS[m - 1].substring(0, 3), value: parseFloat(((expense / income) * 100).toFixed(2)) })
+  }
+  const avgExpenseRatio = ratioData.length > 0
+    ? ratioData.reduce((s, d) => s + d.value, 0) / ratioData.length
+    : null
+
+  // Kenaikan kekayaan per bulan (income - expense), cached via income_monthly & expense_monthly
+  const wealthData: { label: string; nominal: number; pct: number }[] = []
+  for (let m = 1; m <= 12; m++) {
+    const income  = Number(incomeMo[String(m)]  ?? 0)
+    const expense = Number(expenseMo[String(m)] ?? 0)
+    if (income <= 0) continue
+    const nominal = income - expense
+    wealthData.push({
+      label: MONTHS[m - 1].substring(0, 3),
+      nominal,
+      pct: parseFloat(((nominal / income) * 100).toFixed(2)),
+    })
+  }
+  const avgWealthNominal = wealthData.length > 0
+    ? wealthData.reduce((s, d) => s + d.nominal, 0) / wealthData.length
+    : null
+  const avgWealthPct = wealthData.length > 0
+    ? wealthData.reduce((s, d) => s + d.pct, 0) / wealthData.length
+    : null
+
+  // Chart data for detail panels (computed from already-fetched data, no extra DB queries)
+  const MONTH_ABBRS_CHART = ["JAN", "FEB", "MAR", "APR", "MEI", "JUN", "JUL", "AGU", "SEP", "OKT", "NOV", "DES"]
+
+  const incomeCatTotals = bdCategoryOrder.map((cat) => ({
+    name: cat,
+    total: bdMonths.reduce((s, m) => s + (bdCatMonthMap.get(cat)?.get(m) ?? 0), 0),
+  }))
+
+  const expCatYearlyTotals = allExpCats
+    .map((cat) => ({
+      name: cat.name,
+      total: Object.values(cat.months).reduce((s, v) => s + v, 0),
+    }))
+    .sort((a, b) => b.total - a.total)
+
+  const expStackedMonthly = bdMonths.map((m) => {
+    const row: Record<string, number | string> = { month: MONTH_ABBRS_CHART[m - 1] }
+    let total = 0
+    for (const cat of allExpCats) {
+      const v = cat.months[String(m)] ?? 0
+      row[`${cat.name}_raw`] = v
+      total += v
+    }
+    row._total = total
+    for (const cat of allExpCats) {
+      const raw = row[`${cat.name}_raw`] as number
+      row[cat.name] = total > 0 ? parseFloat(((raw / total) * 100).toFixed(2)) : 0
+    }
+    return row
+  })
+
+  const expCategoryNames = allExpCats.map((c) => c.name)
+
   const base        = `/rekap/${year}`
   const cancelHref  = `${base}?bulan=${month}&tab=${tab}`
   const tambahHref = `${cancelHref}&new=1`
@@ -464,7 +564,7 @@ export default async function YearDetailPage({
       {view === "report" && (
         <div className="space-y-5">
           {/* Summary cards */}
-          <div className="grid grid-cols-3 gap-4">
+          <div className="grid grid-cols-2 gap-4">
             <Link
               href={detail === "pendapatan" ? `${base}?view=report` : `${base}?view=report&detail=pendapatan`}
               className="block"
@@ -497,17 +597,88 @@ export default async function YearDetailPage({
                 </CardContent>
               </Card>
             </Link>
-            <Card>
-              <CardContent className="p-5">
-                <p className="text-xs text-muted-foreground mb-1">Sisa</p>
-                <p className={`text-lg font-bold ${
-                  Number(yearlyRecap?.balance ?? 0) >= 0 ? "text-blue-600" : "text-red-600"
-                }`}>
-                  {formatRupiah(yearlyRecap?.balance ?? 0)}
-                </p>
-              </CardContent>
-            </Card>
+            <Link
+              href={stat === "income_growth" ? `${base}?view=report` : `${base}?view=report&stat=income_growth`}
+              className="block"
+            >
+              <Card className={`transition-all hover:shadow-md cursor-pointer ${stat === "income_growth" ? "ring-2 ring-violet-500" : ""}`}>
+                <CardContent className="p-5">
+                  <p className="text-xs text-muted-foreground mb-1">AVG Kenaikan Pendapatan</p>
+                  <p className={`text-lg font-bold tabular-nums ${
+                    avgIncomeGrowth === null ? "text-muted-foreground" :
+                    avgIncomeGrowth >= 0 ? "text-emerald-600" : "text-red-600"
+                  }`}>
+                    {avgIncomeGrowth === null ? "—" : `${avgIncomeGrowth > 0 ? "+" : ""}${formatRupiah(avgIncomeGrowth)}`}
+                  </p>
+                  <p className="text-xs text-muted-foreground mt-1">
+                    {stat === "income_growth" ? "▲ Tutup chart" : "▼ Lihat chart"}
+                  </p>
+                </CardContent>
+              </Card>
+            </Link>
+            <Link
+              href={stat === "expense_ratio" ? `${base}?view=report` : `${base}?view=report&stat=expense_ratio`}
+              className="block"
+            >
+              <Card className={`transition-all hover:shadow-md cursor-pointer ${stat === "expense_ratio" ? "ring-2 ring-amber-500" : ""}`}>
+                <CardContent className="p-5">
+                  <p className="text-xs text-muted-foreground mb-1">AVG % Pengeluaran</p>
+                  <p className={`text-lg font-bold tabular-nums ${
+                    avgExpenseRatio === null ? "text-muted-foreground" :
+                    avgExpenseRatio > 100 ? "text-red-600" : avgExpenseRatio > 80 ? "text-amber-600" : "text-emerald-600"
+                  }`}>
+                    {avgExpenseRatio === null ? "—" : `${avgExpenseRatio.toFixed(1)}%`}
+                  </p>
+                  <p className="text-xs text-muted-foreground mt-1">
+                    {stat === "expense_ratio" ? "▲ Tutup chart" : "▼ Lihat chart"}
+                  </p>
+                </CardContent>
+              </Card>
+            </Link>
+            <Link
+              href={stat === "wealth_growth" ? `${base}?view=report` : `${base}?view=report&stat=wealth_growth`}
+              className="block col-span-2"
+            >
+              <Card className={`transition-all hover:shadow-md cursor-pointer ${stat === "wealth_growth" ? "ring-2 ring-cyan-500" : ""}`}>
+                <CardContent className="p-5">
+                  <p className="text-xs text-muted-foreground mb-2">Kenaikan Kekayaan</p>
+                  <div className="flex items-end gap-6">
+                    <div>
+                      <p className="text-[10px] text-muted-foreground mb-0.5">AVG Nominal</p>
+                      <p className={`text-lg font-bold tabular-nums ${
+                        avgWealthNominal === null ? "text-muted-foreground" :
+                        avgWealthNominal >= 0 ? "text-emerald-600" : "text-red-600"
+                      }`}>
+                        {avgWealthNominal === null ? "—" : `${avgWealthNominal > 0 ? "+" : ""}${formatRupiah(avgWealthNominal)}`}
+                      </p>
+                    </div>
+                    <div>
+                      <p className="text-[10px] text-muted-foreground mb-0.5">AVG % dari Pendapatan</p>
+                      <p className={`text-lg font-bold tabular-nums ${
+                        avgWealthPct === null ? "text-muted-foreground" :
+                        avgWealthPct >= 0 ? "text-emerald-600" : "text-red-600"
+                      }`}>
+                        {avgWealthPct === null ? "—" : `${avgWealthPct > 0 ? "+" : ""}${avgWealthPct.toFixed(1)}%`}
+                      </p>
+                    </div>
+                  </div>
+                  <p className="text-xs text-muted-foreground mt-2">
+                    {stat === "wealth_growth" ? "▲ Tutup chart" : "▼ Lihat chart"}
+                  </p>
+                </CardContent>
+              </Card>
+            </Link>
           </div>
+
+          {stat === "income_growth" && (
+            <StatChart type="income_growth" data={growthData} />
+          )}
+          {stat === "expense_ratio" && (
+            <StatChart type="expense_ratio" data={ratioData} />
+          )}
+          {stat === "wealth_growth" && (
+            <StatChart type="wealth_growth" data={wealthData} />
+          )}
 
           {!yearlyRecap && (
             <p className="text-sm text-muted-foreground text-center py-6">
@@ -517,165 +688,184 @@ export default async function YearDetailPage({
 
           {/* Income breakdown table */}
           {/* Expense breakdown table */}
-          {detail === "pengeluaran" && expGroups.length > 0 && (
-            <Card>
-              <CardContent className="p-0">
-                <div className="overflow-x-auto">
-                  <table className="text-xs whitespace-nowrap border-collapse">
-                    <thead>
-                      <tr className="bg-rose-600 text-white">
-                        <th rowSpan={2} className="w-[100px] px-3 py-2.5 text-center font-semibold sticky left-0 bg-rose-600 z-20 border-r border-rose-500">TYPE</th>
-                        <th rowSpan={2} className="w-[150px] px-3 py-2.5 text-left font-semibold sticky left-[80px] bg-rose-600 z-20 border-r border-rose-500">NAMA</th>
-                        <th rowSpan={2} className="min-w-[72px] max-w-[72px] px-3 py-2.5 text-right font-semibold sticky left-[230px] bg-rose-600 z-20 border-r border-rose-500">%</th>
-                        {MONTHS.map((m) => (
-                          <th key={m} colSpan={4} className="px-3 py-2.5 text-center font-semibold border-l border-rose-500">
-                            {m.toUpperCase()}
-                          </th>
-                        ))}
-                      </tr>
-                      <tr className="bg-rose-700 text-white">
-                        {bdMonths.map((m) => (
-                          [
-                            <th key={`${m}-max`}  className="px-2 py-2 text-right min-w-[110px] border-l border-rose-600">MAX</th>,
-                            <th key={`${m}-out`}  className="px-2 py-2 text-right min-w-[110px]">PENGELUARAN</th>,
-                            <th key={`${m}-sisa`} className="px-2 py-2 text-right min-w-[100px]">SISA</th>,
-                            <th key={`${m}-sts`}  className="px-2 py-2 text-center min-w-[72px]">STATUS</th>,
-                          ]
-                        ))}
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {expGroups.map(({ typeName, cats }, gi) =>
-                        cats.map((cat, ci) => {
-                          const isLastInGroup = ci === cats.length - 1
-                          const repPct = catRepPct(cat.id)
-                          return (
-                            <tr
-                              key={cat.id}
-                              className={`${isLastInGroup ? "border-b-2 border-border" : "border-b border-border/40"} ${ci % 2 === 0 ? "bg-muted/30" : ""}`}
-                            >
-                              {/* TYPE — rendered every row, text only on first */}
-                              <td className={`w-[100px] px-3 py-2.5 text-center font-semibold sticky left-0 z-10 border-r border-border bg-background ${ci === 0 ? "align-top pt-3" : ""}`}>
-                                {ci === 0 ? typeName : ""}
-                              </td>
-                              <td className="w-[150px] px-3 py-2.5 font-medium sticky left-[80px] z-10 border-r border-border bg-background">
-                                {cat.name}
-                              </td>
-                              <td className="min-w-[72px] max-w-[72px] px-3 py-2.5 text-right tabular-nums sticky left-[230px] z-10 bg-background border-r border-border text-muted-foreground">
-                                {repPct > 0 ? `${repPct.toFixed(2)}%` : "—"}
-                              </td>
-                              {bdMonths.map((m) => {
-                                const monthPct    = getMonthPct(cat.id, m)
-                                const monthIncome = Number(incomeMo[String(m)] ?? 0)
-                                const maxBudget   = monthIncome * (monthPct / 100)
-                                const spent       = cat.months[String(m)] ?? 0
-                                const sisa        = maxBudget - spent
-                                const status      = expenseStatus(monthPct, maxBudget, spent)
-                                const statusCls   = status === "DANGER" ? "bg-red-500 text-white" : status === "WARNING" ? "bg-amber-400 text-white" : "bg-emerald-500 text-white"
-                                return [
-                                  <td key={`${m}-max`}  className="px-2 py-2.5 text-right tabular-nums text-muted-foreground border-l border-border">
-                                    {monthPct > 0 ? formatRupiah(maxBudget) : "—"}
-                                  </td>,
-                                  <td key={`${m}-out`}  className="px-2 py-2.5 text-right tabular-nums">
-                                    {formatRupiah(spent)}
-                                  </td>,
-                                  <td key={`${m}-sisa`} className={`px-2 py-2.5 text-right tabular-nums ${sisa < 0 ? "text-red-600 font-medium" : ""}`}>
-                                    {monthPct > 0 ? formatRupiah(sisa) : "—"}
-                                  </td>,
-                                  <td key={`${m}-sts`}  className="px-2 py-2.5 text-center border-r border-border/30">
-                                    <span className={`inline-block rounded px-1.5 py-0.5 text-[10px] font-bold ${statusCls}`}>{status}</span>
-                                  </td>,
-                                ]
-                              })}
-                            </tr>
-                          )
-                        })
-                      )}
-                    </tbody>
-                    <tfoot>
-                      <tr className="bg-rose-700 text-white font-bold">
-                        <td className="w-[100px] sticky left-0 bg-rose-700 z-10" />
-                        <td className="w-[150px] sticky left-[100px] bg-rose-700 z-10" />
-                        <td className="min-w-[72px] max-w-[72px] px-3 py-2.5 text-right sticky left-[250px] bg-rose-700 z-10 border-r border-rose-600">
-                          TOTAL
-                        </td>
-                        {bdMonths.map((m) => {
-                          const totalSpent = expMonthSpent[m - 1]
-                          return [
-                            <td key={`${m}-max`}  className="px-2 py-2.5 border-l border-rose-500" />,
-                            <td key={`${m}-out`}  className="px-2 py-2.5 text-right tabular-nums">{formatRupiah(totalSpent)}</td>,
-                            <td key={`${m}-sisa`} className="px-2 py-2.5" />,
-                            <td key={`${m}-sts`}  className="px-2 py-2.5" />,
-                          ]
-                        })}
-                      </tr>
-                    </tfoot>
-                  </table>
-                </div>
-              </CardContent>
-            </Card>
-          )}
-
-          {/* Income breakdown table */}
-          {detail === "pendapatan" && bdCategoryOrder.length > 0 && (
-            <Card>
-              <CardContent className="p-0">
-                <div className="overflow-x-auto">
-                  <table className="w-full text-xs whitespace-nowrap">
-                    <thead>
-                      <tr className="bg-emerald-600 text-white">
-                        <th className="w-[140px] px-4 py-3 text-left font-semibold sticky left-0 bg-emerald-600 z-10">NAMA</th>
-                        {MONTHS.map((m) => (
-                          <th key={m} className="px-3 py-3 text-right font-semibold min-w-[110px]">
-                            {m.toUpperCase()}
-                          </th>
-                        ))}
-                        <th className="px-4 py-3 text-right font-semibold min-w-[120px]">TOTAL</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {bdCategoryOrder.map((cat, ci) => {
-                        const catTotal = bdMonths.reduce((s, m) => s + (bdCatMonthMap.get(cat)?.get(m) ?? 0), 0)
-                        return (
-                          <tr
-                            key={cat}
-                            className={`border-b ${ci % 2 === 0 ? "bg-muted/30" : ""}`}
-                          >
-                            <td className="w-[140px] px-4 py-2.5 font-medium sticky left-0 z-10 bg-background">
-                              {cat}
+          {detail === "pengeluaran" && (
+            <ExpenseDetailTabs
+              year={year}
+              categories={expCategoryNames}
+              stackedData={expStackedMonthly}
+              catTotals={expCatYearlyTotals}
+            >
+              {expGroups.length > 0 ? (
+                <Card>
+                  <CardContent className="p-0">
+                    <div className="overflow-x-auto">
+                      <table className="text-xs whitespace-nowrap border-collapse">
+                        <thead>
+                          <tr className="bg-rose-600 text-white">
+                            <th rowSpan={2} className="w-[100px] px-3 py-2.5 text-center font-semibold sticky left-0 bg-rose-600 z-20 border-r border-rose-500">TYPE</th>
+                            <th rowSpan={2} className="w-[150px] px-3 py-2.5 text-left font-semibold sticky left-[80px] bg-rose-600 z-20 border-r border-rose-500">NAMA</th>
+                            <th rowSpan={2} className="min-w-[72px] max-w-[72px] px-3 py-2.5 text-right font-semibold sticky left-[230px] bg-rose-600 z-20 border-r border-rose-500">%</th>
+                            {MONTHS.map((m) => (
+                              <th key={m} colSpan={4} className="px-3 py-2.5 text-center font-semibold border-l border-rose-500">
+                                {m.toUpperCase()}
+                              </th>
+                            ))}
+                          </tr>
+                          <tr className="bg-rose-700 text-white">
+                            {bdMonths.map((m) => (
+                              [
+                                <th key={`${m}-max`}  className="px-2 py-2 text-right min-w-[110px] border-l border-rose-600">MAX</th>,
+                                <th key={`${m}-out`}  className="px-2 py-2 text-right min-w-[110px]">PENGELUARAN</th>,
+                                <th key={`${m}-sisa`} className="px-2 py-2 text-right min-w-[100px]">SISA</th>,
+                                <th key={`${m}-sts`}  className="px-2 py-2 text-center min-w-[72px]">STATUS</th>,
+                              ]
+                            ))}
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {expGroups.map(({ typeName, cats }, gi) =>
+                            cats.map((cat, ci) => {
+                              const isLastInGroup = ci === cats.length - 1
+                              const repPct = catRepPct(cat.id)
+                              return (
+                                <tr
+                                  key={cat.id}
+                                  className={`${isLastInGroup ? "border-b-2 border-border" : "border-b border-border/40"} ${ci % 2 === 0 ? "bg-muted/30" : ""}`}
+                                >
+                                  <td className={`w-[100px] px-3 py-2.5 text-center font-semibold sticky left-0 z-10 border-r border-border bg-background ${ci === 0 ? "align-top pt-3" : ""}`}>
+                                    {ci === 0 ? typeName : ""}
+                                  </td>
+                                  <td className="w-[150px] px-3 py-2.5 font-medium sticky left-[80px] z-10 border-r border-border bg-background">
+                                    {cat.name}
+                                  </td>
+                                  <td className="min-w-[72px] max-w-[72px] px-3 py-2.5 text-right tabular-nums sticky left-[230px] z-10 bg-background border-r border-border text-muted-foreground">
+                                    {repPct > 0 ? `${repPct.toFixed(2)}%` : "—"}
+                                  </td>
+                                  {bdMonths.map((m) => {
+                                    const monthPct    = getMonthPct(cat.id, m)
+                                    const monthIncome = Number(incomeMo[String(m)] ?? 0)
+                                    const maxBudget   = monthIncome * (monthPct / 100)
+                                    const spent       = cat.months[String(m)] ?? 0
+                                    const sisa        = maxBudget - spent
+                                    const status      = expenseStatus(monthPct, maxBudget, spent)
+                                    const statusCls   = status === "DANGER" ? "bg-red-500 text-white" : status === "WARNING" ? "bg-amber-400 text-white" : "bg-emerald-500 text-white"
+                                    return [
+                                      <td key={`${m}-max`}  className="px-2 py-2.5 text-right tabular-nums text-muted-foreground border-l border-border">
+                                        {monthPct > 0 ? formatRupiah(maxBudget) : "—"}
+                                      </td>,
+                                      <td key={`${m}-out`}  className="px-2 py-2.5 text-right tabular-nums">
+                                        {formatRupiah(spent)}
+                                      </td>,
+                                      <td key={`${m}-sisa`} className={`px-2 py-2.5 text-right tabular-nums ${sisa < 0 ? "text-red-600 font-medium" : ""}`}>
+                                        {monthPct > 0 ? formatRupiah(sisa) : "—"}
+                                      </td>,
+                                      <td key={`${m}-sts`}  className="px-2 py-2.5 text-center border-r border-border/30">
+                                        <span className={`inline-block rounded px-1.5 py-0.5 text-[10px] font-bold ${statusCls}`}>{status}</span>
+                                      </td>,
+                                    ]
+                                  })}
+                                </tr>
+                              )
+                            })
+                          )}
+                        </tbody>
+                        <tfoot>
+                          <tr className="bg-rose-700 text-white font-bold">
+                            <td className="w-[100px] sticky left-0 bg-rose-700 z-10" />
+                            <td className="w-[150px] sticky left-[100px] bg-rose-700 z-10" />
+                            <td className="min-w-[72px] max-w-[72px] px-3 py-2.5 text-right sticky left-[250px] bg-rose-700 z-10 border-r border-rose-600">
+                              TOTAL
                             </td>
                             {bdMonths.map((m) => {
-                              const val = bdCatMonthMap.get(cat)?.get(m) ?? 0
-                              return (
-                                <td key={m} className="px-3 py-2.5 text-right tabular-nums text-muted-foreground">
-                                  {formatRupiah(val)}
-                                </td>
-                              )
+                              const totalSpent = expMonthSpent[m - 1]
+                              return [
+                                <td key={`${m}-max`}  className="px-2 py-2.5 border-l border-rose-500" />,
+                                <td key={`${m}-out`}  className="px-2 py-2.5 text-right tabular-nums">{formatRupiah(totalSpent)}</td>,
+                                <td key={`${m}-sisa`} className="px-2 py-2.5" />,
+                                <td key={`${m}-sts`}  className="px-2 py-2.5" />,
+                              ]
                             })}
-                            <td className="px-4 py-2.5 text-right tabular-nums font-semibold text-emerald-700">
-                              {formatRupiah(catTotal)}
+                          </tr>
+                        </tfoot>
+                      </table>
+                    </div>
+                  </CardContent>
+                </Card>
+              ) : (
+                <p className="py-10 text-center text-sm text-muted-foreground">
+                  Belum ada data pengeluaran untuk tahun ini.
+                </p>
+              )}
+            </ExpenseDetailTabs>
+          )}
+
+          {detail === "pendapatan" && (
+            <IncomeDetailTabs year={year} chartData={incomeCatTotals}>
+              {bdCategoryOrder.length > 0 ? (
+                <Card>
+                  <CardContent className="p-0">
+                    <div className="overflow-x-auto">
+                      <table className="w-full text-xs whitespace-nowrap">
+                        <thead>
+                          <tr className="bg-emerald-600 text-white">
+                            <th className="w-[140px] px-4 py-3 text-left font-semibold sticky left-0 bg-emerald-600 z-10">NAMA</th>
+                            {MONTHS.map((m) => (
+                              <th key={m} className="px-3 py-3 text-right font-semibold min-w-[110px]">
+                                {m.toUpperCase()}
+                              </th>
+                            ))}
+                            <th className="px-4 py-3 text-right font-semibold min-w-[120px]">TOTAL</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {bdCategoryOrder.map((cat, ci) => {
+                            const catTotal = bdMonths.reduce((s, m) => s + (bdCatMonthMap.get(cat)?.get(m) ?? 0), 0)
+                            return (
+                              <tr
+                                key={cat}
+                                className={`border-b ${ci % 2 === 0 ? "bg-muted/30" : ""}`}
+                              >
+                                <td className="w-[140px] px-4 py-2.5 font-medium sticky left-0 z-10 bg-background">
+                                  {cat}
+                                </td>
+                                {bdMonths.map((m) => {
+                                  const val = bdCatMonthMap.get(cat)?.get(m) ?? 0
+                                  return (
+                                    <td key={m} className="px-3 py-2.5 text-right tabular-nums text-muted-foreground">
+                                      {formatRupiah(val)}
+                                    </td>
+                                  )
+                                })}
+                                <td className="px-4 py-2.5 text-right tabular-nums font-semibold text-emerald-700">
+                                  {formatRupiah(catTotal)}
+                                </td>
+                              </tr>
+                            )
+                          })}
+                        </tbody>
+                        <tfoot>
+                          <tr className="bg-emerald-700 text-white">
+                            <td className="px-4 py-3 font-bold sticky left-0 bg-emerald-700 z-10">TOTAL</td>
+                            {bdMonthTotals.map((t, i) => (
+                              <td key={i} className="px-3 py-3 text-right tabular-nums font-bold">
+                                {formatRupiah(t)}
+                              </td>
+                            ))}
+                            <td className="px-4 py-3 text-right tabular-nums font-bold">
+                              {formatRupiah(bdGrandTotal)}
                             </td>
                           </tr>
-                        )
-                      })}
-                    </tbody>
-                    <tfoot>
-                      <tr className="bg-emerald-700 text-white">
-                        <td className="px-4 py-3 font-bold sticky left-0 bg-emerald-700 z-10">TOTAL</td>
-                        {bdMonthTotals.map((t, i) => (
-                          <td key={i} className="px-3 py-3 text-right tabular-nums font-bold">
-                            {formatRupiah(t)}
-                          </td>
-                        ))}
-                        <td className="px-4 py-3 text-right tabular-nums font-bold">
-                          {formatRupiah(bdGrandTotal)}
-                        </td>
-                      </tr>
-                    </tfoot>
-                  </table>
-                </div>
-              </CardContent>
-            </Card>
+                        </tfoot>
+                      </table>
+                    </div>
+                  </CardContent>
+                </Card>
+              ) : (
+                <p className="py-10 text-center text-sm text-muted-foreground">
+                  Belum ada data pendapatan untuk tahun ini.
+                </p>
+              )}
+            </IncomeDetailTabs>
           )}
         </div>
       )}
