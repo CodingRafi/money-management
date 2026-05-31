@@ -84,7 +84,7 @@ export default async function DashboardPage() {
                 <FolderOpen className="h-7 w-7" />
               </div>
               <div>
-                <p className="text-base font-semibold">Rekap Keuangan</p>
+                <p className="text-base font-semibold">Cashflow</p>
                 <p className="mt-1 text-sm text-muted-foreground">Kelola pendapatan & pengeluaran</p>
               </div>
               <span className="inline-flex items-center gap-1 text-xs font-medium text-primary">

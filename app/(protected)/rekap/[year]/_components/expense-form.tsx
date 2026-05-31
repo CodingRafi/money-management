@@ -13,6 +13,7 @@ interface DefaultValues {
   categoryId?: string | null
   needsType?: string
   amount?: number
+  isInitial?: boolean
 }
 
 interface Props {
@@ -93,6 +94,20 @@ export function ExpenseForm({
             </optgroup>
           ))}
         </select>
+      </div>
+
+      <div className="flex items-center gap-2 pt-1">
+        <input
+          type="checkbox"
+          id="is_initial_expense"
+          name="is_initial"
+          value="true"
+          defaultChecked={defaultValues?.isInitial ?? false}
+          className="h-4 w-4 accent-primary"
+        />
+        <label htmlFor="is_initial_expense" className="text-sm text-muted-foreground">
+          Data awal (tidak mempengaruhi saldo dompet)
+        </label>
       </div>
 
       <Button type="submit" size="sm">{submitLabel}</Button>

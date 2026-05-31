@@ -90,6 +90,19 @@ export function TransferForm({ wallets, action, year, month }: Props) {
         <Input name="notes" placeholder="Catatan transfer" />
       </div>
 
+      <div className="flex items-center gap-2 pt-1">
+        <input
+          type="checkbox"
+          id="is_initial_transfer"
+          name="is_initial"
+          value="true"
+          className="h-4 w-4 accent-primary"
+        />
+        <label htmlFor="is_initial_transfer" className="text-sm text-muted-foreground">
+          Data awal (tidak mempengaruhi saldo dompet)
+        </label>
+      </div>
+
       <Button type="submit" size="sm">Catat Transfer</Button>
     </form>
   )

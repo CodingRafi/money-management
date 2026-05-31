@@ -20,13 +20,6 @@ function formatDate(dateStr: string) {
   })
 }
 
-function formatQty(qty: string, unit: string | null) {
-  const n = Number(qty)
-  const formatted = n % 1 === 0
-    ? n.toLocaleString("id-ID")
-    : n.toLocaleString("id-ID", { maximumFractionDigits: 8 })
-  return unit ? `${formatted} ${unit}` : formatted
-}
 
 type GoalDetail = {
   id: string
@@ -40,7 +33,6 @@ type AssetInGoal = {
   id: string
   name: string
   category_name: string
-  unit: string | null
   total_modal: string
   total_hasil: string
 }
@@ -53,7 +45,6 @@ type TxInGoal = {
   price_per_unit: string
   total_amount: string
   asset_name: string
-  unit: string | null
   from_wallet_name: string | null
   to_wallet_name: string | null
   notes: string | null
@@ -78,21 +69,21 @@ export default async function KantongDetailPage({
       [goalId, userId],
     ),
     pool.query<AssetInGoal>(
-      `SELECT i.id, i.name, ic.name AS category_name, i.unit,
+      `SELECT i.id, i.name, ic.name AS category_name,
               COALESCE(SUM(CASE WHEN it.type='BUY'  THEN it.total_amount ELSE 0 END),0)::text AS total_modal,
               COALESCE(SUM(CASE WHEN it.type='SELL' THEN it.total_amount ELSE 0 END),0)::text AS total_hasil
        FROM investments i
        JOIN investment_categories ic ON ic.id = i.category_id
        JOIN investment_transactions it ON it.investment_id = i.id AND it.goal_id = $1
        WHERE i.user_id = $2
-       GROUP BY i.id, i.name, ic.name, ic.sort_order, i.unit
+       GROUP BY i.id, i.name, ic.name, ic.sort_order
        ORDER BY ic.sort_order, i.name`,
       [goalId, userId],
     ),
     pool.query<TxInGoal>(
       `SELECT it.id, it.date::text, it.type,
               it.quantity::text, it.price_per_unit::text, it.total_amount::text,
-              i.name AS asset_name, i.unit,
+              i.name AS asset_name,
               fw.name AS from_wallet_name,
               tw.name AS to_wallet_name,
               it.notes
@@ -213,7 +204,7 @@ export default async function KantongDetailPage({
                   <div key={a.id} className="flex items-center justify-between px-4 py-3 gap-3">
                     <div className="min-w-0 flex-1">
                       <p className="font-medium text-sm">{a.name}</p>
-                      <p className="text-xs text-muted-foreground">{a.category_name}{a.unit ? ` · ${a.unit}` : ""}</p>
+                      <p className="text-xs text-muted-foreground">{a.category_name}</p>
                     </div>
                     <div className="text-right shrink-0 space-y-0.5">
                       <p className="text-sm font-semibold tabular-nums text-blue-600">{formatRupiah(aktifAset)}</p>
@@ -249,7 +240,6 @@ export default async function KantongDetailPage({
                       <th className="px-4 py-3 text-left font-medium">Aset</th>
                       <th className="px-4 py-3 text-left font-medium">Tipe</th>
                       <th className="px-4 py-3 text-right font-medium">Quantity</th>
-                      <th className="px-4 py-3 text-right font-medium">Harga/Unit</th>
                       <th className="px-4 py-3 text-right font-medium">Total</th>
                       <th className="px-4 py-3 text-left font-medium">Dompet</th>
                     </tr>
@@ -267,10 +257,7 @@ export default async function KantongDetailPage({
                           </Badge>
                         </td>
                         <td className="px-4 py-3 text-right tabular-nums">
-                          {formatQty(tx.quantity, tx.unit)}
-                        </td>
-                        <td className="px-4 py-3 text-right tabular-nums text-muted-foreground">
-                          {formatRupiah(Number(tx.price_per_unit))}
+                          {tx.quantity}
                         </td>
                         <td className={`px-4 py-3 text-right tabular-nums font-medium ${
                           tx.type === "BUY" ? "text-blue-600" : "text-emerald-600"
@@ -285,7 +272,7 @@ export default async function KantongDetailPage({
                   </tbody>
                   <tfoot>
                     <tr className="bg-muted/20">
-                      <td colSpan={5} className="px-4 py-3 text-right text-sm font-medium text-muted-foreground">
+                      <td colSpan={4} className="px-4 py-3 text-right text-sm font-medium text-muted-foreground">
                         Total BUY
                       </td>
                       <td className="px-4 py-3 text-right tabular-nums font-bold text-blue-600">

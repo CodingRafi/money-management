@@ -13,32 +13,17 @@ interface Props {
   goals: { id: string; name: string; color: string | null }[]
   action: (formData: FormData) => Promise<void>
   cancelHref: string
-  year: number
-  unit?: string | null
 }
 
-export function InvestmentTransactionForm({ wallets, goals, action, cancelHref, year, unit }: Props) {
-  const [type, setType]               = useState<"BUY" | "SELL">("BUY")
-  const [quantity, setQuantity]       = useState("")
-  const [pricePerUnit, setPricePerUnit] = useState("")
+export function TransactionForm({ wallets, goals, action, cancelHref }: Props) {
+  const [type, setType] = useState<"BUY" | "SELL">("BUY")
 
-  const total    = parseFloat(quantity) * parseFloat(pricePerUnit)
-  const hasTotal = !isNaN(total) && total > 0
-
-  const today = new Date()
-  const defaultDate =
-    today.getFullYear() === year
-      ? today.toISOString().split("T")[0]
-      : `${year}-01-01`
-
-  const formatRupiah = (n: number) =>
-    new Intl.NumberFormat("id-ID", { style: "currency", currency: "IDR", maximumFractionDigits: 0 }).format(n)
+  const today = new Date().toISOString().split("T")[0]
 
   return (
     <form action={action} className="space-y-3">
       <input type="hidden" name="type" value={type} />
 
-      {/* Type toggle */}
       <div className="flex flex-col gap-1">
         <label className="text-sm font-medium">Tipe Transaksi</label>
         <div className="flex gap-2">
@@ -67,19 +52,25 @@ export function InvestmentTransactionForm({ wallets, goals, action, cancelHref, 
         </div>
       </div>
 
-      {/* Kantong */}
       <div className="flex flex-col gap-1">
-        <label className="text-sm font-medium">Kantong Investasi</label>
-        {goals.length === 0 ? (
-          <div className="rounded-md border border-input bg-muted/30 px-3 py-2.5 text-sm text-muted-foreground">
+        <label className="text-sm font-medium">
+          Kantong Investasi{type === "BUY" ? " *" : " (opsional)"}
+        </label>
+        {type === "BUY" && goals.length === 0 ? (
+          <div className="rounded-md border border-amber-300 bg-amber-50 px-3 py-2.5 text-sm text-amber-700 dark:bg-amber-950/30 dark:text-amber-400 dark:border-amber-800">
             Belum ada kantong.{" "}
-            <Link href="/investasi?new=1" className="text-primary underline underline-offset-2">
+            <Link href="/investasi?new=1" className="font-medium underline underline-offset-2">
               Buat kantong dulu
-            </Link>
+            </Link>{" "}
+            sebelum mencatat transaksi BUY.
           </div>
         ) : (
-          <select name="goal_id" className={selectClass}>
-            <option value="">— Tanpa kantong —</option>
+          <select name="goal_id" className={selectClass} required={type === "BUY"}>
+            {type === "BUY" ? (
+              <option value="">— Pilih kantong —</option>
+            ) : (
+              <option value="">— Tanpa kantong —</option>
+            )}
             {goals.map((g) => (
               <option key={g.id} value={g.id}>{g.name}</option>
             ))}
@@ -89,57 +80,29 @@ export function InvestmentTransactionForm({ wallets, goals, action, cancelHref, 
 
       <div className="grid grid-cols-2 gap-3">
         <div className="flex flex-col gap-1">
-          <label className="text-sm font-medium">
-            Quantity{unit ? ` (${unit})` : ""}
-          </label>
+          <label className="text-sm font-medium">Quantity (opsional)</label>
           <Input
             name="quantity"
-            type="number"
-            step="any"
-            min="0.00000001"
-            value={quantity}
-            onChange={(e) => setQuantity(e.target.value)}
-            placeholder="0"
-            required
+            type="text"
+            placeholder="contoh: 10 lot, 5 gram"
           />
         </div>
         <div className="flex flex-col gap-1">
-          <label className="text-sm font-medium">Harga per Unit (Rp)</label>
+          <label className="text-sm font-medium">Harga Transaksi (Rp)</label>
           <Input
-            name="price_per_unit"
+            name="total_amount"
             type="number"
             step="any"
             min="1"
-            value={pricePerUnit}
-            onChange={(e) => setPricePerUnit(e.target.value)}
             placeholder="0"
             required
           />
         </div>
       </div>
 
-      {hasTotal && (
-        <div
-          className={`rounded-md px-4 py-2.5 text-sm font-medium ${
-            type === "BUY"
-              ? "bg-emerald-50 text-emerald-700 dark:bg-emerald-950/30 dark:text-emerald-400"
-              : "bg-red-50 text-red-700 dark:bg-red-950/30 dark:text-red-400"
-          }`}
-        >
-          Total {type === "BUY" ? "Modal" : "Hasil"}: {formatRupiah(total)}
-        </div>
-      )}
-
       <div className="flex flex-col gap-1">
         <label className="text-sm font-medium">Tanggal</label>
-        <Input
-          name="date"
-          type="date"
-          defaultValue={defaultDate}
-          min={`${year}-01-01`}
-          max={`${year}-12-31`}
-          required
-        />
+        <Input name="date" type="date" defaultValue={today} required />
       </div>
 
       {type === "BUY" && (
@@ -169,6 +132,19 @@ export function InvestmentTransactionForm({ wallets, goals, action, cancelHref, 
       <div className="flex flex-col gap-1">
         <label className="text-sm font-medium">Catatan (opsional)</label>
         <Input name="notes" placeholder="Catatan tambahan" />
+      </div>
+
+      <div className="flex items-center gap-2 pt-1">
+        <input
+          type="checkbox"
+          id="is_initial_inv"
+          name="is_initial"
+          value="true"
+          className="h-4 w-4 accent-primary"
+        />
+        <label htmlFor="is_initial_inv" className="text-sm text-muted-foreground">
+          Data awal (tidak mempengaruhi saldo dompet)
+        </label>
       </div>
 
       <div className="flex gap-2">

@@ -4,7 +4,6 @@ import { redirect } from "next/navigation"
 import { pool } from "@/lib/db"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
-import { Badge } from "@/components/ui/badge"
 import { Plus, Pencil, Trash2, X, Wallet, SlidersHorizontal } from "lucide-react"
 import Link from "next/link"
 import { Input } from "@/components/ui/input"
@@ -18,14 +17,12 @@ function formatRupiah(n: number | string) {
   }).format(Number(n))
 }
 
-type WalletCategory = { id: string; name: string; is_liquid: boolean }
+type WalletCategory = { id: string; name: string }
 type WalletRow = {
   id: string
   category_id: string
   category_name: string
-  category_is_liquid: boolean
   name: string
-  is_liquid: boolean
   color: string | null
   balance: string
 }
@@ -48,11 +45,11 @@ export default async function DompetPage({
 
   const [categoriesRes, walletsRes] = await Promise.all([
     pool.query<WalletCategory>(
-      `SELECT id, name, is_liquid FROM wallet_categories ORDER BY sort_order, name`,
+      `SELECT id, name FROM wallet_categories ORDER BY sort_order, name`,
     ),
     pool.query<WalletRow>(
-      `SELECT w.id, w.category_id, wc.name AS category_name, wc.is_liquid AS category_is_liquid,
-              w.name, w.is_liquid, w.color, w.balance::text
+      `SELECT w.id, w.category_id, wc.name AS category_name,
+              w.name, w.color, w.balance::text
        FROM wallets w
        JOIN wallet_categories wc ON wc.id = w.category_id
        WHERE w.user_id = $1 AND w.is_active = true
@@ -72,8 +69,7 @@ export default async function DompetPage({
 
   const usedCats = categories.filter((c) => byCategory[c.id]?.length)
 
-  const totalLiquid    = wallets.filter((w) => w.is_liquid).reduce((s, w) => s + Number(w.balance), 0)
-  const totalNonLiquid = wallets.filter((w) => !w.is_liquid).reduce((s, w) => s + Number(w.balance), 0)
+  const totalBalance = wallets.reduce((s, w) => s + Number(w.balance), 0)
 
   return (
     <div className="space-y-6 max-w-3xl">
@@ -94,24 +90,14 @@ export default async function DompetPage({
 
       {/* Balance summary */}
       {wallets.length > 0 && (
-        <div className="grid grid-cols-2 gap-3">
-          <Card>
-            <CardContent className="p-4">
-              <p className="text-xs text-muted-foreground mb-1">Total Saldo Liquid</p>
-              <p className={`text-lg font-bold tabular-nums ${totalLiquid < 0 ? "text-red-600" : "text-blue-600"}`}>
-                {formatRupiah(totalLiquid)}
-              </p>
-            </CardContent>
-          </Card>
-          <Card>
-            <CardContent className="p-4">
-              <p className="text-xs text-muted-foreground mb-1">Total Non-liquid</p>
-              <p className="text-lg font-bold tabular-nums text-muted-foreground">
-                {formatRupiah(totalNonLiquid)}
-              </p>
-            </CardContent>
-          </Card>
-        </div>
+        <Card>
+          <CardContent className="p-4">
+            <p className="text-xs text-muted-foreground mb-1">Total Saldo</p>
+            <p className={`text-lg font-bold tabular-nums ${totalBalance < 0 ? "text-red-600" : "text-blue-600"}`}>
+              {formatRupiah(totalBalance)}
+            </p>
+          </CardContent>
+        </Card>
       )}
 
       {/* Add form */}
@@ -153,14 +139,9 @@ export default async function DompetPage({
           <Card key={cat.id}>
             <CardHeader className="pb-3">
               <div className="flex items-center justify-between">
-                <div className="flex items-center gap-2">
-                  <CardTitle className="text-sm font-semibold uppercase tracking-wide text-muted-foreground">
-                    {cat.name}
-                  </CardTitle>
-                  <Badge variant={cat.is_liquid ? "default" : "secondary"} className="text-xs">
-                    {cat.is_liquid ? "Liquid" : "Tidak Liquid"}
-                  </Badge>
-                </div>
+                <CardTitle className="text-sm font-semibold uppercase tracking-wide text-muted-foreground">
+                  {cat.name}
+                </CardTitle>
                 <p className={`text-sm font-bold tabular-nums ${catTotal < 0 ? "text-red-600" : "text-foreground"}`}>
                   {formatRupiah(catTotal)}
                 </p>
@@ -179,7 +160,6 @@ export default async function DompetPage({
                       defaultValues={{
                         name:       w.name,
                         categoryId: w.category_id,
-                        isLiquid:   w.is_liquid,
                         color:      w.color ?? undefined,
                       }}
                       isEdit
@@ -222,17 +202,7 @@ export default async function DompetPage({
                           style={{ backgroundColor: w.color }}
                         />
                       )}
-                      <div className="min-w-0">
-                        <p className="truncate font-medium">{w.name}</p>
-                        {w.is_liquid !== cat.is_liquid && (
-                          <Badge
-                            variant={w.is_liquid ? "default" : "outline"}
-                            className="shrink-0 text-xs mt-0.5"
-                          >
-                            {w.is_liquid ? "Liquid" : "Tidak Liquid"}
-                          </Badge>
-                        )}
-                      </div>
+                      <p className="truncate font-medium">{w.name}</p>
                     </div>
                     <div className="flex shrink-0 items-center gap-3">
                       <p className={`tabular-nums font-semibold ${Number(w.balance) < 0 ? "text-red-600" : "text-foreground"}`}>

@@ -20,7 +20,6 @@ export async function createWallet(formData: FormData) {
 
   const name = (formData.get("name") as string)?.trim()
   const categoryId = formData.get("category_id") as string
-  const isLiquid = formData.get("is_liquid") === "true"
   const color = (formData.get("color") as string)?.trim() || null
   const initialBalance = parseFloat((formData.get("initial_balance") as string) || "0") || 0
 
@@ -34,8 +33,8 @@ export async function createWallet(formData: FormData) {
 
   await pool.query(
     `INSERT INTO wallets (user_id, category_id, name, is_liquid, color, sort_order, initial_balance, balance)
-     VALUES ($1, $2, $3, $4, $5, $6, $7, $7)`,
-    [userId, categoryId, name, isLiquid, color, orderRes.rows[0].max, initialBalance],
+     VALUES ($1, $2, $3, true, $4, $5, $6, $6)`,
+    [userId, categoryId, name, color, orderRes.rows[0].max, initialBalance],
   )
 
   redirect("/dompet")
@@ -47,16 +46,15 @@ export async function updateWallet(id: string, formData: FormData) {
   await requirePermission(userId, "change_wallet")
 
   const name = (formData.get("name") as string)?.trim()
-  const isLiquid = formData.get("is_liquid") === "true"
   const color = (formData.get("color") as string)?.trim() || null
 
   if (!name) throw new Error("Nama dompet tidak boleh kosong")
 
   await pool.query(
     `UPDATE wallets
-     SET name = $1, is_liquid = $2, color = $3, updated_at = now()
-     WHERE id = $4 AND user_id = $5 AND is_active = true`,
-    [name, isLiquid, color, id, userId],
+     SET name = $1, is_liquid = true, color = $2, updated_at = now()
+     WHERE id = $3 AND user_id = $4 AND is_active = true`,
+    [name, color, id, userId],
   )
 
   redirect("/dompet")
@@ -81,7 +79,8 @@ export async function adjustBalance(id: string, formData: FormData) {
   const userId = session.user.id
   await requirePermission(userId, "change_wallet")
 
-  const targetBalance = parseFloat(formData.get("target_balance") as string)
+  const raw = formData.get("target_balance") as string
+  const targetBalance = raw === "" || raw === null ? 0 : parseFloat(raw)
   if (isNaN(targetBalance)) throw new Error("Nominal tidak valid")
 
   const res = await pool.query<{ balance: string; initial_balance: string }>(
@@ -100,6 +99,6 @@ export async function adjustBalance(id: string, formData: FormData) {
     [newInitial, targetBalance, id, userId],
   )
 
-  revalidatePath("/dompet")
   revalidatePath("/investasi")
+  redirect("/dompet")
 }

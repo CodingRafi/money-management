@@ -179,7 +179,7 @@ export function RekapTabs({ chartData, children }: Props) {
       <div className="flex gap-0 border-b mb-5">
         {(
           [
-            { key: "list", label: "Rekap" },
+            { key: "list", label: "Cashflow" },
             { key: "chart", label: "Chart" },
           ] as const
         ).map((t) => (
@@ -202,7 +202,7 @@ export function RekapTabs({ chartData, children }: Props) {
       {activeTab === "chart" && (
         chartData.length === 0 ? (
           <p className="py-10 text-center text-sm text-muted-foreground">
-            Belum ada data rekap untuk ditampilkan.
+            Belum ada data cashflow untuk ditampilkan.
           </p>
         ) : (
           <div className="space-y-6">

@@ -63,7 +63,7 @@ export default async function RekapPage() {
   return (
     <div className="max-w-2xl space-y-6">
       <div>
-        <h1 className="text-xl font-semibold">Manage Keuangan</h1>
+        <h1 className="text-xl font-semibold">Cashflow</h1>
       </div>
 
       <RekapTabs chartData={chartData}>
@@ -77,7 +77,7 @@ export default async function RekapPage() {
                 href={`/rekap/${row.year}`}
                 className="flex flex-col rounded-xl border px-5 py-4 hover:bg-muted/40 transition-colors"
               >
-                <span className="text-sm font-medium">Rekap Keuangan {row.year}</span>
+                <span className="text-sm font-medium">Cashflow {row.year}</span>
                 <div className="flex gap-4 mt-1.5 text-xs">
                   <span className="text-emerald-600">↑ {formatRupiah(row.total_income)}</span>
                   <span className="text-red-600">↓ {formatRupiah(row.total_expense)}</span>
@@ -95,7 +95,7 @@ export default async function RekapPage() {
               className="flex items-center gap-2 rounded-xl border border-dashed px-5 py-4 text-sm text-muted-foreground hover:border-foreground hover:text-foreground transition-colors"
             >
               <Plus className="h-4 w-4" />
-              Rekap Keuangan {currentYear}
+              Cashflow {currentYear}
             </Link>
           )}
         </div>

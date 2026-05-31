@@ -58,6 +58,7 @@ export async function addIncome(formData: FormData) {
   const amount     = parseFloat(formData.get("amount") as string)
   const month      = parseInt(formData.get("month") as string)
   const year       = parseInt(formData.get("year") as string)
+  const isInitial  = formData.get("is_initial") === "true"
 
   if (!date || !name || isNaN(amount) || amount <= 0) throw new Error("Data tidak valid")
 
@@ -65,11 +66,11 @@ export async function addIncome(formData: FormData) {
   try {
     await client.query("BEGIN")
     await client.query(
-      `INSERT INTO incomes (user_id, date, name, category_id, wallet_id, amount, month, year)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
-      [userId, date, name, categoryId, walletId, amount, month, year],
+      `INSERT INTO incomes (user_id, date, name, category_id, wallet_id, amount, month, year, is_initial)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)`,
+      [userId, date, name, categoryId, walletId, amount, month, year, isInitial],
     )
-    if (walletId) {
+    if (walletId && !isInitial) {
       await client.query(
         `UPDATE wallets SET balance = balance + $1 WHERE id = $2 AND user_id = $3`,
         [amount, walletId, userId],
@@ -98,6 +99,7 @@ export async function updateIncome(id: string, formData: FormData) {
   const amount     = parseFloat(formData.get("amount") as string)
   const month      = parseInt(formData.get("month") as string)
   const year       = parseInt(formData.get("year") as string)
+  const isInitial  = formData.get("is_initial") === "true"
 
   if (!date || !name || isNaN(amount) || amount <= 0) throw new Error("Data tidak valid")
 
@@ -105,22 +107,22 @@ export async function updateIncome(id: string, formData: FormData) {
   try {
     await client.query("BEGIN")
 
-    const old = await client.query<{ wallet_id: string | null; amount: string }>(
-      `SELECT wallet_id, amount::text FROM incomes WHERE id = $1 AND user_id = $2`,
+    const old = await client.query<{ wallet_id: string | null; amount: string; is_initial: boolean }>(
+      `SELECT wallet_id, amount::text, is_initial FROM incomes WHERE id = $1 AND user_id = $2`,
       [id, userId],
     )
     if (!old.rows[0]) throw new Error("Data tidak ditemukan")
 
-    const { wallet_id: oldWalletId, amount: oldAmountStr } = old.rows[0]
+    const { wallet_id: oldWalletId, amount: oldAmountStr, is_initial: oldIsInitial } = old.rows[0]
     const oldAmount = parseFloat(oldAmountStr)
 
-    if (oldWalletId) {
+    if (oldWalletId && !oldIsInitial) {
       await client.query(
         `UPDATE wallets SET balance = balance - $1 WHERE id = $2 AND user_id = $3`,
         [oldAmount, oldWalletId, userId],
       )
     }
-    if (walletId) {
+    if (walletId && !isInitial) {
       await client.query(
         `UPDATE wallets SET balance = balance + $1 WHERE id = $2 AND user_id = $3`,
         [amount, walletId, userId],
@@ -128,9 +130,9 @@ export async function updateIncome(id: string, formData: FormData) {
     }
 
     await client.query(
-      `UPDATE incomes SET date=$1, name=$2, category_id=$3, wallet_id=$4, amount=$5
-       WHERE id=$6 AND user_id=$7`,
-      [date, name, categoryId, walletId, amount, id, userId],
+      `UPDATE incomes SET date=$1, name=$2, category_id=$3, wallet_id=$4, amount=$5, is_initial=$6
+       WHERE id=$7 AND user_id=$8`,
+      [date, name, categoryId, walletId, amount, isInitial, id, userId],
     )
     await client.query("COMMIT")
   } catch (e) {
@@ -152,11 +154,11 @@ export async function deleteIncome(id: string, year: string, month: string) {
   try {
     await client.query("BEGIN")
 
-    const res = await client.query<{ wallet_id: string | null; amount: string }>(
-      `SELECT wallet_id, amount::text FROM incomes WHERE id = $1 AND user_id = $2`,
+    const res = await client.query<{ wallet_id: string | null; amount: string; is_initial: boolean }>(
+      `SELECT wallet_id, amount::text, is_initial FROM incomes WHERE id = $1 AND user_id = $2`,
       [id, userId],
     )
-    if (res.rows[0]?.wallet_id) {
+    if (res.rows[0]?.wallet_id && !res.rows[0].is_initial) {
       await client.query(
         `UPDATE wallets SET balance = balance - $1 WHERE id = $2 AND user_id = $3`,
         [parseFloat(res.rows[0].amount), res.rows[0].wallet_id, userId],
@@ -191,6 +193,7 @@ export async function addExpense(formData: FormData) {
   const amount     = parseFloat(formData.get("amount") as string)
   const month      = parseInt(formData.get("month") as string)
   const year       = parseInt(formData.get("year") as string)
+  const isInitial  = formData.get("is_initial") === "true"
 
   if (!date || !name || !needsType || isNaN(amount) || amount <= 0) throw new Error("Data tidak valid")
 
@@ -198,11 +201,11 @@ export async function addExpense(formData: FormData) {
   try {
     await client.query("BEGIN")
     await client.query(
-      `INSERT INTO expenses (user_id, date, name, wallet_id, category_id, needs_type, amount, month, year)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)`,
-      [userId, date, name, walletId, categoryId, needsType, amount, month, year],
+      `INSERT INTO expenses (user_id, date, name, wallet_id, category_id, needs_type, amount, month, year, is_initial)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)`,
+      [userId, date, name, walletId, categoryId, needsType, amount, month, year, isInitial],
     )
-    if (walletId) {
+    if (walletId && !isInitial) {
       await client.query(
         `UPDATE wallets SET balance = balance - $1 WHERE id = $2 AND user_id = $3`,
         [amount, walletId, userId],
@@ -232,6 +235,7 @@ export async function updateExpense(id: string, formData: FormData) {
   const amount     = parseFloat(formData.get("amount") as string)
   const month      = parseInt(formData.get("month") as string)
   const year       = parseInt(formData.get("year") as string)
+  const isInitial  = formData.get("is_initial") === "true"
 
   if (!date || !name || !needsType || isNaN(amount) || amount <= 0) throw new Error("Data tidak valid")
 
@@ -239,22 +243,22 @@ export async function updateExpense(id: string, formData: FormData) {
   try {
     await client.query("BEGIN")
 
-    const old = await client.query<{ wallet_id: string | null; amount: string }>(
-      `SELECT wallet_id, amount::text FROM expenses WHERE id = $1 AND user_id = $2`,
+    const old = await client.query<{ wallet_id: string | null; amount: string; is_initial: boolean }>(
+      `SELECT wallet_id, amount::text, is_initial FROM expenses WHERE id = $1 AND user_id = $2`,
       [id, userId],
     )
     if (!old.rows[0]) throw new Error("Data tidak ditemukan")
 
-    const { wallet_id: oldWalletId, amount: oldAmountStr } = old.rows[0]
+    const { wallet_id: oldWalletId, amount: oldAmountStr, is_initial: oldIsInitial } = old.rows[0]
     const oldAmount = parseFloat(oldAmountStr)
 
-    if (oldWalletId) {
+    if (oldWalletId && !oldIsInitial) {
       await client.query(
         `UPDATE wallets SET balance = balance + $1 WHERE id = $2 AND user_id = $3`,
         [oldAmount, oldWalletId, userId],
       )
     }
-    if (walletId) {
+    if (walletId && !isInitial) {
       await client.query(
         `UPDATE wallets SET balance = balance - $1 WHERE id = $2 AND user_id = $3`,
         [amount, walletId, userId],
@@ -262,9 +266,9 @@ export async function updateExpense(id: string, formData: FormData) {
     }
 
     await client.query(
-      `UPDATE expenses SET date=$1, name=$2, wallet_id=$3, category_id=$4, needs_type=$5, amount=$6
-       WHERE id=$7 AND user_id=$8`,
-      [date, name, walletId, categoryId, needsType, amount, id, userId],
+      `UPDATE expenses SET date=$1, name=$2, wallet_id=$3, category_id=$4, needs_type=$5, amount=$6, is_initial=$7
+       WHERE id=$8 AND user_id=$9`,
+      [date, name, walletId, categoryId, needsType, amount, isInitial, id, userId],
     )
     await client.query("COMMIT")
   } catch (e) {
@@ -286,11 +290,11 @@ export async function deleteExpense(id: string, year: string, month: string) {
   try {
     await client.query("BEGIN")
 
-    const res = await client.query<{ wallet_id: string | null; amount: string }>(
-      `SELECT wallet_id, amount::text FROM expenses WHERE id = $1 AND user_id = $2`,
+    const res = await client.query<{ wallet_id: string | null; amount: string; is_initial: boolean }>(
+      `SELECT wallet_id, amount::text, is_initial FROM expenses WHERE id = $1 AND user_id = $2`,
       [id, userId],
     )
-    if (res.rows[0]?.wallet_id) {
+    if (res.rows[0]?.wallet_id && !res.rows[0].is_initial) {
       await client.query(
         `UPDATE wallets SET balance = balance + $1 WHERE id = $2 AND user_id = $3`,
         [parseFloat(res.rows[0].amount), res.rows[0].wallet_id, userId],

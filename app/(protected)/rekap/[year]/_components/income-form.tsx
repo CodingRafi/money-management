@@ -10,6 +10,7 @@ interface DefaultValues {
   categoryId?: string | null
   walletId?: string | null
   amount?: number
+  isInitial?: boolean
 }
 
 interface Props {
@@ -71,6 +72,20 @@ export function IncomeForm({
             ))}
           </select>
         </div>
+      </div>
+
+      <div className="flex items-center gap-2 pt-1">
+        <input
+          type="checkbox"
+          id="is_initial_income"
+          name="is_initial"
+          value="true"
+          defaultChecked={defaultValues?.isInitial ?? false}
+          className="h-4 w-4 accent-primary"
+        />
+        <label htmlFor="is_initial_income" className="text-sm text-muted-foreground">
+          Data awal (tidak mempengaruhi saldo dompet)
+        </label>
       </div>
 
       <Button type="submit" size="sm">{submitLabel}</Button>

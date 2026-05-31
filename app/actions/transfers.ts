@@ -29,6 +29,7 @@ export async function addTransfer(formData: FormData) {
   const notes        = (formData.get("notes") as string)?.trim() || null
   const month        = parseInt(formData.get("month") as string)
   const year         = parseInt(formData.get("year") as string)
+  const isInitial    = formData.get("is_initial") === "true"
 
   if (!fromWalletId || !toWalletId || !date) throw new Error("Data tidak valid")
   if (isNaN(amount) || amount <= 0) throw new Error("Jumlah transfer harus lebih dari 0")
@@ -38,8 +39,8 @@ export async function addTransfer(formData: FormData) {
   try {
     await client.query("BEGIN")
 
-    const walletsRes = await client.query<{ id: string; is_liquid: boolean; balance: string }>(
-      `SELECT id, is_liquid, balance::text FROM wallets
+    const walletsRes = await client.query<{ id: string; balance: string }>(
+      `SELECT id, balance::text FROM wallets
        WHERE id = ANY($1) AND user_id = $2 AND is_active = true FOR UPDATE`,
       [[fromWalletId, toWalletId], userId],
     )
@@ -48,21 +49,22 @@ export async function addTransfer(formData: FormData) {
     const fromWallet = walletsRes.rows.find((w) => w.id === fromWalletId)!
     const toWallet   = walletsRes.rows.find((w) => w.id === toWalletId)!
 
-    if (!fromWallet.is_liquid) throw new Error("Dompet asal harus berupa dompet liquid")
-    if (!toWallet.is_liquid)   throw new Error("Dompet tujuan harus berupa dompet liquid")
-
-    const fromBalance = parseFloat(fromWallet.balance)
-    if (fromBalance < amount) {
-      throw new Error(`Saldo tidak mencukupi. Tersedia: ${formatRupiah(fromBalance)}`)
+    if (!isInitial) {
+      const fromBalance = parseFloat(fromWallet.balance)
+      if (fromBalance < amount) {
+        throw new Error(`Saldo tidak mencukupi. Tersedia: ${formatRupiah(fromBalance)}`)
+      }
     }
 
     await client.query(
-      `INSERT INTO transfers (user_id, from_wallet_id, to_wallet_id, amount, date, month, year, notes)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8)`,
-      [userId, fromWalletId, toWalletId, amount, date, month, year, notes],
+      `INSERT INTO transfers (user_id, from_wallet_id, to_wallet_id, amount, date, month, year, notes, is_initial)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)`,
+      [userId, fromWalletId, toWalletId, amount, date, month, year, notes, isInitial],
     )
-    await client.query(`UPDATE wallets SET balance = balance - $1 WHERE id = $2`, [amount, fromWalletId])
-    await client.query(`UPDATE wallets SET balance = balance + $1 WHERE id = $2`, [amount, toWalletId])
+    if (!isInitial) {
+      await client.query(`UPDATE wallets SET balance = balance - $1 WHERE id = $2`, [amount, fromWalletId])
+      await client.query(`UPDATE wallets SET balance = balance + $1 WHERE id = $2`, [amount, toWalletId])
+    }
 
     await client.query("COMMIT")
   } catch (e) {
@@ -84,18 +86,20 @@ export async function deleteTransfer(id: string, year: string, month: string) {
   try {
     await client.query("BEGIN")
 
-    const res = await client.query<{ from_wallet_id: string; to_wallet_id: string; amount: string }>(
-      `SELECT from_wallet_id, to_wallet_id, amount::text FROM transfers WHERE id=$1 AND user_id=$2`,
+    const res = await client.query<{ from_wallet_id: string; to_wallet_id: string; amount: string; is_initial: boolean }>(
+      `SELECT from_wallet_id, to_wallet_id, amount::text, is_initial FROM transfers WHERE id=$1 AND user_id=$2`,
       [id, userId],
     )
     if (!res.rows[0]) throw new Error("Transfer tidak ditemukan")
 
-    const { from_wallet_id, to_wallet_id, amount: amountStr } = res.rows[0]
+    const { from_wallet_id, to_wallet_id, amount: amountStr, is_initial } = res.rows[0]
     const amount = parseFloat(amountStr)
 
     await client.query(`DELETE FROM transfers WHERE id=$1 AND user_id=$2`, [id, userId])
-    await client.query(`UPDATE wallets SET balance = balance + $1 WHERE id = $2`, [amount, from_wallet_id])
-    await client.query(`UPDATE wallets SET balance = balance - $1 WHERE id = $2`, [amount, to_wallet_id])
+    if (!is_initial) {
+      await client.query(`UPDATE wallets SET balance = balance + $1 WHERE id = $2`, [amount, from_wallet_id])
+      await client.query(`UPDATE wallets SET balance = balance - $1 WHERE id = $2`, [amount, to_wallet_id])
+    }
 
     await client.query("COMMIT")
   } catch (e) {

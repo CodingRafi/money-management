@@ -8,7 +8,6 @@ const selectClass =
 interface DefaultValues {
   name?: string
   walletId?: string | null
-  unit?: string | null
   notes?: string | null
 }
 
@@ -47,24 +46,14 @@ export function InvestmentAssetForm({
         </div>
       )}
 
-      <div className="grid grid-cols-2 gap-3">
-        <div className="flex flex-col gap-1">
-          <label className="text-sm font-medium">Satuan (opsional)</label>
-          <Input
-            name="unit"
-            defaultValue={defaultValues?.unit ?? ""}
-            placeholder="lot, gram, koin, unit"
-          />
-        </div>
-        <div className="flex flex-col gap-1">
-          <label className="text-sm font-medium">Dompet Investasi (opsional)</label>
-          <select name="wallet_id" defaultValue={defaultValues?.walletId ?? ""} className={selectClass}>
-            <option value="">— Tidak dipilih —</option>
-            {wallets.map((w) => (
-              <option key={w.id} value={w.id}>{w.name}</option>
-            ))}
-          </select>
-        </div>
+      <div className="flex flex-col gap-1">
+        <label className="text-sm font-medium">Dompet Investasi (opsional)</label>
+        <select name="wallet_id" defaultValue={defaultValues?.walletId ?? ""} className={selectClass}>
+          <option value="">— Tidak dipilih —</option>
+          {wallets.map((w) => (
+            <option key={w.id} value={w.id}>{w.name}</option>
+          ))}
+        </select>
       </div>
 
       <div className="flex flex-col gap-1">

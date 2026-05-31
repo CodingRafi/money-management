@@ -1,11 +1,10 @@
 "use client"
 
-import { useState } from "react"
 import { Input } from "@/components/ui/input"
 import { Button } from "@/components/ui/button"
 import Link from "next/link"
 
-type WalletCategory = { id: string; name: string; is_liquid: boolean }
+type WalletCategory = { id: string; name: string }
 
 interface WalletFormProps {
   categories: WalletCategory[]
@@ -13,7 +12,6 @@ interface WalletFormProps {
   defaultValues?: {
     name?: string
     categoryId?: string
-    isLiquid?: boolean
     color?: string
   }
   isEdit?: boolean
@@ -32,16 +30,6 @@ export function WalletForm({
 }: WalletFormProps) {
   const firstCat = categories[0]
   const initCatId = defaultValues?.categoryId ?? firstCat?.id ?? ""
-  const initCat   = categories.find((c) => c.id === initCatId)
-
-  const [isLiquid, setIsLiquid] = useState(
-    defaultValues?.isLiquid ?? initCat?.is_liquid ?? true,
-  )
-
-  const handleCategoryChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
-    const cat = categories.find((c) => c.id === e.target.value)
-    if (cat) setIsLiquid(cat.is_liquid)
-  }
 
   return (
     <form action={action} className="space-y-4">
@@ -61,7 +49,6 @@ export function WalletForm({
           <select
             name="category_id"
             defaultValue={initCatId}
-            onChange={handleCategoryChange}
             className={selectClass}
             required
           >
@@ -73,19 +60,6 @@ export function WalletForm({
           </select>
         </div>
       )}
-
-<div className="flex flex-col gap-1">
-        <label className="text-sm font-medium">Status Likuiditas</label>
-        <input type="hidden" name="is_liquid" value={isLiquid ? "true" : "false"} />
-        <select
-          value={isLiquid ? "true" : "false"}
-          onChange={(e) => setIsLiquid(e.target.value === "true")}
-          className={selectClass}
-        >
-          <option value="true">Liquid (mudah dicairkan)</option>
-          <option value="false">Tidak Liquid</option>
-        </select>
-      </div>
 
       {!isEdit && (
         <div className="flex flex-col gap-1">

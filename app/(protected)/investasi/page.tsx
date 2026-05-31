@@ -4,10 +4,12 @@ import { redirect } from "next/navigation"
 import { pool } from "@/lib/db"
 import { Card, CardContent, CardHeader } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
-import { Plus, Pencil, Trash2, X, Target, TrendingUp } from "lucide-react"
+import { Plus, Pencil, Trash2, X, Target, TrendingUp, ChevronRight } from "lucide-react"
 import Link from "next/link"
 import { GoalForm } from "./_components/goal-form"
+import { AssetForm } from "./_components/asset-form"
 import { createGoal, updateGoal, deleteGoal } from "@/app/actions/investment-goals"
+import { createInvestmentDirect } from "@/app/actions/investments"
 import { canEdit } from "@/lib/licence"
 
 function formatRupiah(n: number | string) {
@@ -20,9 +22,8 @@ type WalletRow = {
   id: string
   name: string
   color: string | null
-  is_liquid: boolean
-  category_name: string
   balance: string
+  category_name: string
 }
 
 type GoalRow = {
@@ -35,11 +36,11 @@ type GoalRow = {
   total_hasil: string
 }
 
-type AssetSummaryRow = {
+type AssetRow = {
   id: string
   name: string
   category_name: string
-  unit: string | null
+  is_liquid: boolean
   total_modal: string
   total_hasil: string
 }
@@ -55,18 +56,19 @@ export default async function InvestasiPage({
 
   const isActive = await canEdit(userId)
 
-  const sp       = await searchParams
-  const showNew  = sp.new === "1" && isActive
-  const editId   = typeof sp.edit === "string" && isActive ? sp.edit : null
+  const sp          = await searchParams
+  const showNew     = sp.new === "1" && isActive
+  const showNewAset = sp.newAset === "1" && isActive
+  const editId      = typeof sp.edit === "string" && isActive ? sp.edit : null
 
-  const [walletsRes, goalsRes, assetsRes, investSummaryRes] = await Promise.all([
+  const [walletsRes, goalsRes, assetsRes, investSummaryRes, categoriesRes] = await Promise.all([
     pool.query<WalletRow>(
-      `SELECT w.id, w.name, w.color, w.is_liquid, w.balance::text,
+      `SELECT w.id, w.name, w.color, w.balance::text,
               wc.name AS category_name
        FROM wallets w
        JOIN wallet_categories wc ON wc.id = w.category_id
        WHERE w.user_id = $1 AND w.is_active = true
-       ORDER BY w.is_liquid DESC, wc.sort_order, w.sort_order`,
+       ORDER BY wc.sort_order, w.sort_order`,
       [userId],
     ),
     pool.query<GoalRow>(
@@ -81,15 +83,15 @@ export default async function InvestasiPage({
        ORDER BY g.sort_order, g.created_at`,
       [userId],
     ),
-    pool.query<AssetSummaryRow>(
-      `SELECT i.id, i.name, ic.name AS category_name, i.unit,
+    pool.query<AssetRow>(
+      `SELECT i.id, i.name, ic.name AS category_name, i.is_liquid,
               COALESCE(SUM(CASE WHEN it.type='BUY'  THEN it.total_amount ELSE 0 END),0)::text AS total_modal,
               COALESCE(SUM(CASE WHEN it.type='SELL' THEN it.total_amount ELSE 0 END),0)::text AS total_hasil
        FROM investments i
        JOIN investment_categories ic ON ic.id = i.category_id
        LEFT JOIN investment_transactions it ON it.investment_id = i.id
        WHERE i.user_id = $1 AND i.is_active = true
-       GROUP BY i.id, i.name, ic.name, ic.sort_order, i.unit, i.created_at
+       GROUP BY i.id, i.name, ic.name, ic.sort_order, i.is_liquid, i.created_at
        ORDER BY ic.sort_order, i.created_at`,
       [userId],
     ),
@@ -102,20 +104,27 @@ export default async function InvestasiPage({
        WHERE i.user_id = $1`,
       [userId],
     ),
+    pool.query<{ id: string; name: string }>(
+      `SELECT id, name FROM investment_categories ORDER BY sort_order, name`,
+    ),
   ])
 
-  const wallets      = walletsRes.rows
-  const goals        = goalsRes.rows
-  const assets       = assetsRes.rows
+  const wallets       = walletsRes.rows
+  const goals         = goalsRes.rows
+  const assets        = assetsRes.rows
   const investSummary = investSummaryRes.rows[0] ?? { total_modal: "0", total_hasil: "0" }
+  const categories    = categoriesRes.rows
 
-  const totalLiquid    = wallets.filter((w) => w.is_liquid).reduce((s, w) => s + Number(w.balance), 0)
-  const totalNonLiquid = wallets.filter((w) => !w.is_liquid).reduce((s, w) => s + Number(w.balance), 0)
-  const totalModal     = Number(investSummary.total_modal)
-  const totalHasil     = Number(investSummary.total_hasil)
-  const modalAktif     = totalModal - totalHasil
-  const totalKekayaan  = totalLiquid + totalNonLiquid + modalAktif
-  const realizedPL     = totalHasil - totalModal  // simplified P/L
+  const totalLiquid   = wallets.reduce((s, w) => s + Number(w.balance), 0)
+  const totalModal    = Number(investSummary.total_modal)
+  const totalHasil    = Number(investSummary.total_hasil)
+  const modalAktif    = totalModal - totalHasil
+  const totalKekayaan = totalLiquid + modalAktif
+
+  const liquidModalAktif    = assets.reduce((s, a) => a.is_liquid    ? s + Number(a.total_modal) - Number(a.total_hasil) : s, 0)
+  const nonLiquidModalAktif = assets.reduce((s, a) => !a.is_liquid   ? s + Number(a.total_modal) - Number(a.total_hasil) : s, 0)
+  const liquidPct    = modalAktif > 0 ? (liquidModalAktif    / modalAktif) * 100 : 0
+  const nonLiquidPct = modalAktif > 0 ? (nonLiquidModalAktif / modalAktif) * 100 : 0
 
   const editGoal = editId ? goals.find((g) => g.id === editId) : null
 
@@ -129,22 +138,19 @@ export default async function InvestasiPage({
         </div>
       </div>
 
-      {/* ── Summary Cards ── */}
-      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-        <Card className="sm:col-span-2">
+      {/* Summary Cards */}
+      <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+        <Card className="sm:col-span-1">
           <CardContent className="p-4">
-            <p className="text-xs text-muted-foreground mb-1">Total Kekayaan Bersih</p>
-            <p className="text-xl font-bold tabular-nums">
-              {formatRupiah(totalKekayaan)}
-            </p>
-            <p className="text-xs text-muted-foreground mt-1">Liquid + Non-liquid + Investasi aktif</p>
+            <p className="text-xs text-muted-foreground mb-1">Total Kekayaan</p>
+            <p className="text-xl font-bold tabular-nums">{formatRupiah(totalKekayaan)}</p>
+            <p className="text-xs text-muted-foreground mt-1">Dompet + Investasi aktif</p>
           </CardContent>
         </Card>
         <Card>
           <CardContent className="p-4">
-            <p className="text-xs text-muted-foreground mb-1">Total Liquid</p>
+            <p className="text-xs text-muted-foreground mb-1">Total Saldo Dompet</p>
             <p className="text-base font-bold text-blue-600 tabular-nums">{formatRupiah(totalLiquid)}</p>
-            <p className="text-xs text-muted-foreground mt-1">Saldo dompet liquid</p>
           </CardContent>
         </Card>
         <Card>
@@ -156,8 +162,37 @@ export default async function InvestasiPage({
         </Card>
       </div>
 
+      {modalAktif > 0 && (
+        <div className="grid grid-cols-2 gap-3">
+          <Card>
+            <CardContent className="p-4">
+              <div className="flex items-center justify-between mb-1">
+                <p className="text-xs text-muted-foreground">Liquid</p>
+                <span className="text-xs font-semibold text-emerald-600">{liquidPct.toFixed(1)}%</span>
+              </div>
+              <p className="text-base font-bold text-emerald-600 tabular-nums">{formatRupiah(liquidModalAktif)}</p>
+              <div className="mt-2 h-1.5 rounded-full bg-muted overflow-hidden">
+                <div className="h-full rounded-full bg-emerald-500" style={{ width: `${liquidPct}%` }} />
+              </div>
+            </CardContent>
+          </Card>
+          <Card>
+            <CardContent className="p-4">
+              <div className="flex items-center justify-between mb-1">
+                <p className="text-xs text-muted-foreground">Not Liquid</p>
+                <span className="text-xs font-semibold text-amber-600">{nonLiquidPct.toFixed(1)}%</span>
+              </div>
+              <p className="text-base font-bold text-amber-600 tabular-nums">{formatRupiah(nonLiquidModalAktif)}</p>
+              <div className="mt-2 h-1.5 rounded-full bg-muted overflow-hidden">
+                <div className="h-full rounded-full bg-amber-500" style={{ width: `${nonLiquidPct}%` }} />
+              </div>
+            </CardContent>
+          </Card>
+        </div>
+      )}
+
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        {/* ── Dompet & Saldo ── */}
+        {/* Dompet & Saldo */}
         <div className="space-y-3">
           <div className="flex items-center justify-between">
             <h2 className="text-base font-semibold">Saldo Dompet</h2>
@@ -165,7 +200,6 @@ export default async function InvestasiPage({
               <Link href="/dompet">Kelola Dompet</Link>
             </Button>
           </div>
-
           {wallets.length === 0 ? (
             <Card>
               <CardContent className="py-8 text-center text-sm text-muted-foreground">
@@ -196,59 +230,94 @@ export default async function InvestasiPage({
           )}
         </div>
 
-        {/* ── Semua Aset Investasi ── */}
+        {/* Semua Aset Investasi */}
         <div className="space-y-3">
-          <h2 className="text-base font-semibold">Semua Aset</h2>
-          {assets.length === 0 ? (
+          <div className="flex items-center justify-between">
+            <h2 className="text-base font-semibold">Semua Aset</h2>
+            {!showNewAset && isActive && (
+              <Button asChild size="sm">
+                <Link href="?newAset=1">
+                  <Plus className="h-4 w-4 mr-1" />Tambah Aset
+                </Link>
+              </Button>
+            )}
+          </div>
+
+          {showNewAset && (
+            <Card>
+              <CardHeader className="pb-2 pt-4 px-4">
+                <div className="flex items-center justify-between">
+                  <p className="text-sm font-medium">Tambah Aset Baru</p>
+                  <Button asChild variant="ghost" size="icon" className="h-7 w-7">
+                    <Link href="/investasi"><X className="h-4 w-4" /></Link>
+                  </Button>
+                </div>
+              </CardHeader>
+              <CardContent className="px-4 pb-4">
+                <AssetForm
+                  categories={categories}
+                  wallets={wallets}
+                  action={createInvestmentDirect}
+                  cancelHref="/investasi"
+                />
+              </CardContent>
+            </Card>
+          )}
+
+          {assets.length === 0 && !showNewAset ? (
             <Card>
               <CardContent className="py-8 text-center text-sm text-muted-foreground">
                 Belum ada aset investasi.
+                {isActive && (
+                  <> <Link href="?newAset=1" className="text-primary underline underline-offset-2">Tambah sekarang</Link>.</>
+                )}
               </CardContent>
             </Card>
-          ) : (
+          ) : assets.length > 0 && (
             <Card>
               <CardContent className="p-0 divide-y">
                 {assets.map((a) => {
                   const modalAktifAset = Number(a.total_modal) - Number(a.total_hasil)
                   const pl = Number(a.total_hasil) - Number(a.total_modal)
                   return (
-                    <div key={a.id} className="flex items-center justify-between px-4 py-3 gap-3">
+                    <Link
+                      key={a.id}
+                      href={`/investasi/aset/${a.id}`}
+                      className="flex items-center justify-between px-4 py-3 gap-3 hover:bg-muted/40 transition-colors"
+                    >
                       <div className="min-w-0 flex-1">
                         <p className="font-medium text-sm truncate">{a.name}</p>
-                        <p className="text-xs text-muted-foreground">{a.category_name}{a.unit ? ` · ${a.unit}` : ""}</p>
-                      </div>
-                      <div className="text-right shrink-0">
-                        <p className="text-sm font-semibold tabular-nums text-emerald-600">
-                          {formatRupiah(modalAktifAset)}
+                        <p className="text-xs text-muted-foreground">
+                          {a.category_name}
                         </p>
-                        {Number(a.total_hasil) > 0 && (
-                          <p className={`text-xs tabular-nums ${pl >= 0 ? "text-emerald-600" : "text-red-600"}`}>
-                            P/L: {pl >= 0 ? "+" : ""}{formatRupiah(pl)}
-                          </p>
-                        )}
                       </div>
-                    </div>
+                      <div className="flex items-center gap-2 shrink-0">
+                        <div className="text-right">
+                          <p className="text-sm font-semibold tabular-nums text-emerald-600">
+                            {formatRupiah(modalAktifAset)}
+                          </p>
+                          {Number(a.total_hasil) > 0 && (
+                            <p className={`text-xs tabular-nums ${pl >= 0 ? "text-emerald-600" : "text-red-600"}`}>
+                              P/L: {pl >= 0 ? "+" : ""}{formatRupiah(pl)}
+                            </p>
+                          )}
+                        </div>
+                        <ChevronRight className="h-4 w-4 text-muted-foreground" />
+                      </div>
+                    </Link>
                   )
                 })}
                 <div className="flex items-center justify-between px-4 py-2.5 bg-muted/30">
                   <p className="text-xs font-medium text-muted-foreground">Total Modal Aktif</p>
                   <p className="text-sm font-bold tabular-nums text-emerald-600">{formatRupiah(modalAktif)}</p>
                 </div>
-                {totalHasil > 0 && (
-                  <div className="flex items-center justify-between px-4 py-2.5 bg-muted/20">
-                    <p className="text-xs font-medium text-muted-foreground">Total P/L Direalisasi</p>
-                    <p className={`text-sm font-bold tabular-nums ${realizedPL >= 0 ? "text-emerald-600" : "text-red-600"}`}>
-                      {realizedPL >= 0 ? "+" : ""}{formatRupiah(realizedPL)}
-                    </p>
-                  </div>
-                )}
               </CardContent>
             </Card>
           )}
         </div>
       </div>
 
-      {/* ── Kantong Investasi ── */}
+      {/* Kantong Investasi */}
       <div className="space-y-3">
         <div className="flex items-center justify-between">
           <h2 className="text-base font-semibold">Kantong Investasi</h2>
@@ -261,7 +330,6 @@ export default async function InvestasiPage({
           )}
         </div>
 
-        {/* Create form */}
         {showNew && (
           <Card>
             <CardHeader className="pb-2 pt-4 px-4">
@@ -373,10 +441,7 @@ export default async function InvestasiPage({
                         <div className="h-2 rounded-full bg-muted overflow-hidden">
                           <div
                             className="h-full rounded-full transition-all"
-                            style={{
-                              width: `${progress}%`,
-                              backgroundColor: g.color ?? "#3b82f6",
-                            }}
+                            style={{ width: `${progress}%`, backgroundColor: g.color ?? "#3b82f6" }}
                           />
                         </div>
                         {g.target_date && target && aktif < target && (

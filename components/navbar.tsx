@@ -11,7 +11,7 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
-import { LogOut, Shield, Wallet, FolderOpen, TrendingUp, LayoutDashboard } from "lucide-react"
+import { LogOut, Shield, Wallet, FolderOpen, TrendingUp, LayoutDashboard, Banknote } from "lucide-react"
 import Link from "next/link"
 import { usePathname } from "next/navigation"
 
@@ -26,9 +26,10 @@ interface NavbarProps {
 
 const NAV_LINKS = [
   { href: "/",         label: "Dashboard", icon: LayoutDashboard },
-  { href: "/rekap",    label: "Rekap",     icon: FolderOpen },
+  { href: "/rekap",    label: "Cashflow",  icon: FolderOpen },
   { href: "/dompet",   label: "Dompet",    icon: Wallet },
   { href: "/investasi",label: "Investasi", icon: TrendingUp },
+  { href: "/pinjaman", label: "Pinjaman",  icon: Banknote },
 ]
 
 export function Navbar({ user, isAdmin }: NavbarProps) {
