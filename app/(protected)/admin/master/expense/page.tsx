@@ -54,7 +54,7 @@ export default async function MasterExpensePage({
       <div>
         <h1 className="text-2xl font-bold">Kategori Pengeluaran Default</h1>
         <p className="text-sm text-muted-foreground">
-          Tipe pengeluaran tetap: <strong>TETAP · FLEKSIBEL · MENABUNG</strong>. Kelola kategori di dalam setiap tipe.
+          Tipe pengeluaran tetap: <strong>TETAP · FLEKSIBEL</strong>. Kelola kategori di dalam setiap tipe.
         </p>
       </div>
 

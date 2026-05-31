@@ -1,9 +1,8 @@
 import { pool } from "./db"
 
 const DEFAULT_TYPE_ALLOCATIONS: Record<string, number> = {
-  TETAP:     40,
-  FLEKSIBEL: 20,
-  MENABUNG:  40,
+  TETAP:     50,
+  FLEKSIBEL: 30,
 }
 
 export async function seedUserCategories(userId: string): Promise<void> {

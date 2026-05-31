@@ -5,6 +5,7 @@ import { headers } from "next/headers"
 import { redirect } from "next/navigation"
 import { pool } from "@/lib/db"
 import { ensureYearlyCategories } from "@/lib/ensureYearlyCategories"
+import { canEdit } from "@/lib/licence"
 import { Button } from "@/components/ui/button"
 import { ArrowLeft } from "lucide-react"
 import Link from "next/link"
@@ -34,6 +35,7 @@ export default async function KategoriBudgetPage({
     await ensureYearlyCategories(userId, year)
   }
 
+  const isActive = await canEdit(userId)
   const sp = await searchParams
   const ktab       = sp.ktab === "expense" ? "expense" : "income"
   const editKIncome  = typeof sp.edit_kincome  === "string" ? sp.edit_kincome  : null
@@ -107,9 +109,10 @@ export default async function KategoriBudgetPage({
         allocTotal={katAllocTotal}
         allocOk={katAllocOk}
         activeKTab={ktab}
-        editKIncome={editKIncome}
-        editKExpense={editKExpense}
+        editKIncome={isActive ? editKIncome : null}
+        editKExpense={isActive ? editKExpense : null}
         allocError={allocError}
+        isActive={isActive}
       />
     </div>
   )

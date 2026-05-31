@@ -42,13 +42,14 @@ type Props = {
   editKIncome: string | null
   editKExpense: string | null
   allocError: boolean
+  isActive: boolean
 }
 
 export function KategoriBudgetTab({
   year, month, base,
   incomeCategories, types, byType,
   allocTotal, allocOk,
-  activeKTab, editKIncome, editKExpense, allocError,
+  activeKTab, editKIncome, editKExpense, allocError, isActive,
 }: Props) {
   const katBase        = base
   const backUrlIncome  = `${katBase}?ktab=income`
@@ -102,21 +103,23 @@ export function KategoriBudgetTab({
             </Card>
           )}
 
-          <Card>
-            <CardHeader className="pb-3">
-              <CardTitle className="text-sm font-medium">Tambah Kategori</CardTitle>
-            </CardHeader>
-            <CardContent>
-              <form action={createUserIncomeCategory} className="flex flex-wrap gap-3">
-                <input type="hidden" name="year" value={year} />
-                <Input name="name" placeholder="Nama kategori" required className="max-w-xs" />
-                <Input name="color" placeholder="Warna hex (opsional)" className="w-40" />
-                <Button type="submit" size="sm">
-                  <Plus className="h-3.5 w-3.5 mr-1" />Tambah
-                </Button>
-              </form>
-            </CardContent>
-          </Card>
+          {isActive && (
+            <Card>
+              <CardHeader className="pb-3">
+                <CardTitle className="text-sm font-medium">Tambah Kategori</CardTitle>
+              </CardHeader>
+              <CardContent>
+                <form action={createUserIncomeCategory} className="flex flex-wrap gap-3">
+                  <input type="hidden" name="year" value={year} />
+                  <Input name="name" placeholder="Nama kategori" required className="max-w-xs" />
+                  <Input name="color" placeholder="Warna hex (opsional)" className="w-40" />
+                  <Button type="submit" size="sm">
+                    <Plus className="h-3.5 w-3.5 mr-1" />Tambah
+                  </Button>
+                </form>
+              </CardContent>
+            </Card>
+          )}
 
           <div className="space-y-2">
             {incomeCategories.map((cat) =>
@@ -146,21 +149,23 @@ export function KategoriBudgetTab({
                     <p className="font-medium">{cat.name}</p>
                     {cat.is_hidden && <Badge variant="outline" className="text-xs">Disembunyikan</Badge>}
                   </div>
-                  <div className="flex items-center gap-1">
-                    <Button asChild variant="ghost" size="icon" className="h-8 w-8">
-                      <Link href={`${backUrlIncome}&edit_kincome=${cat.id}`}><Pencil className="h-4 w-4" /></Link>
-                    </Button>
-                    <form action={toggleUserIncomeCategoryVisibility.bind(null, cat.id)}>
-                      <Button type="submit" variant="ghost" size="icon" className="h-8 w-8" title={cat.is_hidden ? "Tampilkan" : "Sembunyikan"}>
-                        {cat.is_hidden ? <Eye className="h-4 w-4" /> : <EyeOff className="h-4 w-4 text-muted-foreground" />}
+                  {isActive && (
+                    <div className="flex items-center gap-1">
+                      <Button asChild variant="ghost" size="icon" className="h-8 w-8">
+                        <Link href={`${backUrlIncome}&edit_kincome=${cat.id}`}><Pencil className="h-4 w-4" /></Link>
                       </Button>
-                    </form>
-                    <form action={deleteUserIncomeCategory.bind(null, cat.id)}>
-                      <Button type="submit" variant="ghost" size="icon" className="h-8 w-8 text-destructive hover:text-destructive">
-                        <Trash2 className="h-4 w-4" />
-                      </Button>
-                    </form>
-                  </div>
+                      <form action={toggleUserIncomeCategoryVisibility.bind(null, cat.id)}>
+                        <Button type="submit" variant="ghost" size="icon" className="h-8 w-8" title={cat.is_hidden ? "Tampilkan" : "Sembunyikan"}>
+                          {cat.is_hidden ? <Eye className="h-4 w-4" /> : <EyeOff className="h-4 w-4 text-muted-foreground" />}
+                        </Button>
+                      </form>
+                      <form action={deleteUserIncomeCategory.bind(null, cat.id)}>
+                        <Button type="submit" variant="ghost" size="icon" className="h-8 w-8 text-destructive hover:text-destructive">
+                          <Trash2 className="h-4 w-4" />
+                        </Button>
+                      </form>
+                    </div>
+                  )}
                 </div>
               )
             )}
@@ -194,7 +199,7 @@ export function KategoriBudgetTab({
                 </p>
               </CardHeader>
               <CardContent>
-                <form action={setTypeAllocations} className="space-y-3">
+                <form action={isActive ? setTypeAllocations : undefined} className="space-y-3">
                   <input type="hidden" name="year" value={year} />
                   <input type="hidden" name="back_url" value={backUrlExpense} />
                   {types.map((type, i) => (
@@ -213,7 +218,7 @@ export function KategoriBudgetTab({
                   {allocError && (
                     <p className="text-sm text-destructive">Total alokasi harus tepat 100%.</p>
                   )}
-                  <Button type="submit" size="sm" className="mt-1">Simpan Alokasi</Button>
+                  {isActive && <Button type="submit" size="sm" className="mt-1">Simpan Alokasi</Button>}
                 </form>
               </CardContent>
             </Card>
@@ -268,7 +273,7 @@ export function KategoriBudgetTab({
                           {cat.is_hidden && <Badge variant="outline" className="text-xs shrink-0">Disembunyikan</Badge>}
                         </div>
 
-                        {!isFleksibel && (
+                        {!isFleksibel && isActive && (
                           <form action={setBudget} className="flex items-center gap-1.5 shrink-0">
                             <input type="hidden" name="category_id" value={cat.id} />
                             <input type="hidden" name="month" value={month} />
@@ -286,35 +291,39 @@ export function KategoriBudgetTab({
                           </form>
                         )}
 
-                        <div className="flex items-center gap-0.5 shrink-0">
-                          <Button asChild variant="ghost" size="icon" className="h-7 w-7">
-                            <Link href={`${backUrlExpense}&edit_kexpense=${cat.id}`}>
-                              <Pencil className="h-3.5 w-3.5" />
-                            </Link>
-                          </Button>
-                          <form action={toggleUserExpenseCategoryVisibility.bind(null, cat.id)}>
-                            <Button type="submit" variant="ghost" size="icon" className="h-7 w-7" title={cat.is_hidden ? "Tampilkan" : "Sembunyikan"}>
-                              {cat.is_hidden ? <Eye className="h-3.5 w-3.5" /> : <EyeOff className="h-3.5 w-3.5 text-muted-foreground" />}
+                        {isActive && (
+                          <div className="flex items-center gap-0.5 shrink-0">
+                            <Button asChild variant="ghost" size="icon" className="h-7 w-7">
+                              <Link href={`${backUrlExpense}&edit_kexpense=${cat.id}`}>
+                                <Pencil className="h-3.5 w-3.5" />
+                              </Link>
                             </Button>
-                          </form>
-                          <form action={deleteUserExpenseCategory.bind(null, cat.id)}>
-                            <Button type="submit" variant="ghost" size="icon" className="h-7 w-7 text-destructive hover:text-destructive">
-                              <Trash2 className="h-3.5 w-3.5" />
-                            </Button>
-                          </form>
-                        </div>
+                            <form action={toggleUserExpenseCategoryVisibility.bind(null, cat.id)}>
+                              <Button type="submit" variant="ghost" size="icon" className="h-7 w-7" title={cat.is_hidden ? "Tampilkan" : "Sembunyikan"}>
+                                {cat.is_hidden ? <Eye className="h-3.5 w-3.5" /> : <EyeOff className="h-3.5 w-3.5 text-muted-foreground" />}
+                              </Button>
+                            </form>
+                            <form action={deleteUserExpenseCategory.bind(null, cat.id)}>
+                              <Button type="submit" variant="ghost" size="icon" className="h-7 w-7 text-destructive hover:text-destructive">
+                                <Trash2 className="h-3.5 w-3.5" />
+                              </Button>
+                            </form>
+                          </div>
+                        )}
                       </div>
                     )
                   )}
 
-                  <form action={createUserExpenseCategory} className="flex items-center gap-2 border-t pt-3">
-                    <input type="hidden" name="type_id" value={type.id} />
-                    <input type="hidden" name="year" value={year} />
-                    <Input name="name" placeholder="Tambah kategori baru..." required className="h-8 flex-1 text-sm" />
-                    <Button type="submit" size="sm" className="h-8 shrink-0">
-                      <Plus className="h-3.5 w-3.5" />
-                    </Button>
-                  </form>
+                  {isActive && (
+                    <form action={createUserExpenseCategory} className="flex items-center gap-2 border-t pt-3">
+                      <input type="hidden" name="type_id" value={type.id} />
+                      <input type="hidden" name="year" value={year} />
+                      <Input name="name" placeholder="Tambah kategori baru..." required className="h-8 flex-1 text-sm" />
+                      <Button type="submit" size="sm" className="h-8 shrink-0">
+                        <Plus className="h-3.5 w-3.5" />
+                      </Button>
+                    </form>
+                  )}
                 </CardContent>
               </Card>
             )

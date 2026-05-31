@@ -2,7 +2,6 @@ import { auth } from "@/lib/auth"
 import { headers } from "next/headers"
 import { redirect } from "next/navigation"
 import { pool } from "@/lib/db"
-import { Button } from "@/components/ui/button"
 import { Plus } from "lucide-react"
 import Link from "next/link"
 
@@ -38,16 +37,8 @@ export default async function RekapPage() {
   return (
     <div className="max-w-2xl space-y-6">
       {/* Header */}
-      <div className="flex items-center justify-between">
+      <div>
         <h1 className="text-xl font-semibold">Manage Keuangan</h1>
-        <div className="flex items-center gap-2">
-          <Button asChild variant="outline" size="sm">
-            <Link href="/dompet">Dompet</Link>
-          </Button>
-          <Button asChild variant="outline" size="sm">
-            <Link href={`/rekap/${new Date().getFullYear()}?view=kategori`}>Kategori &amp; Budget</Link>
-          </Button>
-        </div>
       </div>
 
       {/* Year list */}

@@ -5,10 +5,18 @@ import { pool } from "@/lib/db"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
-import { Plus, Pencil, Trash2, X, Wallet } from "lucide-react"
+import { Plus, Pencil, Trash2, X, Wallet, SlidersHorizontal } from "lucide-react"
 import Link from "next/link"
+import { Input } from "@/components/ui/input"
 import { WalletForm } from "./_components/wallet-form"
-import { createWallet, updateWallet, deleteWallet } from "@/app/actions/wallets"
+import { createWallet, updateWallet, deleteWallet, adjustBalance } from "@/app/actions/wallets"
+import { canEdit } from "@/lib/licence"
+
+function formatRupiah(n: number | string) {
+  return new Intl.NumberFormat("id-ID", {
+    style: "currency", currency: "IDR", maximumFractionDigits: 0,
+  }).format(Number(n))
+}
 
 type WalletCategory = { id: string; name: string; is_liquid: boolean }
 type WalletRow = {
@@ -19,6 +27,7 @@ type WalletRow = {
   name: string
   is_liquid: boolean
   color: string | null
+  balance: string
 }
 
 export default async function DompetPage({
@@ -30,9 +39,12 @@ export default async function DompetPage({
   if (!session) redirect("/login")
   const userId = session.user.id
 
-  const sp      = await searchParams
-  const showNew = sp.new === "1"
-  const editId  = typeof sp.edit === "string" ? sp.edit : null
+  const isActive = await canEdit(userId)
+
+  const sp        = await searchParams
+  const showNew   = sp.new === "1" && isActive
+  const editId    = typeof sp.edit === "string" && isActive ? sp.edit : null
+  const adjustId  = typeof sp.adjust === "string" && isActive ? sp.adjust : null
 
   const [categoriesRes, walletsRes] = await Promise.all([
     pool.query<WalletCategory>(
@@ -40,7 +52,7 @@ export default async function DompetPage({
     ),
     pool.query<WalletRow>(
       `SELECT w.id, w.category_id, wc.name AS category_name, wc.is_liquid AS category_is_liquid,
-              w.name, w.is_liquid, w.color
+              w.name, w.is_liquid, w.color, w.balance::text
        FROM wallets w
        JOIN wallet_categories wc ON wc.id = w.category_id
        WHERE w.user_id = $1 AND w.is_active = true
@@ -52,15 +64,16 @@ export default async function DompetPage({
   const categories = categoriesRes.rows
   const wallets    = walletsRes.rows
 
-  // Group by category_id
   const byCategory = wallets.reduce<Record<string, WalletRow[]>>((acc, w) => {
     acc[w.category_id] ??= []
     acc[w.category_id].push(w)
     return acc
   }, {})
 
-  // Only show categories that have at least one wallet
   const usedCats = categories.filter((c) => byCategory[c.id]?.length)
+
+  const totalLiquid    = wallets.filter((w) => w.is_liquid).reduce((s, w) => s + Number(w.balance), 0)
+  const totalNonLiquid = wallets.filter((w) => !w.is_liquid).reduce((s, w) => s + Number(w.balance), 0)
 
   return (
     <div className="space-y-6 max-w-3xl">
@@ -69,7 +82,7 @@ export default async function DompetPage({
           <h1 className="text-2xl font-bold">Dompet</h1>
           <p className="text-sm text-muted-foreground">Kelola semua akun keuangan kamu</p>
         </div>
-        {!showNew && (
+        {!showNew && isActive && (
           <Button asChild size="sm">
             <Link href="?new=1">
               <Plus className="h-4 w-4 mr-1" />
@@ -78,6 +91,28 @@ export default async function DompetPage({
           </Button>
         )}
       </div>
+
+      {/* Balance summary */}
+      {wallets.length > 0 && (
+        <div className="grid grid-cols-2 gap-3">
+          <Card>
+            <CardContent className="p-4">
+              <p className="text-xs text-muted-foreground mb-1">Total Saldo Liquid</p>
+              <p className={`text-lg font-bold tabular-nums ${totalLiquid < 0 ? "text-red-600" : "text-blue-600"}`}>
+                {formatRupiah(totalLiquid)}
+              </p>
+            </CardContent>
+          </Card>
+          <Card>
+            <CardContent className="p-4">
+              <p className="text-xs text-muted-foreground mb-1">Total Non-liquid</p>
+              <p className="text-lg font-bold tabular-nums text-muted-foreground">
+                {formatRupiah(totalNonLiquid)}
+              </p>
+            </CardContent>
+          </Card>
+        </div>
+      )}
 
       {/* Add form */}
       {showNew && (
@@ -111,83 +146,130 @@ export default async function DompetPage({
       )}
 
       {/* Wallet list grouped by category */}
-      {usedCats.map((cat) => (
-        <Card key={cat.id}>
-          <CardHeader className="pb-3">
-            <div className="flex items-center gap-2">
-              <CardTitle className="text-sm font-semibold uppercase tracking-wide text-muted-foreground">
-                {cat.name}
-              </CardTitle>
-              <Badge variant={cat.is_liquid ? "default" : "secondary"} className="text-xs">
-                {cat.is_liquid ? "Liquid" : "Tidak Liquid"}
-              </Badge>
-            </div>
-          </CardHeader>
-          <CardContent className="space-y-2">
-            {(byCategory[cat.id] ?? []).map((w) =>
-              editId === w.id ? (
-                <div
-                  key={w.id}
-                  className="rounded-lg border border-primary/40 bg-muted/30 p-4"
-                >
-                  <WalletForm
-                    categories={categories}
-                    action={updateWallet.bind(null, w.id)}
-                    defaultValues={{
-                      name:     w.name,
-                      categoryId: w.category_id,
-                      isLiquid: w.is_liquid,
-                      color:    w.color ?? undefined,
-                    }}
-                    isEdit
-                    cancelHref="/dompet"
-                  />
+      {usedCats.map((cat) => {
+        const catWallets = byCategory[cat.id] ?? []
+        const catTotal   = catWallets.reduce((s, w) => s + Number(w.balance), 0)
+        return (
+          <Card key={cat.id}>
+            <CardHeader className="pb-3">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <CardTitle className="text-sm font-semibold uppercase tracking-wide text-muted-foreground">
+                    {cat.name}
+                  </CardTitle>
+                  <Badge variant={cat.is_liquid ? "default" : "secondary"} className="text-xs">
+                    {cat.is_liquid ? "Liquid" : "Tidak Liquid"}
+                  </Badge>
                 </div>
-              ) : (
-                <div
-                  key={w.id}
-                  className="flex items-center justify-between rounded-lg border px-4 py-3"
-                >
-                  <div className="flex min-w-0 items-center gap-3">
-                    {w.color && (
-                      <span
-                        className="h-3 w-3 shrink-0 rounded-full border"
-                        style={{ backgroundColor: w.color }}
-                      />
-                    )}
-                    <p className="truncate font-medium">{w.name}</p>
-                    {w.is_liquid !== cat.is_liquid && (
-                      <Badge
-                        variant={w.is_liquid ? "default" : "outline"}
-                        className="shrink-0 text-xs"
-                      >
-                        {w.is_liquid ? "Liquid" : "Tidak Liquid"}
-                      </Badge>
-                    )}
+                <p className={`text-sm font-bold tabular-nums ${catTotal < 0 ? "text-red-600" : "text-foreground"}`}>
+                  {formatRupiah(catTotal)}
+                </p>
+              </div>
+            </CardHeader>
+            <CardContent className="space-y-2">
+              {catWallets.map((w) =>
+                editId === w.id ? (
+                  <div
+                    key={w.id}
+                    className="rounded-lg border border-primary/40 bg-muted/30 p-4"
+                  >
+                    <WalletForm
+                      categories={categories}
+                      action={updateWallet.bind(null, w.id)}
+                      defaultValues={{
+                        name:       w.name,
+                        categoryId: w.category_id,
+                        isLiquid:   w.is_liquid,
+                        color:      w.color ?? undefined,
+                      }}
+                      isEdit
+                      cancelHref="/dompet"
+                    />
                   </div>
-                  <div className="flex shrink-0 items-center gap-1">
-                    <Button asChild variant="ghost" size="icon" className="h-8 w-8">
-                      <Link href={`?edit=${w.id}`}>
-                        <Pencil className="h-4 w-4" />
-                      </Link>
-                    </Button>
-                    <form action={deleteWallet.bind(null, w.id)}>
-                      <Button
-                        type="submit"
-                        variant="ghost"
-                        size="icon"
-                        className="h-8 w-8 text-destructive hover:text-destructive"
-                      >
-                        <Trash2 className="h-4 w-4" />
+                ) : adjustId === w.id ? (
+                  <div key={w.id} className="rounded-lg border border-amber-400/50 bg-amber-50/50 dark:bg-amber-950/20 p-4 space-y-3">
+                    <div>
+                      <p className="text-sm font-medium">{w.name} — Sesuaikan Saldo</p>
+                      <p className="text-xs text-muted-foreground mt-0.5">
+                        Saldo tercatat: <span className="font-medium">{formatRupiah(w.balance)}</span>.
+                        Masukkan saldo aktual sesuai rekening/dompet fisik.
+                      </p>
+                    </div>
+                    <form action={adjustBalance.bind(null, w.id)} className="flex items-center gap-2">
+                      <Input
+                        name="target_balance"
+                        type="number"
+                        step="any"
+                        defaultValue={Number(w.balance)}
+                        className="h-8 max-w-[180px] text-sm"
+                        autoFocus
+                      />
+                      <Button type="submit" size="sm" className="h-8">Simpan</Button>
+                      <Button asChild variant="ghost" size="sm" className="h-8">
+                        <Link href="/dompet">Batal</Link>
                       </Button>
                     </form>
                   </div>
-                </div>
-              ),
-            )}
-          </CardContent>
-        </Card>
-      ))}
+                ) : (
+                  <div
+                    key={w.id}
+                    className="flex items-center justify-between rounded-lg border px-4 py-3"
+                  >
+                    <div className="flex min-w-0 items-center gap-3">
+                      {w.color && (
+                        <span
+                          className="h-3 w-3 shrink-0 rounded-full border"
+                          style={{ backgroundColor: w.color }}
+                        />
+                      )}
+                      <div className="min-w-0">
+                        <p className="truncate font-medium">{w.name}</p>
+                        {w.is_liquid !== cat.is_liquid && (
+                          <Badge
+                            variant={w.is_liquid ? "default" : "outline"}
+                            className="shrink-0 text-xs mt-0.5"
+                          >
+                            {w.is_liquid ? "Liquid" : "Tidak Liquid"}
+                          </Badge>
+                        )}
+                      </div>
+                    </div>
+                    <div className="flex shrink-0 items-center gap-3">
+                      <p className={`tabular-nums font-semibold ${Number(w.balance) < 0 ? "text-red-600" : "text-foreground"}`}>
+                        {formatRupiah(w.balance)}
+                      </p>
+                      {isActive && (
+                      <div className="flex items-center gap-1">
+                        <Button asChild variant="ghost" size="icon" className="h-8 w-8" title="Sesuaikan saldo">
+                          <Link href={`?adjust=${w.id}`}>
+                            <SlidersHorizontal className="h-4 w-4" />
+                          </Link>
+                        </Button>
+                        <Button asChild variant="ghost" size="icon" className="h-8 w-8">
+                          <Link href={`?edit=${w.id}`}>
+                            <Pencil className="h-4 w-4" />
+                          </Link>
+                        </Button>
+                        <form action={deleteWallet.bind(null, w.id)}>
+                          <Button
+                            type="submit"
+                            variant="ghost"
+                            size="icon"
+                            className="h-8 w-8 text-destructive hover:text-destructive"
+                          >
+                            <Trash2 className="h-4 w-4" />
+                          </Button>
+                        </form>
+                      </div>
+                      )}
+                    </div>
+                  </div>
+                ),
+              )}
+            </CardContent>
+          </Card>
+        )
+      })}
     </div>
   )
 }

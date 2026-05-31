@@ -20,6 +20,10 @@ const migrations = [
   "013_yearly_categories.sql",
   "014_investments.sql",
   "015_transfers.sql",
+  "016_wallet_balance_investment_goals.sql",
+  "017_remove_menabung_type.sql",
+  "018_wallet_initial_balance.sql",
+  "019_feature_permissions.sql",
 ]
 
 // Postgres error codes that mean "this object already exists" — safe to skip

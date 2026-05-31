@@ -10,13 +10,14 @@ const selectClass =
 
 interface Props {
   wallets: { id: string; name: string }[]
+  goals: { id: string; name: string; color: string | null }[]
   action: (formData: FormData) => Promise<void>
   cancelHref: string
   year: number
   unit?: string | null
 }
 
-export function InvestmentTransactionForm({ wallets, action, cancelHref, year, unit }: Props) {
+export function InvestmentTransactionForm({ wallets, goals, action, cancelHref, year, unit }: Props) {
   const [type, setType]               = useState<"BUY" | "SELL">("BUY")
   const [quantity, setQuantity]       = useState("")
   const [pricePerUnit, setPricePerUnit] = useState("")
@@ -64,6 +65,26 @@ export function InvestmentTransactionForm({ wallets, action, cancelHref, year, u
             SELL — Jual
           </button>
         </div>
+      </div>
+
+      {/* Kantong */}
+      <div className="flex flex-col gap-1">
+        <label className="text-sm font-medium">Kantong Investasi</label>
+        {goals.length === 0 ? (
+          <div className="rounded-md border border-input bg-muted/30 px-3 py-2.5 text-sm text-muted-foreground">
+            Belum ada kantong.{" "}
+            <Link href="/investasi?new=1" className="text-primary underline underline-offset-2">
+              Buat kantong dulu
+            </Link>
+          </div>
+        ) : (
+          <select name="goal_id" className={selectClass}>
+            <option value="">— Tanpa kantong —</option>
+            {goals.map((g) => (
+              <option key={g.id} value={g.id}>{g.name}</option>
+            ))}
+          </select>
+        )}
       </div>
 
       <div className="grid grid-cols-2 gap-3">

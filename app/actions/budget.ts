@@ -5,6 +5,7 @@ import { revalidatePath } from "next/cache"
 import { redirect } from "next/navigation"
 import { auth } from "@/lib/auth"
 import { pool } from "@/lib/db"
+import { requirePermission } from "@/lib/licence"
 
 async function requireUser() {
   const session = await auth.api.getSession({ headers: await headers() })
@@ -14,6 +15,9 @@ async function requireUser() {
 
 export async function setBudget(formData: FormData) {
   const session    = await requireUser()
+  const userId     = session.user.id
+  await requirePermission(userId, "change_category")
+
   const categoryId = formData.get("category_id") as string
   const pctRaw     = formData.get("percentage") as string
   const month      = parseInt(formData.get("month") as string)
@@ -27,7 +31,7 @@ export async function setBudget(formData: FormData) {
 
   const catRes = await pool.query(
     `SELECT 1 FROM expense_categories WHERE id = $1 AND user_id = $2`,
-    [categoryId, session.user.id],
+    [categoryId, userId],
   )
   if (catRes.rows.length === 0) throw new Error("Category not found")
 
@@ -36,7 +40,7 @@ export async function setBudget(formData: FormData) {
      VALUES ($1, $2, $3, $4, $5)
      ON CONFLICT (user_id, category_id, month, year)
      DO UPDATE SET percentage = EXCLUDED.percentage`,
-    [session.user.id, categoryId, pct, month, year],
+    [userId, categoryId, pct, month, year],
   )
   revalidatePath("/settings/categories")
   revalidatePath("/rekap", "layout")
@@ -44,11 +48,13 @@ export async function setBudget(formData: FormData) {
 
 export async function setTypeAllocations(formData: FormData) {
   const session = await requireUser()
+  const userId  = session.user.id
+  await requirePermission(userId, "change_category")
+
   const year    = parseInt(formData.get("year") as string) || new Date().getFullYear()
   const rawBack = formData.get("back_url") as string | null
   const backUrl = rawBack?.startsWith("/") ? rawBack : "/settings/categories?tab=expense"
 
-  // Collect indexed pairs: type_0/pct_0, type_1/pct_1, ...
   const pairs: Array<{ typeId: string; pct: number }> = []
   let i = 0
   while (formData.has(`type_${i}`)) {
@@ -66,14 +72,14 @@ export async function setTypeAllocations(formData: FormData) {
   for (const { typeId, pct } of pairs) {
     const check = await pool.query(
       `SELECT 1 FROM expense_types WHERE id = $1 AND user_id = $2`,
-      [typeId, session.user.id],
+      [typeId, userId],
     )
     if (check.rows.length === 0) continue
     await pool.query(
       `INSERT INTO type_allocations (user_id, type_id, percentage, year)
        VALUES ($1, $2, $3, $4)
        ON CONFLICT (user_id, type_id, year) DO UPDATE SET percentage = EXCLUDED.percentage`,
-      [session.user.id, typeId, pct, year],
+      [userId, typeId, pct, year],
     )
   }
 

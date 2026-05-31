@@ -7,10 +7,10 @@ import { pool } from "@/lib/db"
 import { generateCode } from "@/lib/licence"
 import { userHasPermission } from "@/lib/permissions"
 
-async function requireAdmin() {
+async function requireAdmin(permission = "manage_roles") {
   const session = await auth.api.getSession({ headers: await headers() })
   if (!session) throw new Error("Unauthenticated")
-  const ok = await userHasPermission(session.user.id, "manage_roles")
+  const ok = await userHasPermission(session.user.id, permission)
   if (!ok) throw new Error("Unauthorized")
   return session
 }
@@ -22,7 +22,7 @@ function parsePrice(raw: FormDataEntryValue | null): number | null {
 }
 
 export async function generateLicenceAction(_prev: unknown, formData: FormData) {
-  await requireAdmin()
+  await requireAdmin("add_licence")
 
   const noExpiry    = formData.get("noExpiry") === "on"
   const expiredAtStr = formData.get("expiredAt") as string
@@ -54,7 +54,7 @@ export async function generateLicenceAction(_prev: unknown, formData: FormData) 
 }
 
 export async function suspendLicenceAction(licenceId: string, note?: string) {
-  await requireAdmin()
+  await requireAdmin("change_licence")
   await pool.query(
     `UPDATE licences SET status = 'SUSPENDED', updated_at = NOW() WHERE id = $1`,
     [licenceId],
@@ -68,7 +68,7 @@ export async function suspendLicenceAction(licenceId: string, note?: string) {
 }
 
 export async function activateLicenceAction(licenceId: string) {
-  await requireAdmin()
+  await requireAdmin("change_licence")
   await pool.query(
     `UPDATE licences SET status = 'ACTIVE', updated_at = NOW() WHERE id = $1`,
     [licenceId],
@@ -82,7 +82,7 @@ export async function activateLicenceAction(licenceId: string) {
 }
 
 export async function renewLicenceAction(_prev: unknown, formData: FormData) {
-  await requireAdmin()
+  await requireAdmin("change_licence")
 
   const licenceId    = formData.get("licenceId") as string
   const noExpiry     = formData.get("noExpiry") === "on"
@@ -107,7 +107,7 @@ export async function renewLicenceAction(_prev: unknown, formData: FormData) {
 }
 
 export async function deleteLicenceAction(licenceId: string) {
-  await requireAdmin()
+  await requireAdmin("delete_licence")
 
   const { rows } = await pool.query<{ user_id: string | null }>(
     `SELECT user_id FROM licences WHERE id = $1`,

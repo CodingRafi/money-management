@@ -22,6 +22,7 @@ import {
   addLoanTaken, deleteLoanTaken, updateLoanTaken,
 } from "@/app/actions/transactions"
 import { createInvestment } from "@/app/actions/investments"
+import { canEdit } from "@/lib/licence"
 import { addTransfer, deleteTransfer } from "@/app/actions/transfers"
 
 const MONTHS = [
@@ -121,6 +122,8 @@ export default async function YearDetailPage({
     await ensureYearlyCategories(userId, year)
   }
 
+  const isActive = await canEdit(userId)
+
   const sp = await searchParams
 
   const view     = sp.view === "report" ? "report" : "manage"
@@ -132,8 +135,8 @@ export default async function YearDetailPage({
   const tab        = ["pendapatan", "pengeluaran", "dipinjam", "hutang", "investasi", "transfer"].includes(sp.tab as string)
     ? (sp.tab as string)
     : "pendapatan"
-  const showNew    = sp.new === "1"
-  const editId     = typeof sp.edit === "string" ? sp.edit : null
+  const showNew    = sp.new === "1" && isActive
+  const editId     = typeof sp.edit === "string" && isActive ? sp.edit as string : null
   const showReport = sp.report === "1" && tab === "pengeluaran"
 
   // Reference data for forms + yearly recap
@@ -707,7 +710,7 @@ export default async function YearDetailPage({
           {/* Month header */}
           <div className="flex items-center justify-between">
             <h2 className="text-lg font-semibold">{MONTHS[month - 1]} {year}</h2>
-            {!showNew && !showReport && !editId && (
+            {!showNew && !showReport && !editId && isActive && (
               <Button asChild size="sm">
                 <Link href={tambahHref}>
                   <Plus className="h-4 w-4 mr-1" />
@@ -884,18 +887,20 @@ export default async function YearDetailPage({
                               {formatRupiah(row.amount)}
                             </td>
                             <td className="px-3 py-3 text-right">
-                              <div className="flex items-center justify-end gap-0.5">
-                                <Button asChild variant="ghost" size="icon" className="h-7 w-7">
-                                  <Link href={`${base}?bulan=${month}&tab=pendapatan&edit=${row.id}`}>
-                                    <Pencil className="h-3.5 w-3.5" />
-                                  </Link>
-                                </Button>
-                                <form action={deleteIncome.bind(null, row.id, yearStr, String(month))}>
-                                  <Button type="submit" variant="ghost" size="icon" className="h-7 w-7 text-destructive hover:text-destructive">
-                                    <Trash2 className="h-3.5 w-3.5" />
+                              {isActive && (
+                                <div className="flex items-center justify-end gap-0.5">
+                                  <Button asChild variant="ghost" size="icon" className="h-7 w-7">
+                                    <Link href={`${base}?bulan=${month}&tab=pendapatan&edit=${row.id}`}>
+                                      <Pencil className="h-3.5 w-3.5" />
+                                    </Link>
                                   </Button>
-                                </form>
-                              </div>
+                                  <form action={deleteIncome.bind(null, row.id, yearStr, String(month))}>
+                                    <Button type="submit" variant="ghost" size="icon" className="h-7 w-7 text-destructive hover:text-destructive">
+                                      <Trash2 className="h-3.5 w-3.5" />
+                                    </Button>
+                                  </form>
+                                </div>
+                              )}
                             </td>
                           </tr>
                         ))}
@@ -987,18 +992,20 @@ export default async function YearDetailPage({
                                   {formatRupiah(row.amount)}
                                 </td>
                                 <td className="px-3 py-3 text-right">
-                                  <div className="flex items-center justify-end gap-0.5">
-                                    <Button asChild variant="ghost" size="icon" className="h-7 w-7">
-                                      <Link href={`${base}?bulan=${month}&tab=pengeluaran&edit=${row.id}`}>
-                                        <Pencil className="h-3.5 w-3.5" />
-                                      </Link>
-                                    </Button>
-                                    <form action={deleteExpense.bind(null, row.id, yearStr, String(month))}>
-                                      <Button type="submit" variant="ghost" size="icon" className="h-7 w-7 text-destructive hover:text-destructive">
-                                        <Trash2 className="h-3.5 w-3.5" />
+                                  {isActive && (
+                                    <div className="flex items-center justify-end gap-0.5">
+                                      <Button asChild variant="ghost" size="icon" className="h-7 w-7">
+                                        <Link href={`${base}?bulan=${month}&tab=pengeluaran&edit=${row.id}`}>
+                                          <Pencil className="h-3.5 w-3.5" />
+                                        </Link>
                                       </Button>
-                                    </form>
-                                  </div>
+                                      <form action={deleteExpense.bind(null, row.id, yearStr, String(month))}>
+                                        <Button type="submit" variant="ghost" size="icon" className="h-7 w-7 text-destructive hover:text-destructive">
+                                          <Trash2 className="h-3.5 w-3.5" />
+                                        </Button>
+                                      </form>
+                                    </div>
+                                  )}
                                 </td>
                               </tr>
                             ))}
@@ -1057,18 +1064,20 @@ export default async function YearDetailPage({
                             </td>
                             <td className="px-4 py-3 text-muted-foreground">{row.notes ?? "—"}</td>
                             <td className="px-3 py-3 text-right">
-                              <div className="flex items-center justify-end gap-0.5">
-                                <Button asChild variant="ghost" size="icon" className="h-7 w-7">
-                                  <Link href={`${base}?bulan=${month}&tab=dipinjam&edit=${row.id}`}>
-                                    <Pencil className="h-3.5 w-3.5" />
-                                  </Link>
-                                </Button>
-                                <form action={deleteLoanGiven.bind(null, row.id, yearStr, String(month))}>
-                                  <Button type="submit" variant="ghost" size="icon" className="h-7 w-7 text-destructive hover:text-destructive">
-                                    <Trash2 className="h-3.5 w-3.5" />
+                              {isActive && (
+                                <div className="flex items-center justify-end gap-0.5">
+                                  <Button asChild variant="ghost" size="icon" className="h-7 w-7">
+                                    <Link href={`${base}?bulan=${month}&tab=dipinjam&edit=${row.id}`}>
+                                      <Pencil className="h-3.5 w-3.5" />
+                                    </Link>
                                   </Button>
-                                </form>
-                              </div>
+                                  <form action={deleteLoanGiven.bind(null, row.id, yearStr, String(month))}>
+                                    <Button type="submit" variant="ghost" size="icon" className="h-7 w-7 text-destructive hover:text-destructive">
+                                      <Trash2 className="h-3.5 w-3.5" />
+                                    </Button>
+                                  </form>
+                                </div>
+                              )}
                             </td>
                           </tr>
                         ))}
@@ -1117,18 +1126,20 @@ export default async function YearDetailPage({
                             </td>
                             <td className="px-4 py-3 text-muted-foreground">{row.notes ?? "—"}</td>
                             <td className="px-3 py-3 text-right">
-                              <div className="flex items-center justify-end gap-0.5">
-                                <Button asChild variant="ghost" size="icon" className="h-7 w-7">
-                                  <Link href={`${base}?bulan=${month}&tab=hutang&edit=${row.id}`}>
-                                    <Pencil className="h-3.5 w-3.5" />
-                                  </Link>
-                                </Button>
-                                <form action={deleteLoanTaken.bind(null, row.id, yearStr, String(month))}>
-                                  <Button type="submit" variant="ghost" size="icon" className="h-7 w-7 text-destructive hover:text-destructive">
-                                    <Trash2 className="h-3.5 w-3.5" />
+                              {isActive && (
+                                <div className="flex items-center justify-end gap-0.5">
+                                  <Button asChild variant="ghost" size="icon" className="h-7 w-7">
+                                    <Link href={`${base}?bulan=${month}&tab=hutang&edit=${row.id}`}>
+                                      <Pencil className="h-3.5 w-3.5" />
+                                    </Link>
                                   </Button>
-                                </form>
-                              </div>
+                                  <form action={deleteLoanTaken.bind(null, row.id, yearStr, String(month))}>
+                                    <Button type="submit" variant="ghost" size="icon" className="h-7 w-7 text-destructive hover:text-destructive">
+                                      <Trash2 className="h-3.5 w-3.5" />
+                                    </Button>
+                                  </form>
+                                </div>
+                              )}
                             </td>
                           </tr>
                         ))}
@@ -1322,16 +1333,18 @@ export default async function YearDetailPage({
                               {row.notes ?? "—"}
                             </td>
                             <td className="px-3 py-3 text-right">
-                              <form action={deleteTransfer.bind(null, row.id, yearStr, String(month))}>
-                                <Button
-                                  type="submit"
-                                  variant="ghost"
-                                  size="icon"
-                                  className="h-7 w-7 text-destructive hover:text-destructive"
-                                >
-                                  <Trash2 className="h-3.5 w-3.5" />
-                                </Button>
-                              </form>
+                              {isActive && (
+                                <form action={deleteTransfer.bind(null, row.id, yearStr, String(month))}>
+                                  <Button
+                                    type="submit"
+                                    variant="ghost"
+                                    size="icon"
+                                    className="h-7 w-7 text-destructive hover:text-destructive"
+                                  >
+                                    <Trash2 className="h-3.5 w-3.5" />
+                                  </Button>
+                                </form>
+                              )}
                             </td>
                           </tr>
                         ))}

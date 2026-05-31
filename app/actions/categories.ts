@@ -6,11 +6,12 @@ import { redirect } from "next/navigation"
 import { auth } from "@/lib/auth"
 import { pool } from "@/lib/db"
 import { userHasPermission } from "@/lib/permissions"
+import { requirePermission } from "@/lib/licence"
 
-async function requireAdmin() {
+async function requireAdmin(permission = "manage_roles") {
   const session = await auth.api.getSession({ headers: await headers() })
   if (!session) throw new Error("Unauthenticated")
-  const ok = await userHasPermission(session.user.id, "manage_roles")
+  const ok = await userHasPermission(session.user.id, permission)
   if (!ok) throw new Error("Unauthorized")
   return session
 }
@@ -24,7 +25,7 @@ async function requireUser() {
 // ── Admin: Master Income Categories ────────────────────────────────────────
 
 export async function createMasterIncomeCategory(formData: FormData) {
-  await requireAdmin()
+  await requireAdmin("add_master_data")
   const name  = (formData.get("name") as string)?.trim().toUpperCase()
   const color = (formData.get("color") as string)?.trim() || null
   if (!name) throw new Error("Name is required")
@@ -41,7 +42,7 @@ export async function createMasterIncomeCategory(formData: FormData) {
 }
 
 export async function updateMasterIncomeCategory(id: string, formData: FormData) {
-  await requireAdmin()
+  await requireAdmin("change_master_data")
   const name  = (formData.get("name") as string)?.trim().toUpperCase()
   const color = (formData.get("color") as string)?.trim() || null
   if (!name) throw new Error("Name is required")
@@ -54,7 +55,7 @@ export async function updateMasterIncomeCategory(id: string, formData: FormData)
 }
 
 export async function deleteMasterIncomeCategory(id: string) {
-  await requireAdmin()
+  await requireAdmin("delete_master_data")
   await pool.query(
     `DELETE FROM income_categories WHERE id = $1 AND is_default = true AND user_id IS NULL`,
     [id],
@@ -65,7 +66,7 @@ export async function deleteMasterIncomeCategory(id: string) {
 // ── Admin: Master Expense Types ─────────────────────────────────────────────
 
 export async function createMasterExpenseType(formData: FormData) {
-  await requireAdmin()
+  await requireAdmin("add_master_data")
   const name = (formData.get("name") as string)?.trim().toUpperCase()
   if (!name) throw new Error("Name is required")
   const orderRes = await pool.query<{ max: number }>(
@@ -80,7 +81,7 @@ export async function createMasterExpenseType(formData: FormData) {
 }
 
 export async function deleteMasterExpenseType(id: string) {
-  await requireAdmin()
+  await requireAdmin("delete_master_data")
   await pool.query(
     `DELETE FROM expense_types WHERE id = $1 AND is_default = true AND user_id IS NULL`,
     [id],
@@ -91,7 +92,7 @@ export async function deleteMasterExpenseType(id: string) {
 // ── Admin: Master Expense Categories ───────────────────────────────────────
 
 export async function createMasterExpenseCategory(formData: FormData) {
-  await requireAdmin()
+  await requireAdmin("add_master_data")
   const name   = (formData.get("name") as string)?.trim().toUpperCase()
   const typeId = formData.get("type_id") as string
   const pctRaw = formData.get("default_percentage") as string
@@ -111,7 +112,7 @@ export async function createMasterExpenseCategory(formData: FormData) {
 }
 
 export async function updateMasterExpenseCategory(id: string, formData: FormData) {
-  await requireAdmin()
+  await requireAdmin("change_master_data")
   const name   = (formData.get("name") as string)?.trim().toUpperCase()
   const pctRaw = formData.get("default_percentage") as string
   const pct    = pctRaw ? parseFloat(pctRaw) : 0
@@ -125,7 +126,7 @@ export async function updateMasterExpenseCategory(id: string, formData: FormData
 }
 
 export async function deleteMasterExpenseCategory(id: string) {
-  await requireAdmin()
+  await requireAdmin("delete_master_data")
   await pool.query(
     `DELETE FROM expense_categories WHERE id = $1 AND is_default = true AND user_id IS NULL`,
     [id],
@@ -137,6 +138,7 @@ export async function deleteMasterExpenseCategory(id: string) {
 
 export async function createUserIncomeCategory(formData: FormData) {
   const session = await requireUser()
+  await requirePermission(session.user.id, "add_category")
   const name    = (formData.get("name") as string)?.trim().toUpperCase()
   const color   = (formData.get("color") as string)?.trim() || null
   const year    = parseInt(formData.get("year") as string) || new Date().getFullYear()
@@ -157,6 +159,7 @@ export async function createUserIncomeCategory(formData: FormData) {
 
 export async function updateUserIncomeCategory(id: string, formData: FormData) {
   const session = await requireUser()
+  await requirePermission(session.user.id, "change_category")
   const name    = (formData.get("name") as string)?.trim().toUpperCase()
   const color   = (formData.get("color") as string)?.trim() || null
   if (!name) throw new Error("Name is required")
@@ -171,6 +174,7 @@ export async function updateUserIncomeCategory(id: string, formData: FormData) {
 
 export async function toggleUserIncomeCategoryVisibility(id: string) {
   const session = await requireUser()
+  await requirePermission(session.user.id, "change_category")
   await pool.query(
     `UPDATE income_categories SET is_hidden = NOT is_hidden WHERE id = $1 AND user_id = $2`,
     [id, session.user.id],
@@ -181,6 +185,7 @@ export async function toggleUserIncomeCategoryVisibility(id: string) {
 
 export async function deleteUserIncomeCategory(id: string) {
   const session = await requireUser()
+  await requirePermission(session.user.id, "delete_category")
   await pool.query(
     `DELETE FROM income_categories WHERE id = $1 AND user_id = $2`,
     [id, session.user.id],
@@ -193,6 +198,7 @@ export async function deleteUserIncomeCategory(id: string) {
 
 export async function createUserExpenseCategory(formData: FormData) {
   const session = await requireUser()
+  await requirePermission(session.user.id, "add_category")
   const name    = (formData.get("name") as string)?.trim().toUpperCase()
   const typeId  = formData.get("type_id") as string
   const year    = parseInt(formData.get("year") as string) || new Date().getFullYear()
@@ -213,6 +219,7 @@ export async function createUserExpenseCategory(formData: FormData) {
 
 export async function updateUserExpenseCategory(id: string, formData: FormData) {
   const session = await requireUser()
+  await requirePermission(session.user.id, "change_category")
   const name    = (formData.get("name") as string)?.trim().toUpperCase()
   if (!name) throw new Error("Name is required")
   await pool.query(
@@ -226,6 +233,7 @@ export async function updateUserExpenseCategory(id: string, formData: FormData) 
 
 export async function toggleUserExpenseCategoryVisibility(id: string) {
   const session = await requireUser()
+  await requirePermission(session.user.id, "change_category")
   await pool.query(
     `UPDATE expense_categories SET is_hidden = NOT is_hidden WHERE id = $1 AND user_id = $2`,
     [id, session.user.id],
@@ -236,6 +244,7 @@ export async function toggleUserExpenseCategoryVisibility(id: string) {
 
 export async function deleteUserExpenseCategory(id: string) {
   const session = await requireUser()
+  await requirePermission(session.user.id, "delete_category")
   await pool.query(
     `DELETE FROM expense_categories WHERE id = $1 AND user_id = $2`,
     [id, session.user.id],

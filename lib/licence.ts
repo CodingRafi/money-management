@@ -1,4 +1,5 @@
 import { pool } from "./db"
+import { userHasPermission } from "./permissions"
 
 export type LicenceStatus = "ACTIVE" | "GRACE" | "EXPIRED" | "SUSPENDED"
 
@@ -57,4 +58,55 @@ export async function checkLicenceStatus(userId: string): Promise<LicenceInfo | 
     : null
 
   return { id: lic.id, status, isGrace: status === "GRACE", daysUntilExpiry }
+}
+
+const ACTIVE_STATUSES = new Set(["ACTIVE", "GRACE"])
+
+/**
+ * Cek apakah user boleh melakukan operasi CUD.
+ * Admin selalu boleh; user biasa butuh lisensi ACTIVE atau GRACE.
+ */
+export async function canEdit(userId: string): Promise<boolean> {
+  const [isAdmin, licRes] = await Promise.all([
+    userHasPermission(userId, "manage_roles").catch(() => false),
+    pool.query<{ status: string }>(
+      `SELECT status FROM licences WHERE user_id = $1 LIMIT 1`,
+      [userId],
+    ),
+  ])
+  if (isAdmin) return true
+  if (!licRes.rows[0]) return false
+  return ACTIVE_STATUSES.has(licRes.rows[0].status)
+}
+
+/**
+ * Gunakan di server actions — throw jika user tidak boleh mutasi data.
+ */
+export async function requireActiveLicence(userId: string): Promise<void> {
+  const ok = await canEdit(userId)
+  if (!ok) throw new Error("Lisensi tidak aktif atau sudah kedaluwarsa")
+}
+
+/**
+ * Cek lisensi aktif + permission spesifik dalam satu fungsi.
+ * Admin selalu lolos (bypass licence + punya semua permission).
+ * Gunakan ini di semua user-facing server actions sebagai pengganti requireActiveLicence.
+ */
+export async function requirePermission(userId: string, codename: string): Promise<void> {
+  const [isAdmin, licRes, hasPerm] = await Promise.all([
+    userHasPermission(userId, "manage_roles").catch(() => false),
+    pool.query<{ status: string }>(
+      `SELECT status FROM licences WHERE user_id = $1 LIMIT 1`,
+      [userId],
+    ),
+    userHasPermission(userId, codename).catch(() => false),
+  ])
+
+  if (isAdmin) return
+
+  if (!licRes.rows[0] || !ACTIVE_STATUSES.has(licRes.rows[0].status)) {
+    throw new Error("Lisensi tidak aktif atau sudah kedaluwarsa")
+  }
+
+  if (!hasPerm) throw new Error("Izin tidak cukup untuk melakukan aksi ini")
 }

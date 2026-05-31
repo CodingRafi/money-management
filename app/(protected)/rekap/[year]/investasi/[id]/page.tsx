@@ -10,6 +10,7 @@ import Link from "next/link"
 import { InvestmentAssetForm } from "../../_components/investment-asset-form"
 import { InvestmentTransactionForm } from "../../_components/investment-transaction-form"
 import { calcProfitLoss } from "@/lib/investment"
+import { canEdit } from "@/lib/licence"
 import {
   addInvestmentTransaction,
   deleteInvestmentTransaction,
@@ -80,9 +81,11 @@ export default async function InvestasiDetailPage({
   const year = parseInt(yearStr)
   if (isNaN(year)) redirect("/rekap")
 
+  const isActive = await canEdit(userId)
+
   const sp      = await searchParams
-  const showNew = sp.new === "1"
-  const isEdit  = sp.edit === "1"
+  const showNew = sp.new === "1" && isActive
+  const isEdit  = sp.edit === "1" && isActive
 
   const invRes = await pool.query<InvestmentDetail>(
     `SELECT i.id, i.name, i.unit, i.notes,
@@ -97,7 +100,7 @@ export default async function InvestasiDetailPage({
   if (!invRes.rows[0]) redirect(`/rekap/${yearStr}?tab=investasi`)
   const investment = invRes.rows[0]
 
-  const [yearTxRes, allTxRes, walletsRes] = await Promise.all([
+  const [yearTxRes, allTxRes, walletsRes, goalsRes] = await Promise.all([
     pool.query<TxRow>(
       `SELECT it.id, it.type,
               it.quantity::text, it.price_per_unit::text, it.total_amount::text,
@@ -119,11 +122,17 @@ export default async function InvestasiDetailPage({
       `SELECT id, name FROM wallets WHERE user_id=$1 AND is_active=true ORDER BY sort_order`,
       [userId],
     ),
+    pool.query<{ id: string; name: string; color: string | null }>(
+      `SELECT id, name, color FROM investment_goals
+       WHERE user_id=$1 AND is_active=true ORDER BY sort_order, created_at`,
+      [userId],
+    ),
   ])
 
   const yearTx   = yearTxRes.rows
   const pl       = calcProfitLoss(allTxRes.rows)
   const wallets  = walletsRes.rows
+  const goals    = goalsRes.rows
 
   const backHref   = `/rekap/${yearStr}?tab=investasi`
   const cancelHref = `/rekap/${yearStr}/investasi/${investmentId}`
@@ -147,23 +156,25 @@ export default async function InvestasiDetailPage({
             </div>
           </div>
         </div>
-        <div className="flex items-center gap-2 shrink-0">
-          <Button asChild variant="outline" size="sm">
-            <Link href={`${cancelHref}?edit=1`}>
-              <Pencil className="h-3.5 w-3.5 mr-1" />Edit
-            </Link>
-          </Button>
-          <form action={deleteInvestment.bind(null, investmentId, yearStr)}>
-            <Button
-              type="submit"
-              variant="outline"
-              size="sm"
-              className="text-destructive hover:text-destructive border-destructive/30"
-            >
-              <Trash2 className="h-3.5 w-3.5 mr-1" />Hapus
+        {isActive && (
+          <div className="flex items-center gap-2 shrink-0">
+            <Button asChild variant="outline" size="sm">
+              <Link href={`${cancelHref}?edit=1`}>
+                <Pencil className="h-3.5 w-3.5 mr-1" />Edit
+              </Link>
             </Button>
-          </form>
-        </div>
+            <form action={deleteInvestment.bind(null, investmentId, yearStr)}>
+              <Button
+                type="submit"
+                variant="outline"
+                size="sm"
+                className="text-destructive hover:text-destructive border-destructive/30"
+              >
+                <Trash2 className="h-3.5 w-3.5 mr-1" />Hapus
+              </Button>
+            </form>
+          </div>
+        )}
       </div>
 
       {/* Edit form */}
@@ -228,7 +239,7 @@ export default async function InvestasiDetailPage({
       <div className="space-y-3">
         <div className="flex items-center justify-between">
           <h2 className="text-base font-semibold">Transaksi {year}</h2>
-          {!showNew && (
+          {!showNew && isActive && (
             <Button asChild size="sm">
               <Link href={`${cancelHref}?new=1`}>
                 <Plus className="h-4 w-4 mr-1" />Tambah Transaksi
@@ -248,6 +259,7 @@ export default async function InvestasiDetailPage({
               </div>
               <InvestmentTransactionForm
                 wallets={wallets}
+                goals={goals}
                 action={addInvestmentTransaction.bind(null, investmentId, yearStr)}
                 cancelHref={cancelHref}
                 year={year}
@@ -312,16 +324,18 @@ export default async function InvestasiDetailPage({
                           {tx.notes ?? "—"}
                         </td>
                         <td className="px-3 py-3 text-right">
-                          <form action={deleteInvestmentTransaction.bind(null, tx.id, investmentId, yearStr)}>
-                            <Button
-                              type="submit"
-                              variant="ghost"
-                              size="icon"
-                              className="h-7 w-7 text-destructive hover:text-destructive"
-                            >
-                              <Trash2 className="h-3.5 w-3.5" />
-                            </Button>
-                          </form>
+                          {isActive && (
+                            <form action={deleteInvestmentTransaction.bind(null, tx.id, investmentId, yearStr)}>
+                              <Button
+                                type="submit"
+                                variant="ghost"
+                                size="icon"
+                                className="h-7 w-7 text-destructive hover:text-destructive"
+                              >
+                                <Trash2 className="h-3.5 w-3.5" />
+                              </Button>
+                            </form>
+                          )}
                         </td>
                       </tr>
                     ))}

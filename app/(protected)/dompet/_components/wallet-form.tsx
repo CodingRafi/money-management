@@ -87,6 +87,22 @@ export function WalletForm({
         </select>
       </div>
 
+      {!isEdit && (
+        <div className="flex flex-col gap-1">
+          <label className="text-sm font-medium">Saldo Awal (opsional)</label>
+          <Input
+            name="initial_balance"
+            type="number"
+            step="any"
+            min="0"
+            placeholder="0"
+          />
+          <p className="text-xs text-muted-foreground">
+            Isi jika dompet ini sudah punya saldo sebelum pakai aplikasi.
+          </p>
+        </div>
+      )}
+
       <div className="flex flex-col gap-1">
         <label className="text-sm font-medium">Warna (opsional)</label>
         <Input
