@@ -13,12 +13,16 @@ import { ExpenseForm } from "./_components/expense-form"
 import { LoanGivenForm } from "./_components/loan-given-form"
 import { LoanTakenForm } from "./_components/loan-taken-form"
 import { ReportTab } from "./_components/report-tab"
+import { InvestmentAssetForm } from "./_components/investment-asset-form"
+import { TransferForm } from "./_components/transfer-form"
 import {
   addIncome, deleteIncome, updateIncome,
   addExpense, deleteExpense, updateExpense,
   addLoanGiven, deleteLoanGiven, updateLoanGiven,
   addLoanTaken, deleteLoanTaken, updateLoanTaken,
 } from "@/app/actions/transactions"
+import { createInvestment } from "@/app/actions/investments"
+import { addTransfer, deleteTransfer } from "@/app/actions/transfers"
 
 const MONTHS = [
   "Januari", "Februari", "Maret", "April", "Mei", "Juni",
@@ -30,6 +34,8 @@ const TABS = [
   { key: "pengeluaran", label: "Pengeluaran" },
   { key: "dipinjam",    label: "Dipinjam" },
   { key: "hutang",      label: "Hutang" },
+  { key: "investasi",   label: "Investasi" },
+  { key: "transfer",    label: "Transfer" },
 ]
 
 function formatRupiah(amount: number | string) {
@@ -81,6 +87,19 @@ type ExpenseRow = {
 }
 type LoanGivenRow = { id: string; borrower: string; amount: string; status: string; notes: string | null }
 type LoanTakenRow = { id: string; lender: string; amount: string; notes: string | null }
+type InvAssetRow = {
+  id: string; name: string; unit: string | null
+  category_id: string; category_name: string
+  year_modal: string; year_hasil: string
+  total_modal: string; total_hasil: string
+}
+type InvCategoryRow  = { id: string; name: string }
+type TransferRow = {
+  id: string; date: string; amount: string; notes: string | null
+  from_wallet_name: string; from_wallet_color: string | null
+  to_wallet_name:   string; to_wallet_color:   string | null
+}
+type LiquidWallet = { id: string; name: string; color: string | null }
 
 export default async function YearDetailPage({
   params,
@@ -110,7 +129,7 @@ export default async function YearDetailPage({
                  : null
   const rawMonth = typeof sp.bulan === "string" ? parseInt(sp.bulan) : new Date().getMonth() + 1
   const month    = Math.max(1, Math.min(12, isNaN(rawMonth) ? 1 : rawMonth))
-  const tab        = ["pendapatan", "pengeluaran", "dipinjam", "hutang"].includes(sp.tab as string)
+  const tab        = ["pendapatan", "pengeluaran", "dipinjam", "hutang", "investasi", "transfer"].includes(sp.tab as string)
     ? (sp.tab as string)
     : "pendapatan"
   const showNew    = sp.new === "1"
@@ -265,14 +284,66 @@ export default async function YearDetailPage({
       )
     : { rows: [] as BudgetRow[] }
 
-  const incomeCats  = incomeCatsRes.rows
-  const expenseCats = expenseCatsRes.rows
-  const wallets     = walletsRes.rows
-  const incomes     = incomesRes.rows
-  const expenses    = expensesRes.rows
-  const loansGiven  = loansGivenRes.rows
-  const loansTaken  = loansTakenRes.rows
-  const yearlyRecap = yearlyRecapRes.rows[0] ?? null
+  // Investment data — only fetched when on the investasi tab
+  const [invAssetsRes, invCategoriesRes] = tab === "investasi"
+    ? await Promise.all([
+        pool.query<InvAssetRow>(
+          `SELECT i.id, i.name, i.unit,
+                  ic.id   AS category_id,
+                  ic.name AS category_name,
+                  COALESCE(SUM(CASE WHEN it.type='BUY'  AND it.year=$2 THEN it.total_amount ELSE 0 END),0)::text AS year_modal,
+                  COALESCE(SUM(CASE WHEN it.type='SELL' AND it.year=$2 THEN it.total_amount ELSE 0 END),0)::text AS year_hasil,
+                  COALESCE(SUM(CASE WHEN it.type='BUY'               THEN it.total_amount ELSE 0 END),0)::text AS total_modal,
+                  COALESCE(SUM(CASE WHEN it.type='SELL'              THEN it.total_amount ELSE 0 END),0)::text AS total_hasil
+           FROM investments i
+           JOIN investment_categories ic ON ic.id = i.category_id
+           LEFT JOIN investment_transactions it ON it.investment_id = i.id
+           WHERE i.user_id=$1 AND i.is_active=true
+           GROUP BY i.id, i.name, i.unit, ic.id, ic.name, ic.sort_order
+           ORDER BY ic.sort_order, i.created_at`,
+          [userId, year],
+        ),
+        pool.query<InvCategoryRow>(
+          `SELECT id, name FROM investment_categories ORDER BY sort_order`,
+        ),
+      ])
+    : [{ rows: [] as InvAssetRow[] }, { rows: [] as InvCategoryRow[] }]
+
+  // Transfer data — only fetched when on the transfer tab
+  const [transfersRes, liquidWalletsRes] = tab === "transfer"
+    ? await Promise.all([
+        pool.query<TransferRow>(
+          `SELECT t.id, t.date::text, t.amount::text, t.notes,
+                  fw.name  AS from_wallet_name, fw.color  AS from_wallet_color,
+                  tw.name  AS to_wallet_name,   tw.color  AS to_wallet_color
+           FROM transfers t
+           JOIN wallets fw ON fw.id = t.from_wallet_id
+           JOIN wallets tw ON tw.id = t.to_wallet_id
+           WHERE t.user_id=$1 AND t.year=$2 AND t.month=$3
+           ORDER BY t.date DESC, t.created_at DESC`,
+          [userId, year, month],
+        ),
+        pool.query<LiquidWallet>(
+          `SELECT id, name, color FROM wallets
+           WHERE user_id=$1 AND is_active=true AND is_liquid=true
+           ORDER BY sort_order`,
+          [userId],
+        ),
+      ])
+    : [{ rows: [] as TransferRow[] }, { rows: [] as LiquidWallet[] }]
+
+  const incomeCats    = incomeCatsRes.rows
+  const expenseCats   = expenseCatsRes.rows
+  const wallets       = walletsRes.rows
+  const incomes       = incomesRes.rows
+  const expenses      = expensesRes.rows
+  const loansGiven    = loansGivenRes.rows
+  const loansTaken    = loansTakenRes.rows
+  const yearlyRecap   = yearlyRecapRes.rows[0] ?? null
+  const invAssets     = invAssetsRes.rows
+  const invCategories = invCategoriesRes.rows
+  const transfers     = transfersRes.rows
+  const liquidWallets = liquidWalletsRes.rows
 
   const bdMonths = [1,2,3,4,5,6,7,8,9,10,11,12]
 
@@ -336,6 +407,8 @@ export default async function YearDetailPage({
   const tabLabel: Record<string, string> = {
     pendapatan: "Pendapatan", pengeluaran: "Pengeluaran",
     dipinjam: "Pinjaman", hutang: "Hutang",
+    investasi: "Aset Investasi",
+    transfer:  "Transfer",
   }
 
   return (
@@ -684,6 +757,22 @@ export default async function YearDetailPage({
                 )}
                 {tab === "hutang" && (
                   <LoanTakenForm action={addLoanTaken} year={year} month={month} />
+                )}
+                {tab === "investasi" && (
+                  <InvestmentAssetForm
+                    categories={invCategories}
+                    wallets={wallets}
+                    action={createInvestment.bind(null, yearStr)}
+                    cancelHref={cancelHref}
+                  />
+                )}
+                {tab === "transfer" && (
+                  <TransferForm
+                    wallets={liquidWallets}
+                    action={addTransfer}
+                    year={year}
+                    month={month}
+                  />
                 )}
               </CardContent>
             </Card>
@@ -1049,6 +1138,211 @@ export default async function YearDetailPage({
                           <td className="px-4 py-3 text-right text-sm font-medium text-muted-foreground">Total</td>
                           <td className="px-4 py-3 text-right tabular-nums font-bold">
                             {formatRupiah(loansTaken.reduce((s, r) => s + parseFloat(r.amount), 0))}
+                          </td>
+                          <td colSpan={2} />
+                        </tr>
+                      </tfoot>
+                    </table>
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+          )}
+
+          {/* ── Investasi tab ── */}
+          {tab === "investasi" && (() => {
+            const yearModal = invAssets.reduce((s, a) => s + Number(a.year_modal), 0)
+            const yearHasil = invAssets.reduce((s, a) => s + Number(a.year_hasil), 0)
+            const yearPL    = yearHasil - yearModal
+
+            // Group by category
+            type CatGroup = { catName: string; assets: InvAssetRow[] }
+            const byCat = invAssets.reduce<Record<string, CatGroup>>((acc, a) => {
+              acc[a.category_id] ??= { catName: a.category_name, assets: [] }
+              acc[a.category_id].assets.push(a)
+              return acc
+            }, {})
+
+            return (
+              <div className="space-y-4">
+                {/* Year summary */}
+                {invAssets.length > 0 && (
+                  <div className="grid grid-cols-3 gap-3">
+                    <Card>
+                      <CardContent className="p-4">
+                        <p className="text-xs text-muted-foreground mb-1">Modal BUY {year}</p>
+                        <p className="font-bold text-blue-600 tabular-nums">{formatRupiah(yearModal)}</p>
+                      </CardContent>
+                    </Card>
+                    <Card>
+                      <CardContent className="p-4">
+                        <p className="text-xs text-muted-foreground mb-1">Hasil SELL {year}</p>
+                        <p className="font-bold text-emerald-600 tabular-nums">{formatRupiah(yearHasil)}</p>
+                      </CardContent>
+                    </Card>
+                    <Card>
+                      <CardContent className="p-4">
+                        <p className="text-xs text-muted-foreground mb-1">P/L {year}</p>
+                        <p className={`font-bold tabular-nums ${yearPL >= 0 ? "text-emerald-600" : "text-red-600"}`}>
+                          {yearPL >= 0 ? "+" : ""}{formatRupiah(yearPL)}
+                        </p>
+                      </CardContent>
+                    </Card>
+                  </div>
+                )}
+
+                {invAssets.length === 0 ? (
+                  <Card>
+                    <CardContent className="py-10 text-center">
+                      <p className="text-sm text-muted-foreground">
+                        Belum ada aset investasi. Klik &quot;Tambah Aset Investasi&quot; untuk mulai.
+                      </p>
+                    </CardContent>
+                  </Card>
+                ) : (
+                  Object.entries(byCat).map(([catId, { catName, assets }]) => (
+                    <Card key={catId}>
+                      <CardContent className="p-0">
+                        <div className="px-4 py-2.5 border-b">
+                          <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                            {catName}
+                          </p>
+                        </div>
+                        <div className="divide-y">
+                          {assets.map((a) => {
+                            const pl     = Number(a.total_hasil) - Number(a.total_modal)
+                            const status =
+                              Number(a.total_hasil) === 0 ? "HOLDING" :
+                              pl > 0 ? "PROFIT" : pl < 0 ? "LOSS" : "BREAK_EVEN"
+                            const statusCls =
+                              status === "PROFIT"     ? "bg-emerald-100 text-emerald-700" :
+                              status === "LOSS"       ? "bg-red-100 text-red-700" :
+                              status === "HOLDING"    ? "bg-blue-100 text-blue-700" :
+                                                        "bg-yellow-100 text-yellow-700"
+                            return (
+                              <div
+                                key={a.id}
+                                className="flex items-center justify-between px-4 py-3 hover:bg-muted/30 transition-colors"
+                              >
+                                <div className="min-w-0 flex-1">
+                                  <div className="flex items-center gap-2">
+                                    <p className="font-medium truncate">{a.name}</p>
+                                    {a.unit && (
+                                      <span className="text-xs text-muted-foreground shrink-0">{a.unit}</span>
+                                    )}
+                                    <span className={`shrink-0 rounded px-1.5 py-0.5 text-[10px] font-bold ${statusCls}`}>
+                                      {status}
+                                    </span>
+                                  </div>
+                                  <div className="flex flex-wrap gap-x-4 mt-0.5 text-xs text-muted-foreground">
+                                    {Number(a.year_modal) > 0 && (
+                                      <span>Modal {year}: {formatRupiah(Number(a.year_modal))}</span>
+                                    )}
+                                    {Number(a.year_hasil) > 0 && (
+                                      <span>Hasil {year}: {formatRupiah(Number(a.year_hasil))}</span>
+                                    )}
+                                  </div>
+                                </div>
+                                <div className="flex items-center gap-3 ml-4 shrink-0">
+                                  <div className="text-right">
+                                    <p className={`text-sm font-semibold tabular-nums ${pl >= 0 ? "text-emerald-600" : "text-red-600"}`}>
+                                      {pl >= 0 ? "+" : ""}{formatRupiah(pl)}
+                                    </p>
+                                    <p className="text-xs text-muted-foreground">P/L total</p>
+                                  </div>
+                                  <Button asChild variant="outline" size="sm">
+                                    <Link href={`${base}/investasi/${a.id}`}>Detail</Link>
+                                  </Button>
+                                </div>
+                              </div>
+                            )
+                          })}
+                        </div>
+                      </CardContent>
+                    </Card>
+                  ))
+                )}
+              </div>
+            )
+          })()}
+
+          {/* ── Transfer tab ── */}
+          {tab === "transfer" && (
+            <Card>
+              <CardContent className="p-0">
+                {transfers.length === 0 ? (
+                  <p className="py-10 text-center text-sm text-muted-foreground">
+                    Belum ada transfer bulan ini.
+                  </p>
+                ) : (
+                  <div className="overflow-x-auto">
+                    <table className="w-full text-sm">
+                      <thead>
+                        <tr className="border-b bg-muted/40 text-muted-foreground">
+                          <th className="px-4 py-3 text-left font-medium">Tanggal</th>
+                          <th className="px-4 py-3 text-left font-medium">Dari</th>
+                          <th className="px-4 py-3 text-left font-medium">Ke</th>
+                          <th className="px-4 py-3 text-right font-medium">Jumlah</th>
+                          <th className="px-4 py-3 text-left font-medium">Catatan</th>
+                          <th className="px-4 py-3" />
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {transfers.map((row) => (
+                          <tr key={row.id} className="border-b hover:bg-muted/30 transition-colors">
+                            <td className="px-4 py-3 tabular-nums text-muted-foreground whitespace-nowrap">
+                              {formatDate(row.date)}
+                            </td>
+                            <td className="px-4 py-3">
+                              <div className="flex items-center gap-2">
+                                {row.from_wallet_color && (
+                                  <span
+                                    className="h-2.5 w-2.5 shrink-0 rounded-full border"
+                                    style={{ backgroundColor: row.from_wallet_color }}
+                                  />
+                                )}
+                                <span className="font-medium">{row.from_wallet_name}</span>
+                              </div>
+                            </td>
+                            <td className="px-4 py-3">
+                              <div className="flex items-center gap-2">
+                                {row.to_wallet_color && (
+                                  <span
+                                    className="h-2.5 w-2.5 shrink-0 rounded-full border"
+                                    style={{ backgroundColor: row.to_wallet_color }}
+                                  />
+                                )}
+                                <span className="font-medium">{row.to_wallet_name}</span>
+                              </div>
+                            </td>
+                            <td className="px-4 py-3 text-right tabular-nums font-medium text-blue-600">
+                              {formatRupiah(parseFloat(row.amount))}
+                            </td>
+                            <td className="px-4 py-3 text-muted-foreground">
+                              {row.notes ?? "—"}
+                            </td>
+                            <td className="px-3 py-3 text-right">
+                              <form action={deleteTransfer.bind(null, row.id, yearStr, String(month))}>
+                                <Button
+                                  type="submit"
+                                  variant="ghost"
+                                  size="icon"
+                                  className="h-7 w-7 text-destructive hover:text-destructive"
+                                >
+                                  <Trash2 className="h-3.5 w-3.5" />
+                                </Button>
+                              </form>
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                      <tfoot>
+                        <tr className="bg-muted/20">
+                          <td colSpan={3} className="px-4 py-3 text-right text-sm font-medium text-muted-foreground">
+                            Total
+                          </td>
+                          <td className="px-4 py-3 text-right tabular-nums font-bold text-blue-600">
+                            {formatRupiah(transfers.reduce((s, r) => s + parseFloat(r.amount), 0))}
                           </td>
                           <td colSpan={2} />
                         </tr>
