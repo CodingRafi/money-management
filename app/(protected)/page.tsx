@@ -1,139 +1,138 @@
+import { Suspense } from "react"
 import { auth } from "@/lib/auth"
 import { headers } from "next/headers"
 import { redirect } from "next/navigation"
-import { pool } from "@/lib/db"
-import { Card, CardContent } from "@/components/ui/card"
-import { ChevronRight, FolderOpen, TrendingUp, Wallet } from "lucide-react"
 import Link from "next/link"
+import { ChevronLeft, ChevronRight } from "lucide-react"
+import { Button } from "@/components/ui/button"
+import { NetWorthSection, NetWorthSkeleton } from "@/components/dashboard/NetWorthCard"
+import { CashflowSection, CashflowSkeleton } from "@/components/dashboard/CashflowCards"
+import { BudgetSection, BudgetSkeleton } from "@/components/dashboard/BudgetCard"
+import { WalletSection, WalletSkeleton } from "@/components/dashboard/WalletCard"
+import { InvestmentSection, InvestmentSkeleton } from "@/components/dashboard/InvestmentCard"
+import { LoanSection, LoanSkeleton } from "@/components/dashboard/LoanCard"
+import { RecentTransactionsSection, RecentTransactionsSkeleton } from "@/components/dashboard/RecentTransactions"
 
-function formatRupiah(n: number | string) {
-  return new Intl.NumberFormat("id-ID", {
-    style: "currency", currency: "IDR", maximumFractionDigits: 0,
-  }).format(Number(n))
+const MONTHS = [
+  "Januari", "Februari", "Maret", "April", "Mei", "Juni",
+  "Juli", "Agustus", "September", "Oktober", "November", "Desember",
+]
+
+function getGreeting() {
+  const hour = new Date().getHours()
+  if (hour < 12) return "Selamat pagi"
+  if (hour < 18) return "Selamat siang"
+  return "Selamat malam"
 }
 
-export default async function DashboardPage() {
+function prevMonthHref(month: number, year: number) {
+  return month === 1
+    ? `?month=12&year=${year - 1}`
+    : `?month=${month - 1}&year=${year}`
+}
+
+function nextMonthHref(month: number, year: number) {
+  return month === 12
+    ? `?month=1&year=${year + 1}`
+    : `?month=${month + 1}&year=${year}`
+}
+
+export default async function DashboardPage({
+  searchParams,
+}: {
+  searchParams: Promise<Record<string, string | string[] | undefined>>
+}) {
   const session = await auth.api.getSession({ headers: await headers() })
   if (!session) redirect("/login")
-  const userId   = session.user.id
+
+  const userId = session.user.id
   const firstName = session.user.name.split(" ")[0] ?? "Pengguna"
 
-  const [walletRes, investRes] = await Promise.all([
-    pool.query<{ total_liquid: string; total_all: string }>(
-      `SELECT
-         COALESCE(SUM(CASE WHEN w.is_liquid THEN w.balance ELSE 0 END), 0)::text AS total_liquid,
-         COALESCE(SUM(w.balance), 0)::text AS total_all
-       FROM wallets w
-       WHERE w.user_id = $1 AND w.is_active = true`,
-      [userId],
-    ),
-    pool.query<{ modal_aktif: string }>(
-      `SELECT
-         COALESCE(
-           SUM(CASE WHEN it.type='BUY' THEN it.total_amount ELSE -it.total_amount END), 0
-         )::text AS modal_aktif
-       FROM investment_transactions it
-       JOIN investments i ON i.id = it.investment_id
-       WHERE i.user_id = $1`,
-      [userId],
-    ),
-  ])
+  const sp = await searchParams
+  const now = new Date()
 
-  const totalLiquid   = Number(walletRes.rows[0]?.total_liquid ?? 0)
-  const totalAll      = Number(walletRes.rows[0]?.total_all ?? 0)
-  const modalAktif    = Number(investRes.rows[0]?.modal_aktif ?? 0)
-  const totalKekayaan = totalAll + modalAktif
+  const rawMonth = typeof sp.month === "string" ? parseInt(sp.month) : NaN
+  const rawYear  = typeof sp.year  === "string" ? parseInt(sp.year)  : NaN
+  const month = isNaN(rawMonth) || rawMonth < 1 || rawMonth > 12
+    ? now.getMonth() + 1
+    : rawMonth
+  const year = isNaN(rawYear) || rawYear < 2000 || rawYear > 2100
+    ? now.getFullYear()
+    : rawYear
+
+  const isCurrentMonth = month === now.getMonth() + 1 && year === now.getFullYear()
 
   return (
-    <div className="space-y-8">
-      <div>
-        <h1 className="text-2xl font-bold text-foreground">Dashboard</h1>
-        <p className="text-muted-foreground">Selamat datang kembali, {firstName}!</p>
-      </div>
-
-      {/* Quick summary */}
-      {totalKekayaan !== 0 && (
-        <div className="grid grid-cols-3 gap-3">
-          <Card>
-            <CardContent className="p-4">
-              <p className="text-xs text-muted-foreground mb-1">Total Kekayaan</p>
-              <p className="font-bold tabular-nums">{formatRupiah(totalKekayaan)}</p>
-            </CardContent>
-          </Card>
-          <Card>
-            <CardContent className="p-4">
-              <p className="text-xs text-muted-foreground mb-1">Liquid</p>
-              <p className="font-bold text-blue-600 tabular-nums">{formatRupiah(totalLiquid)}</p>
-            </CardContent>
-          </Card>
-          <Card>
-            <CardContent className="p-4">
-              <p className="text-xs text-muted-foreground mb-1">Investasi Aktif</p>
-              <p className="font-bold text-emerald-600 tabular-nums">{formatRupiah(modalAktif)}</p>
-            </CardContent>
-          </Card>
+    <div className="space-y-5">
+      {/* Header */}
+      <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+        <div>
+          <h1 className="text-2xl font-bold">{getGreeting()}, {firstName}!</h1>
+          <p className="text-sm text-muted-foreground">Ringkasan keuangan kamu</p>
         </div>
-      )}
 
-      <div className="grid grid-cols-1 gap-6 sm:grid-cols-3">
-        {/* Manage Keuangan */}
-        <Link href="/rekap" className="group">
-          <Card className="h-full transition-all group-hover:border-primary/50 group-hover:shadow-md cursor-pointer">
-            <CardContent className="flex flex-col items-center justify-center gap-4 py-10 text-center">
-              <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-primary/10 text-primary group-hover:bg-primary/20 transition-colors">
-                <FolderOpen className="h-7 w-7" />
-              </div>
-              <div>
-                <p className="text-base font-semibold">Cashflow</p>
-                <p className="mt-1 text-sm text-muted-foreground">Kelola pendapatan & pengeluaran</p>
-              </div>
-              <span className="inline-flex items-center gap-1 text-xs font-medium text-primary">
-                Buka <ChevronRight className="h-3.5 w-3.5" />
-              </span>
-            </CardContent>
-          </Card>
-        </Link>
-
-        {/* Dompet */}
-        <Link href="/dompet" className="group">
-          <Card className="h-full transition-all group-hover:border-blue-500/50 group-hover:shadow-md cursor-pointer">
-            <CardContent className="flex flex-col items-center justify-center gap-4 py-10 text-center">
-              <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-blue-500/10 text-blue-600 group-hover:bg-blue-500/20 transition-colors">
-                <Wallet className="h-7 w-7" />
-              </div>
-              <div>
-                <p className="text-base font-semibold">Dompet</p>
-                <p className="mt-1 text-sm text-muted-foreground">
-                  {totalLiquid !== 0 ? formatRupiah(totalLiquid) : "Kelola akun keuangan"}
-                </p>
-              </div>
-              <span className="inline-flex items-center gap-1 text-xs font-medium text-blue-600">
-                Buka <ChevronRight className="h-3.5 w-3.5" />
-              </span>
-            </CardContent>
-          </Card>
-        </Link>
-
-        {/* Investasi */}
-        <Link href="/investasi" className="group">
-          <Card className="h-full transition-all group-hover:border-emerald-500/50 group-hover:shadow-md cursor-pointer">
-            <CardContent className="flex flex-col items-center justify-center gap-4 py-10 text-center">
-              <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-emerald-500/10 text-emerald-600 group-hover:bg-emerald-500/20 transition-colors">
-                <TrendingUp className="h-7 w-7" />
-              </div>
-              <div>
-                <p className="text-base font-semibold">Investasi</p>
-                <p className="mt-1 text-sm text-muted-foreground">
-                  {modalAktif !== 0 ? formatRupiah(modalAktif) : "Pantau aset investasi"}
-                </p>
-              </div>
-              <span className="inline-flex items-center gap-1 text-xs font-medium text-emerald-600">
-                Buka <ChevronRight className="h-3.5 w-3.5" />
-              </span>
-            </CardContent>
-          </Card>
-        </Link>
+        {/* Month / Year filter */}
+        <div className="flex items-center gap-1">
+          <Button variant="ghost" size="icon" className="h-8 w-8" asChild>
+            <Link href={prevMonthHref(month, year)}>
+              <ChevronLeft className="h-4 w-4" />
+            </Link>
+          </Button>
+          <span className="min-w-[120px] text-center text-sm font-medium">
+            {MONTHS[month - 1]} {year}
+          </span>
+          <Button
+            variant="ghost"
+            size="icon"
+            className="h-8 w-8"
+            disabled={isCurrentMonth}
+            asChild={!isCurrentMonth}
+          >
+            {isCurrentMonth ? (
+              <span><ChevronRight className="h-4 w-4" /></span>
+            ) : (
+              <Link href={nextMonthHref(month, year)}>
+                <ChevronRight className="h-4 w-4" />
+              </Link>
+            )}
+          </Button>
+        </div>
       </div>
+
+      {/* Net Worth */}
+      <Suspense fallback={<NetWorthSkeleton />}>
+        <NetWorthSection userId={userId} />
+      </Suspense>
+
+      {/* Cashflow */}
+      <Suspense fallback={<CashflowSkeleton />}>
+        <CashflowSection userId={userId} month={month} year={year} />
+      </Suspense>
+
+      {/* Budget + Dompet */}
+      <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+        <Suspense fallback={<BudgetSkeleton />}>
+          <BudgetSection userId={userId} month={month} year={year} />
+        </Suspense>
+        <Suspense fallback={<WalletSkeleton />}>
+          <WalletSection userId={userId} />
+        </Suspense>
+      </div>
+
+      {/* Investasi + Pinjaman */}
+      <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+        <Suspense fallback={<InvestmentSkeleton />}>
+          <InvestmentSection userId={userId} />
+        </Suspense>
+        <Suspense fallback={<LoanSkeleton />}>
+          <LoanSection userId={userId} />
+        </Suspense>
+      </div>
+
+      {/* Transaksi Terakhir */}
+      <Suspense fallback={<RecentTransactionsSkeleton />}>
+        <RecentTransactionsSection userId={userId} />
+      </Suspense>
     </div>
   )
 }
