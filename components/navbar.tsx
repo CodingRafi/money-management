@@ -11,7 +11,7 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
-import { LogOut, Shield, Wallet, FolderOpen, TrendingUp, LayoutDashboard, Banknote } from "lucide-react"
+import { LogOut, Wallet, FolderOpen, TrendingUp, LayoutDashboard, Banknote } from "lucide-react"
 import Link from "next/link"
 import { usePathname } from "next/navigation"
 
@@ -21,7 +21,6 @@ interface NavbarProps {
     email: string
     image?: string | null
   }
-  isAdmin?: boolean
 }
 
 const NAV_LINKS = [
@@ -32,7 +31,7 @@ const NAV_LINKS = [
   { href: "/pinjaman",  label: "Pinjaman",  icon: Banknote },
 ]
 
-export function Navbar({ user, isAdmin }: NavbarProps) {
+export function Navbar({ user }: NavbarProps) {
   const pathname = usePathname()
 
   const handleSignOut = () => {
@@ -98,17 +97,6 @@ export function Navbar({ user, isAdmin }: NavbarProps) {
                 <p className="text-xs leading-none text-muted-foreground">{user.email}</p>
               </div>
             </DropdownMenuLabel>
-            {isAdmin && (
-              <>
-                <DropdownMenuSeparator />
-                <DropdownMenuItem asChild className="cursor-pointer">
-                  <Link href="/admin" className="flex items-center gap-2">
-                    <Shield className="h-4 w-4" />
-                    Admin Panel
-                  </Link>
-                </DropdownMenuItem>
-              </>
-            )}
             <DropdownMenuSeparator />
             <DropdownMenuItem onSelect={handleSignOut} className="cursor-pointer text-destructive focus:text-destructive">
               <LogOut className="h-4 w-4" />
