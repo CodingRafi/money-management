@@ -32,7 +32,7 @@ export async function NetWorthSection({ userId }: { userId: string }) {
           {data.changePercent !== null && (
             <span
               className={`flex items-center gap-1 text-sm font-medium ${
-                data.changePercent >= 0 ? "text-emerald-600" : "text-red-500"
+                data.changePercent >= 0 ? "text-primary" : "text-destructive"
               }`}
             >
               {data.changePercent >= 0
@@ -45,7 +45,7 @@ export async function NetWorthSection({ userId }: { userId: string }) {
         <div className="flex gap-8">
           <div>
             <p className="text-xs text-muted-foreground mb-0.5">Liquid</p>
-            <p className="text-sm font-semibold text-blue-600 tabular-nums">
+            <p className="text-sm font-semibold text-primary tabular-nums">
               {formatRp(data.liquid)}
             </p>
           </div>

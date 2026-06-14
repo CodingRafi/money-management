@@ -15,13 +15,13 @@ export default function ClaimLicencePage() {
       <div className="max-w-md mx-auto mt-12">
         <Card>
           <CardContent className="pt-8 pb-8 text-center space-y-3">
-            <CheckCircle className="h-12 w-12 text-green-500 mx-auto" />
+            <CheckCircle className="h-12 w-12 text-primary mx-auto" />
             <h2 className="text-xl font-bold">Lisensi berhasil diklaim!</h2>
             <p className="text-sm text-muted-foreground">
               Kamu sekarang memiliki akses penuh ke aplikasi.
             </p>
             <Button asChild className="mt-2">
-              <a href="/">Ke Dashboard</a>
+              <a href="/dashboard">Ke Dashboard</a>
             </Button>
           </CardContent>
         </Card>

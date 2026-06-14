@@ -92,7 +92,7 @@ export async function LoanSection({ userId }: { userId: string }) {
                   <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">
                     Hutang
                   </p>
-                  <p className="text-xs font-semibold tabular-nums text-red-500">
+                  <p className="text-xs font-semibold tabular-nums text-destructive">
                     {formatRp(data.hutang.totalSisa)}
                   </p>
                 </div>

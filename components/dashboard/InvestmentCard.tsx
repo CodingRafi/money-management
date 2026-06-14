@@ -18,9 +18,9 @@ const GOAL_STATUS_LABEL: Record<GoalItem["status"], string> = {
 }
 
 const GOAL_STATUS_COLOR: Record<GoalItem["status"], string> = {
-  ON_TRACK: "bg-emerald-500",
+  ON_TRACK: "bg-primary",
   BEHIND: "bg-yellow-500",
-  COMPLETED: "bg-blue-500",
+  COMPLETED: "bg-primary/60",
   NO_TARGET: "bg-muted",
 }
 
@@ -37,7 +37,7 @@ export async function InvestmentSection({ userId }: { userId: string }) {
           {hasPL && (
             <Badge
               variant={data.netProfitLoss >= 0 ? "default" : "destructive"}
-              className={`text-xs ${data.netProfitLoss >= 0 ? "bg-emerald-600 hover:bg-emerald-600" : ""}`}
+              className={`text-xs ${data.netProfitLoss >= 0 ? "bg-primary hover:bg-primary" : ""}`}
             >
               {data.netProfitLoss >= 0 ? "+" : ""}
               {formatRp(data.netProfitLoss)}

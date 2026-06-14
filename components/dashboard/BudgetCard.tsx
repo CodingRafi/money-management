@@ -5,9 +5,9 @@ import Link from "next/link"
 import { ChevronRight } from "lucide-react"
 
 const STATUS_BAR: Record<string, string> = {
-  AMAN: "bg-blue-500",
+  AMAN: "bg-primary",
   MENDEKATI: "bg-yellow-500",
-  OVER: "bg-red-500",
+  OVER: "bg-destructive",
 }
 
 export async function BudgetSection({

@@ -25,48 +25,63 @@
 }
 
 :root {
-  --background: oklch(1 0 0);
-  --foreground: oklch(0.145 0 0);
-  --card: oklch(1 0 0);
-  --card-foreground: oklch(0.145 0 0);
-  --popover: oklch(1 0 0);
-  --popover-foreground: oklch(0.145 0 0);
-  --primary: oklch(0.205 0 0);
-  --primary-foreground: oklch(0.985 0 0);
-  --secondary: oklch(0.97 0 0);
-  --secondary-foreground: oklch(0.205 0 0);
-  --muted: oklch(0.97 0 0);
-  --muted-foreground: oklch(0.556 0 0);
-  --accent: oklch(0.97 0 0);
-  --accent-foreground: oklch(0.205 0 0);
-  --destructive: oklch(0.577 0.245 27.325);
-  --border: oklch(0.922 0 0);
-  --input: oklch(0.922 0 0);
-  --ring: oklch(0.708 0 0);
+  /* TONAS Green Theme */
+  --background: #F7FAF7;
+  --foreground: #0B1309;
+  --card: #FFFFFF;
+  --card-foreground: #0B1309;
+  --popover: #FFFFFF;
+  --popover-foreground: #0B1309;
+  --primary: #18A04A;
+  --primary-foreground: #FFFFFF;
+  --secondary: #D7F5E3;
+  --secondary-foreground: #18A04A;
+  --muted: #E3EAE2;
+  --muted-foreground: #5A6A58;
+  --accent: #D7F5E3;
+  --accent-foreground: #18A04A;
+  --destructive: #DC2626;
+  --border: #E3EAE2;
+  --input: #E3EAE2;
+  --ring: #18A04A;
 }
 
 .dark {
-  --background: oklch(0.145 0 0);
-  --foreground: oklch(0.985 0 0);
-  --card: oklch(0.205 0 0);
-  --card-foreground: oklch(0.985 0 0);
-  --popover: oklch(0.205 0 0);
-  --popover-foreground: oklch(0.985 0 0);
-  --primary: oklch(0.922 0 0);
-  --primary-foreground: oklch(0.205 0 0);
-  --secondary: oklch(0.269 0 0);
-  --secondary-foreground: oklch(0.985 0 0);
-  --muted: oklch(0.269 0 0);
-  --muted-foreground: oklch(0.708 0 0);
-  --accent: oklch(0.269 0 0);
-  --accent-foreground: oklch(0.985 0 0);
-  --destructive: oklch(0.704 0.191 22.216);
-  --border: oklch(0.269 0 0);
-  --input: oklch(0.269 0 0);
-  --ring: oklch(0.439 0 0);
+  /* TONAS Dark Theme */
+  --background: #0C0F0C;
+  --foreground: #ECF5EC;
+  --card: #141914;
+  --card-foreground: #ECF5EC;
+  --popover: #141914;
+  --popover-foreground: #ECF5EC;
+  --primary: #36D97B;
+  --primary-foreground: #0C0F0C;
+  --secondary: #0A2B15;
+  --secondary-foreground: #36D97B;
+  --muted: #1E2A1E;
+  --muted-foreground: #7A9478;
+  --accent: #0A2B15;
+  --accent-foreground: #36D97B;
+  --destructive: #F87171;
+  --border: #1E2A1E;
+  --input: #1E2A1E;
+  --ring: #36D97B;
+}
+
+html {
+  scroll-behavior: smooth;
 }
 
 body {
   background: var(--background);
   color: var(--foreground);
+}
+
+::-webkit-scrollbar {
+  width: 5px;
+}
+
+::-webkit-scrollbar-thumb {
+  background: #ccc;
+  border-radius: 3px;
 }

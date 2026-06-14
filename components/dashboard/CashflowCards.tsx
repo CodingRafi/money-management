@@ -35,18 +35,18 @@ export async function CashflowSection({
       value: data.totalIncome,
       sublabel: `${data.incomeCount} transaksi`,
       icon: ArrowDownLeft,
-      iconBg: "bg-emerald-100 dark:bg-emerald-900/30",
-      iconColor: "text-emerald-600",
-      valueColor: "text-emerald-600",
+      iconBg: "bg-primary/10",
+      iconColor: "text-primary",
+      valueColor: "text-primary",
     },
     {
       label: "Pengeluaran",
       value: data.totalExpense,
       sublabel: `${data.expenseRatio.toFixed(0)}% dari pendapatan`,
       icon: ArrowUpRight,
-      iconBg: "bg-red-100 dark:bg-red-900/30",
-      iconColor: "text-red-500",
-      valueColor: "text-red-500",
+      iconBg: "bg-destructive/10",
+      iconColor: "text-destructive",
+      valueColor: "text-destructive",
     },
     {
       label: "Sisa",
@@ -55,7 +55,7 @@ export async function CashflowSection({
       icon: Wallet,
       iconBg: "bg-muted",
       iconColor: "text-muted-foreground",
-      valueColor: data.remaining >= 0 ? "text-foreground" : "text-red-500",
+      valueColor: data.remaining >= 0 ? "text-foreground" : "text-destructive",
     },
   ]
 

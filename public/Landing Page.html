@@ -1,0 +1,624 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>TONAS — Semua Berawal dari Pengelolaan yang Tepat</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <script src="https://unpkg.com/react@18.3.1/umd/react.development.js" integrity="sha384-hD6/rw4ppMLGNu3tX5cjIb+uRZ7UkRJ6BPkLpg4hAu/6onKUg4lLsHAs9EBPT82L" crossorigin="anonymous"></script>
+  <script src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.development.js" integrity="sha384-u6aeetuaXnQ38mYT8rp6sbXaQe3NL9t+IBXmnYxwkUI2Hw4bsp2Wvmx4yRQF1uAm" crossorigin="anonymous"></script>
+  <script src="https://unpkg.com/@babel/standalone@7.29.0/babel.min.js" integrity="sha384-m08KidiNqLdpJqLq95G/LEi8Qvjl/xUYll3QILypMoQ65QorJ9Lvtp2RXYGBFj1y" crossorigin="anonymous"></script>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    html { scroll-behavior: smooth; }
+    body { font-family: 'Plus Jakarta Sans', sans-serif; overflow-x: hidden; transition: background 0.4s, color 0.4s; }
+    a { color: inherit; text-decoration: none; }
+    ul { list-style: none; }
+    .container { max-width: 1160px; margin: 0 auto; padding: 0 28px; }
+    section { padding: 96px 0; }
+
+    /* Layout grids */
+    .hero-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 64px; align-items: start; padding-top: 16px; }
+    .features-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; }
+    .cashflow-card { grid-column: span 2; display: grid; grid-template-columns: 1fr 1fr; gap: 24px; align-items: center; }
+    .three-col { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; }
+    .preview-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 72px; align-items: center; }
+    .footer-grid { display: grid; grid-template-columns: 2fr 1fr 1fr 1fr; gap: 40px; }
+
+    /* Animations */
+    @keyframes fadeUp { from { opacity: 0; transform: translateY(20px); } to { opacity: 1; transform: translateY(0); } }
+    .fu  { animation: fadeUp 0.6s 0.05s ease forwards; }
+    .fu2 { animation: fadeUp 0.6s 0.18s ease forwards; }
+    .fu3 { animation: fadeUp 0.6s 0.32s ease forwards; }
+
+    ::-webkit-scrollbar { width: 5px; }
+    ::-webkit-scrollbar-thumb { background: #ccc; border-radius: 3px; }
+
+    @media (max-width: 960px) {
+      .hero-grid, .preview-grid { grid-template-columns: 1fr; gap: 48px; }
+      .features-grid { grid-template-columns: 1fr 1fr; }
+      .cashflow-card { grid-column: span 1; grid-template-columns: 1fr; }
+      .three-col { grid-template-columns: 1fr; }
+      .footer-grid { grid-template-columns: 1fr 1fr; gap: 32px; }
+      .nav-links { display: none !important; }
+    }
+    @media (max-width: 600px) {
+      .features-grid { grid-template-columns: 1fr; }
+      .footer-grid { grid-template-columns: 1fr; }
+      section { padding: 64px 0; }
+    }
+  </style>
+  <script type="text/babel" src="tweaks-panel.jsx"></script>
+</head>
+<body>
+  <div id="root"></div>
+
+  <script type="text/babel">
+    const { useState, useEffect } = React;
+
+    /* ── THEMES ──────────────────────────────────────────── */
+    const THEMES = {
+      green: {
+        bg: '#F7FAF7', bgAlt: '#FFFFFF', text: '#0B1309', textSub: '#5A6A58',
+        accent: '#18A04A', accentDark: '#0D6630', accentLight: '#D7F5E3', accentFg: '#FFFFFF',
+        border: '#E3EAE2', card: '#FFFFFF', income: '#18A04A', expense: '#DC2626',
+        shadow: '0 6px 40px rgba(24,160,74,0.10)', heroGlow: 'radial-gradient(ellipse 700px 500px at 85% 60%, #D7F5E3 0%, transparent 70%)',
+      },
+      dark: {
+        bg: '#0C0F0C', bgAlt: '#141914', text: '#ECF5EC', textSub: '#7A9478',
+        accent: '#36D97B', accentDark: '#1A7D45', accentLight: '#0A2B15', accentFg: '#0C0F0C',
+        border: '#1E2A1E', card: '#141914', income: '#36D97B', expense: '#F87171',
+        shadow: '0 6px 40px rgba(54,217,123,0.12)', heroGlow: 'radial-gradient(ellipse 700px 500px at 85% 60%, rgba(54,217,123,0.08) 0%, transparent 70%)',
+      },
+      purple: {
+        bg: '#FAF8FF', bgAlt: '#FFFFFF', text: '#0E0A1A', textSub: '#6B6280',
+        accent: '#7B35ED', accentDark: '#4C1D95', accentLight: '#EDE8FC', accentFg: '#FFFFFF',
+        border: '#E8E3F0', card: '#FFFFFF', income: '#18A04A', expense: '#DC2626',
+        shadow: '0 6px 40px rgba(123,53,237,0.10)', heroGlow: 'radial-gradient(ellipse 700px 500px at 85% 60%, #EDE8FC 0%, transparent 70%)',
+      },
+    };
+
+    /* ── DATA ─────────────────────────────────────────────── */
+    const FEATURES = [
+      { id: 'dashboard', icon: '▦', name: 'Dashboard', desc: 'Pantau semua aspek keuanganmu dalam satu tampilan — saldo total, tren, dan ringkasan bulanan sekaligus.', pills: ['Saldo Real-time', 'Ringkasan Bulanan', 'Tren Keuangan'] },
+      { id: 'cashflow', icon: '⇅', name: 'Atur Cashflow', desc: 'Catat pemasukan, pengeluaran, utang, piutang, dan pemindahan dana dengan mudah dan terorganisir.', pills: ['Pemasukan', 'Pengeluaran', 'Utang', 'Dipinjam', 'Transfer Dana'], isWide: true },
+      { id: 'dompet', icon: '◎', name: 'Dompet', desc: 'Ketahui uangmu ada di mana — rekening bank, e-wallet, dan uang tunai tersentralisasi dalam satu tempat.', pills: ['Multi-rekening', 'E-Wallet', 'Uang Tunai'] },
+      { id: 'investasi', icon: '↗', name: 'Investasi', desc: 'Pantau portofolio investasimu dari satu layar — reksadana, saham, kripto, hingga emas digital.', pills: ['Reksadana', 'Saham', 'Crypto', 'Emas'] },
+      { id: 'pinjaman', icon: '⊙', name: 'Pinjaman', desc: 'Kelola cicilan dan pinjaman agar tidak ada tagihan terlewat dan kondisi keuanganmu tetap terkontrol.', pills: ['KPR / KTA', 'Pinjaman Online', 'Kartu Kredit'] },
+    ];
+
+    const TESTIMONIALS = [
+      { name: 'Anya Rahayu', role: 'Mahasiswa Teknik, UI', avatar: 'A', text: '"Akhirnya ngerti uangku kemana aja! Dashboard TONAS bikin aku sadar kalau pengeluaran jajan tiap bulan udah hampir setara UKT 😅 Sekarang udah mulai nabung."' },
+      { name: 'Rafi Maulana', role: 'Fresh Graduate, 24 thn', avatar: 'R', text: '"Fitur Dompet-nya keren banget. Sekarang aku bisa lihat semua saldo di GoPay, BCA, sama tunai dalam satu layar tanpa buka-buka app satu-satu."' },
+      { name: 'Dinda Putri', role: 'Freelancer Desainer', avatar: 'D', text: '"Cashflow tracker-nya sangat membantu buat ngatur pemasukan yang nggak menentu. Fitur investasi juga udah mulai aku manfaatin buat catat portofolio!"' },
+    ];
+
+    const PRICING = [
+      { name: 'Gratis', price: '0', badge: null, featured: false, btnType: 'outline', cta: 'Mulai Gratis', desc: 'Untuk kamu yang baru mulai', features: ['Dashboard dasar', 'Cashflow (50 transaksi/bln)', '2 dompet / rekening', 'Laporan bulanan'] },
+      { name: 'Pro', price: '29.000', badge: 'Paling Populer', featured: true, btnType: 'inverse', cta: 'Coba 7 Hari Gratis', desc: 'Lengkap untuk kebutuhan harian', features: ['Semua fitur Gratis', 'Cashflow tak terbatas', 'Dompet tak terbatas', 'Tracking investasi', 'Manajemen pinjaman', 'Analitik mendalam'] },
+      { name: 'Premium', price: '59.000', badge: null, featured: false, btnType: 'filled', cta: 'Mulai Premium', desc: 'Kontrol penuh keuanganmu', features: ['Semua fitur Pro', 'Export PDF & Excel', 'Multi-mata uang', 'Prioritas dukungan', 'Akses API'] },
+    ];
+
+    const FAQS = [
+      { q: 'Apa itu TONAS?', a: 'TONAS adalah aplikasi manajemen keuangan pribadi yang terinspirasi dari kata TUNAS — karena setiap perjalanan finansial yang sehat berawal dari kebiasaan kecil yang baik. TONAS membantu kamu melacak, mengelola, dan merencanakan keuangan dari satu tempat.' },
+      { q: 'Apakah data keuangan saya aman?', a: 'Keamanan data adalah prioritas utama kami. TONAS menggunakan enkripsi standar perbankan dan infrastruktur cloud yang aman. Data kamu tidak pernah dibagikan ke pihak ketiga.' },
+      { q: 'Apakah TONAS benar-benar gratis?', a: 'Ya! Ada paket Gratis selamanya dengan fitur dasar yang sudah cukup untuk memulai kebiasaan mencatat keuangan. Kamu bisa upgrade ke Pro atau Premium kapan saja jika butuh lebih.' },
+      { q: 'Apakah TONAS terhubung langsung ke rekening bank?', a: 'Saat ini TONAS berfungsi sebagai pencatatan mandiri yang kamu isi sendiri. Integrasi otomatis dengan bank & e-wallet sedang dalam pengembangan dan akan hadir dalam waktu dekat.' },
+      { q: 'Bagaimana cara memulai menggunakan TONAS?', a: 'Cukup daftar dengan email, buat akun gratis, lalu tambahkan dompet dan transaksi pertamamu. Setup awal tidak butuh lebih dari 5 menit.' },
+      { q: 'Apakah ada aplikasi mobile TONAS?', a: 'TONAS saat ini tersedia sebagai web app yang sudah dioptimalkan untuk semua perangkat termasuk smartphone. Aplikasi native iOS & Android sedang dalam pengembangan aktif.' },
+    ];
+
+    /* ── COMPONENTS ──────────────────────────────────────── */
+    const CheckIcon = ({ color }) => (
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+        <polyline points="20 6 9 17 4 12"/>
+      </svg>
+    );
+
+    const ArrowIcon = ({ color = 'currentColor', size = 16 }) => (
+      <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+        <line x1="5" y1="12" x2="19" y2="12"/><polyline points="12 5 19 12 12 19"/>
+      </svg>
+    );
+
+    const Logo = ({ t, height = 48 }) => {
+      const w = Math.round(height * (300 / 118));
+      return (
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 300 118" width={w} height={height} style={{ display: 'block', cursor: 'pointer', flexShrink: 0 }}>
+          <text x="18" y="88" fontFamily="'Plus Jakarta Sans','Trebuchet MS',Arial,sans-serif" fontWeight="700" fontSize="86" fill={t.text} letterSpacing="-1">T</text>
+          <circle cx="99" cy="55" r="30" fill="#C4A030"/>
+          <circle cx="99" cy="55" r="21.5" fill="#F2E6C2"/>
+          <circle cx="99" cy="55" r="21.5" fill="none" stroke="#A88020" strokeWidth="0.8" opacity="0.55"/>
+          <text x="130" y="88" fontFamily="'Plus Jakarta Sans','Trebuchet MS',Arial,sans-serif" fontWeight="700" fontSize="86" fill={t.text}>nas</text>
+          <text x="148" y="109" fontFamily="'Plus Jakarta Sans','Trebuchet MS',Arial,sans-serif" fontWeight="600" fontSize="10.5" fill="#18A04A" letterSpacing="2.8" textAnchor="middle">MONEY MANAGEMENT</text>
+        </svg>
+      );
+    };
+
+    const SectionLabel = ({ t, children }) => (
+      <div style={{ display: 'inline-block', background: t.accentLight, color: t.accent, padding: '5px 14px', borderRadius: 100, fontSize: 11, fontWeight: 700, letterSpacing: '0.8px', textTransform: 'uppercase', marginBottom: 16 }}>{children}</div>
+    );
+
+    /* ── DASHBOARD MOCK ──────────────────────────────────── */
+    const DashboardMock = ({ t }) => (
+      <div style={{ background: t.card, borderRadius: 24, padding: 24, border: `1px solid ${t.border}`, boxShadow: t.shadow, position: 'relative' }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 18 }}>
+          <div>
+            <div style={{ fontSize: 12, color: t.textSub }}>Selamat pagi,</div>
+            <div style={{ fontSize: 17, fontWeight: 700, color: t.text }}>Andi Prasetyo</div>
+          </div>
+          <div style={{ width: 36, height: 36, borderRadius: '50%', background: t.accentLight, display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 800, fontSize: 14, color: t.accent }}>A</div>
+        </div>
+        <div style={{ background: t.accent, borderRadius: 16, padding: '18px 20px', color: t.accentFg, marginBottom: 14 }}>
+          <div style={{ fontSize: 11, opacity: 0.8, marginBottom: 4 }}>Total Saldo</div>
+          <div style={{ fontSize: 26, fontWeight: 800, letterSpacing: '-1.5px' }}>Rp 12.450.000</div>
+          <div style={{ fontSize: 10, opacity: 0.65, marginTop: 4 }}>Diperbarui 2 menit lalu · Juni 2026</div>
+        </div>
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, marginBottom: 14 }}>
+          {[{ l: 'Pemasukan', v: '+5.000.000', c: t.income }, { l: 'Pengeluaran', v: '−2.340.000', c: t.expense }].map(s => (
+            <div key={s.l} style={{ background: t.bg, border: `1px solid ${t.border}`, borderRadius: 12, padding: '12px 14px' }}>
+              <div style={{ fontSize: 10, color: t.textSub, marginBottom: 3 }}>{s.l}</div>
+              <div style={{ fontSize: 13, fontWeight: 700, color: s.c }}>Rp {s.v}</div>
+            </div>
+          ))}
+        </div>
+        <div style={{ fontSize: 10, fontWeight: 700, color: t.textSub, textTransform: 'uppercase', letterSpacing: '0.6px', marginBottom: 10 }}>Transaksi Terakhir</div>
+        {[
+          { name: 'Freelance Design', cat: 'Pemasukan', amt: '+Rp 750.000', pos: true },
+          { name: 'Makan Siang', cat: 'Makanan', amt: '−Rp 35.000', pos: false },
+          { name: 'Spotify', cat: 'Langganan', amt: '−Rp 54.990', pos: false },
+        ].map((tx, i) => (
+          <div key={i} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '7px 0', borderBottom: i < 2 ? `1px solid ${t.border}` : 'none', gap: 8 }}>
+            <div style={{ flex: 1, minWidth: 0 }}>
+              <div style={{ fontSize: 12, fontWeight: 600, color: t.text, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{tx.name}</div>
+              <div style={{ fontSize: 10, color: t.textSub }}>{tx.cat}</div>
+            </div>
+            <div style={{ fontSize: 12, fontWeight: 700, color: tx.pos ? t.income : t.expense, flexShrink: 0 }}>{tx.amt}</div>
+          </div>
+        ))}
+        <div style={{ position: 'absolute', top: -16, right: -18, background: t.card, border: `1px solid ${t.border}`, borderRadius: 12, padding: '9px 14px', boxShadow: t.shadow, whiteSpace: 'nowrap' }}>
+          <div style={{ fontSize: 10, color: t.textSub }}>Tabungan Bulan Ini</div>
+          <div style={{ fontSize: 15, fontWeight: 800, color: t.income }}>+Rp 2.660.000</div>
+        </div>
+      </div>
+    );
+
+    /* ── NAVBAR ──────────────────────────────────────────── */
+    const Navbar = ({ t }) => {
+      const [scrolled, setScrolled] = useState(false);
+      useEffect(() => {
+        const fn = () => setScrolled(window.scrollY > 20);
+        window.addEventListener('scroll', fn);
+        return () => window.removeEventListener('scroll', fn);
+      }, []);
+      return (
+        <nav style={{ position: 'fixed', top: 0, left: 0, right: 0, zIndex: 100, background: scrolled ? `${t.bg}ee` : t.bg, borderBottom: `1px solid ${t.border}`, backdropFilter: 'blur(12px)', padding: '14px 0', transition: 'all 0.3s' }}>
+          <div className="container" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+            <Logo t={t} />
+            <div className="nav-links" style={{ display: 'flex', gap: 28 }}>
+              {[['#features','Fitur'],['#preview','Preview'],['#pricing','Harga'],['#faq','FAQ']].map(([href, label]) => (
+                <a key={href} href={href} style={{ fontSize: 14, fontWeight: 500, color: t.textSub, transition: 'color 0.2s' }}
+                  onMouseEnter={e => e.currentTarget.style.color = t.accent}
+                  onMouseLeave={e => e.currentTarget.style.color = t.textSub}>{label}</a>
+              ))}
+            </div>
+            <button style={{ background: t.accent, color: t.accentFg, border: 'none', borderRadius: 100, padding: '10px 22px', fontSize: 14, fontWeight: 700, cursor: 'pointer', transition: 'opacity 0.2s' }}
+              onMouseEnter={e => e.currentTarget.style.opacity = '0.85'}
+              onMouseLeave={e => e.currentTarget.style.opacity = '1'}>
+              Mulai Gratis
+            </button>
+          </div>
+        </nav>
+      );
+    };
+
+    /* ── HERO ─────────────────────────────────────────────── */
+    const Hero = ({ t }) => (
+      <section style={{ paddingTop: 136, paddingBottom: 80, background: t.heroGlow }}>
+        <div className="container">
+          <div className="hero-grid">
+            <div>
+              <div style={{ display: 'inline-flex', alignItems: 'center', gap: 8, background: t.accentLight, color: t.accent, padding: '6px 14px', borderRadius: 100, fontSize: 11, fontWeight: 700, letterSpacing: '0.8px', textTransform: 'uppercase', marginBottom: 24 }}>
+                ✦ Manajemen Keuangan Generasi Baru
+              </div>
+              <h1 style={{ fontSize: 'clamp(38px,4vw,58px)', fontWeight: 800, lineHeight: 1.1, letterSpacing: '-2px', marginBottom: 24, color: t.text, textWrap: 'balance' }}>
+                Semua Berawal dari Pengelolaan <span style={{ color: t.accent }}>yang Tepat.</span>
+              </h1>
+              <p style={{ fontSize: 17, color: t.textSub, lineHeight: 1.75, maxWidth: 460, marginBottom: 36 }}>
+                Seperti tunas yang tumbuh dari benih kecil — keuangan sehat dimulai dari kebiasaan baik hari ini. TONAS hadir mendampingi setiap langkahmu.
+              </p>
+              <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', marginBottom: 48 }}>
+                <button style={{ display: 'flex', alignItems: 'center', gap: 8, background: t.accent, color: t.accentFg, border: 'none', borderRadius: 100, padding: '14px 30px', fontSize: 15, fontWeight: 700, cursor: 'pointer', transition: 'transform 0.2s' }}
+                  onMouseEnter={e => e.currentTarget.style.transform = 'translateY(-2px)'}
+                  onMouseLeave={e => e.currentTarget.style.transform = 'none'}>
+                  Mulai Gratis Sekarang <ArrowIcon color={t.accentFg} />
+                </button>
+                <button style={{ background: 'transparent', color: t.textSub, border: `1.5px solid ${t.border}`, borderRadius: 100, padding: '14px 24px', fontSize: 15, fontWeight: 600, cursor: 'pointer', transition: 'all 0.2s' }}
+                  onMouseEnter={e => { e.currentTarget.style.borderColor = t.accent; e.currentTarget.style.color = t.accent; }}
+                  onMouseLeave={e => { e.currentTarget.style.borderColor = t.border; e.currentTarget.style.color = t.textSub; }}>
+                  Lihat Demo
+                </button>
+              </div>
+              <div style={{ display: 'flex', gap: 36, paddingTop: 24, borderTop: `1px solid ${t.border}` }}>
+                {[['10K+','Pengguna aktif'],['4.8 ★','Rating rata-rata'],['Rp 0','Untuk memulai']].map(([num, lbl]) => (
+                  <div key={lbl}>
+                    <div style={{ fontSize: 22, fontWeight: 800, letterSpacing: '-1px', color: t.text }}>{num}</div>
+                    <div style={{ fontSize: 12, color: t.textSub, marginTop: 2 }}>{lbl}</div>
+                  </div>
+                ))}
+              </div>
+            </div>
+            <div style={{ position: 'relative', paddingTop: 22, paddingRight: 22 }}>
+              <DashboardMock t={t} />
+            </div>
+          </div>
+        </div>
+      </section>
+    );
+
+    /* ── FEATURES ─────────────────────────────────────────── */
+    const Features = ({ t }) => (
+      <section id="features" style={{ background: t.bgAlt, borderTop: `1px solid ${t.border}` }}>
+        <div className="container">
+          <div style={{ textAlign: 'center', marginBottom: 56 }}>
+            <SectionLabel t={t}>5 Fitur Utama</SectionLabel>
+            <h2 style={{ fontSize: 'clamp(30px,4vw,48px)', fontWeight: 800, letterSpacing: '-2px', color: t.text, lineHeight: 1.15, marginBottom: 14 }}>Satu Aplikasi,<br />Semua Kebutuhanmu</h2>
+            <p style={{ fontSize: 16, color: t.textSub, maxWidth: 500, margin: '0 auto' }}>Dari pencatatan harian hingga perencanaan jangka panjang — TONAS punya semuanya.</p>
+          </div>
+          <div className="features-grid">
+            {FEATURES.map(f => (
+              <div key={f.id} className={f.isWide ? 'cashflow-card' : ''}
+                style={{ background: t.card, border: `1px solid ${t.border}`, borderRadius: 20, padding: 28, transition: 'transform 0.25s, box-shadow 0.25s', cursor: 'default' }}
+                onMouseEnter={e => { e.currentTarget.style.transform = 'translateY(-4px)'; e.currentTarget.style.boxShadow = t.shadow; }}
+                onMouseLeave={e => { e.currentTarget.style.transform = 'none'; e.currentTarget.style.boxShadow = 'none'; }}>
+                <div>
+                  <div style={{ width: 48, height: 48, borderRadius: 14, background: t.accentLight, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 22, color: t.accent, marginBottom: 18 }}>{f.icon}</div>
+                  <h3 style={{ fontSize: 19, fontWeight: 700, marginBottom: 8, color: t.text }}>{f.name}</h3>
+                  <p style={{ fontSize: 14, color: t.textSub, lineHeight: 1.65, marginBottom: 16 }}>{f.desc}</p>
+                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+                    {f.pills.map(p => <span key={p} style={{ background: t.accentLight, color: t.accent, padding: '3px 10px', borderRadius: 100, fontSize: 11, fontWeight: 600 }}>{p}</span>)}
+                  </div>
+                </div>
+                {f.isWide && (
+                  <div style={{ background: t.bg, borderRadius: 14, padding: 20, border: `1px solid ${t.border}` }}>
+                    <div style={{ fontSize: 10, fontWeight: 700, color: t.textSub, textTransform: 'uppercase', letterSpacing: '0.6px', marginBottom: 14 }}>Cashflow Juni 2026</div>
+                    {[{ l: 'Pemasukan', pct: 78, c: t.income },{ l: 'Pengeluaran', pct: 52, c: t.expense },{ l: 'Dipinjam', pct: 30, c: t.accent },{ l: 'Utang', pct: 18, c: t.textSub }].map(b => (
+                      <div key={b.l} style={{ marginBottom: 10 }}>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 11, color: t.textSub, marginBottom: 4 }}>
+                          <span>{b.l}</span><span style={{ fontWeight: 700, color: b.c }}>{b.pct}%</span>
+                        </div>
+                        <div style={{ height: 7, background: t.border, borderRadius: 100, overflow: 'hidden' }}>
+                          <div style={{ height: '100%', width: `${b.pct}%`, background: b.c, borderRadius: 100 }}></div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            ))}
+          </div>
+        </div>
+      </section>
+    );
+
+    /* ── PREVIEW ──────────────────────────────────────────── */
+    const PREVIEW_CONTENT = (t) => ({
+      dashboard: (
+        <div>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3,1fr)', gap: 8, marginBottom: 12 }}>
+            {[{ l:'Total Saldo', v:'Rp 12.450.000', c: t.text },{ l:'Pemasukan', v:'Rp 5.000.000', c: t.income },{ l:'Pengeluaran', v:'Rp 2.340.000', c: t.expense }].map(s => (
+              <div key={s.l} style={{ background: t.bg, borderRadius: 10, padding: 11, border: `1px solid ${t.border}` }}>
+                <div style={{ fontSize: 9, color: t.textSub }}>{s.l}</div>
+                <div style={{ fontSize: 12, fontWeight: 700, color: s.c, marginTop: 3 }}>{s.v}</div>
+              </div>
+            ))}
+          </div>
+          <div style={{ background: t.bg, borderRadius: 10, padding: 14, border: `1px solid ${t.border}` }}>
+            <div style={{ fontSize: 9, color: t.textSub, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: 10 }}>Tren 6 Bulan Terakhir</div>
+            <div style={{ display: 'flex', gap: 5, alignItems: 'flex-end', height: 56 }}>
+              {[38,52,35,62,70,85].map((h, i) => (
+                <div key={i} style={{ flex: 1, height: `${h}%`, background: i === 5 ? t.accent : t.accentLight, borderRadius: '4px 4px 0 0' }}></div>
+              ))}
+            </div>
+          </div>
+        </div>
+      ),
+      cashflow: (
+        <div>
+          <div style={{ display: 'flex', gap: 5, marginBottom: 12, flexWrap: 'wrap' }}>
+            {['Semua','Pemasukan','Pengeluaran','Transfer'].map((tab, i) => (
+              <div key={tab} style={{ padding: '4px 10px', borderRadius: 100, fontSize: 10, fontWeight: 600, background: i === 0 ? t.accent : t.accentLight, color: i === 0 ? t.accentFg : t.accent }}>{tab}</div>
+            ))}
+          </div>
+          {[{ n:'Gaji Bulanan', c:'Pemasukan', a:'+5.000.000', pos:true, d:'1 Jun' },{ n:'Kos & Listrik', c:'Pengeluaran', a:'−800.000', pos:false, d:'2 Jun' },{ n:'Pinjam ke Budi', c:'Dipinjam', a:'+200.000', pos:true, d:'3 Jun' },{ n:'Makan & Jajan', c:'Pengeluaran', a:'−350.000', pos:false, d:'5 Jun' }].map((tx,i) => (
+            <div key={i} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '8px 0', borderBottom: `1px solid ${t.border}`, gap: 8 }}>
+              <div style={{ display: 'flex', gap: 8, alignItems: 'center', flex: 1, minWidth: 0 }}>
+                <div style={{ width: 28, height: 28, borderRadius: '50%', background: tx.pos ? t.accentLight : `${t.expense}20`, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 12, color: tx.pos ? t.income : t.expense, flexShrink: 0 }}>{tx.pos ? '↑' : '↓'}</div>
+                <div style={{ minWidth: 0 }}>
+                  <div style={{ fontSize: 12, fontWeight: 600, color: t.text, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{tx.n}</div>
+                  <div style={{ fontSize: 10, color: t.textSub }}>{tx.c} · {tx.d}</div>
+                </div>
+              </div>
+              <div style={{ fontSize: 12, fontWeight: 700, color: tx.pos ? t.income : t.expense, flexShrink: 0 }}>Rp {tx.a}</div>
+            </div>
+          ))}
+        </div>
+      ),
+      dompet: (
+        <div>
+          <div style={{ fontSize: 10, fontWeight: 700, color: t.textSub, textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: 10 }}>Semua Dompet</div>
+          {[{ n:'BCA Tabungan', v:'Rp 7.200.000', ic:'🏦', pct:58 },{ n:'GoPay', v:'Rp 430.000', ic:'📱', pct:12 },{ n:'Uang Tunai', v:'Rp 820.000', ic:'💵', pct:16 },{ n:'OVO', v:'Rp 150.000', ic:'📲', pct:8 }].map((w,i) => (
+            <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '8px 0', borderBottom: `1px solid ${t.border}` }}>
+              <div style={{ fontSize: 18 }}>{w.ic}</div>
+              <div style={{ flex: 1 }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 12, fontWeight: 600, marginBottom: 4, color: t.text }}>
+                  <span>{w.n}</span><span style={{ color: t.accent }}>{w.v}</span>
+                </div>
+                <div style={{ height: 4, background: t.border, borderRadius: 100 }}>
+                  <div style={{ height: '100%', width: `${w.pct}%`, background: t.accent, borderRadius: 100 }}></div>
+                </div>
+              </div>
+            </div>
+          ))}
+        </div>
+      ),
+      investasi: (
+        <div>
+          <div style={{ background: t.accentLight, borderRadius: 12, padding: 14, marginBottom: 12 }}>
+            <div style={{ fontSize: 10, color: t.accent, fontWeight: 700 }}>Total Portofolio</div>
+            <div style={{ fontSize: 22, fontWeight: 800, color: t.accent, letterSpacing: '-1px' }}>Rp 8.750.000</div>
+            <div style={{ fontSize: 10, color: t.income, marginTop: 2 }}>↑ +12.4% dari bulan lalu</div>
+          </div>
+          {[{ n:'Reksadana Pasar Uang', v:'Rp 5.000.000', g:'+8.2%', pos:true },{ n:'Saham BBCA', v:'Rp 2.150.000', g:'+15.7%', pos:true },{ n:'Emas Digital', v:'Rp 1.600.000', g:'−2.1%', pos:false }].map((inv,i) => (
+            <div key={i} style={{ display: 'flex', justifyContent: 'space-between', padding: '8px 0', borderBottom: `1px solid ${t.border}` }}>
+              <div><div style={{ fontSize: 12, fontWeight: 600, color: t.text }}>{inv.n}</div><div style={{ fontSize: 10, color: t.textSub }}>{inv.v}</div></div>
+              <div style={{ fontSize: 12, fontWeight: 700, color: inv.pos ? t.income : t.expense }}>{inv.g}</div>
+            </div>
+          ))}
+        </div>
+      ),
+      pinjaman: (
+        <div>
+          {[{ n:'KPR Rumah', total:'450.000.000', sisa:'382.500.000', pct:15 },{ n:'KTA Bank Mandiri', total:'15.000.000', sisa:'6.200.000', pct:59 },{ n:'Kartu Kredit BNI', total:'8.000.000', sisa:'2.400.000', pct:70 }].map((loan,i) => (
+            <div key={i} style={{ background: t.bg, border: `1px solid ${t.border}`, borderRadius: 12, padding: 14, marginBottom: 10 }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 8 }}>
+                <div style={{ fontSize: 13, fontWeight: 700, color: t.text }}>{loan.n}</div>
+                <div style={{ fontSize: 10, color: t.textSub }}>Sisa: Rp {loan.sisa}</div>
+              </div>
+              <div style={{ height: 6, background: t.border, borderRadius: 100, marginBottom: 5 }}>
+                <div style={{ height: '100%', width: `${loan.pct}%`, background: t.accent, borderRadius: 100 }}></div>
+              </div>
+              <div style={{ fontSize: 10, color: t.textSub }}>{loan.pct}% sudah terbayar</div>
+            </div>
+          ))}
+        </div>
+      ),
+    });
+
+    const Preview = ({ t }) => {
+      const [active, setActive] = useState('dashboard');
+      const tabs = [['dashboard','Dashboard'],['cashflow','Cashflow'],['dompet','Dompet'],['investasi','Investasi'],['pinjaman','Pinjaman']];
+      const content = PREVIEW_CONTENT(t);
+      return (
+        <section id="preview" style={{ background: t.bg, borderTop: `1px solid ${t.border}` }}>
+          <div className="container">
+            <div className="preview-grid">
+              <div>
+                <SectionLabel t={t}>Preview Aplikasi</SectionLabel>
+                <h2 style={{ fontSize: 'clamp(28px,3.5vw,44px)', fontWeight: 800, letterSpacing: '-1.5px', lineHeight: 1.2, marginBottom: 16, color: t.text }}>Desain Bersih,<br />Data Selalu Jelas</h2>
+                <p style={{ fontSize: 15, color: t.textSub, lineHeight: 1.75, marginBottom: 32 }}>Antarmuka TONAS dirancang agar kondisi keuanganmu bisa dipahami sekilas pandang — tanpa navigasi yang rumit.</p>
+                <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
+                  {tabs.map(([id, label]) => (
+                    <button key={id} onClick={() => setActive(id)} style={{ padding: '8px 16px', borderRadius: 100, fontSize: 13, fontWeight: 600, cursor: 'pointer', border: 'none', transition: 'all 0.2s', background: active === id ? t.accent : t.accentLight, color: active === id ? t.accentFg : t.accent }}>{label}</button>
+                  ))}
+                </div>
+              </div>
+              <div style={{ background: t.card, borderRadius: 20, border: `1px solid ${t.border}`, overflow: 'hidden', boxShadow: t.shadow }}>
+                <div style={{ background: t.bg, padding: '10px 14px', borderBottom: `1px solid ${t.border}`, display: 'flex', alignItems: 'center', gap: 6 }}>
+                  {['#FF5F57','#FFBD2E','#28CA41'].map(c => <div key={c} style={{ width: 10, height: 10, borderRadius: '50%', background: c }}></div>)}
+                  <div style={{ flex: 1, background: t.border, borderRadius: 6, padding: '4px 10px', fontSize: 10, color: t.textSub, marginLeft: 6 }}>app.tonas.id/{active}</div>
+                </div>
+                <div style={{ padding: 20, minHeight: 290 }}>
+                  <div style={{ fontSize: 14, fontWeight: 700, marginBottom: 14, color: t.text }}>{tabs.find(x => x[0] === active)?.[1]}</div>
+                  {content[active]}
+                </div>
+              </div>
+            </div>
+          </div>
+        </section>
+      );
+    };
+
+    /* ── TESTIMONIALS ─────────────────────────────────────── */
+    const Testimonials = ({ t }) => (
+      <section style={{ background: t.bgAlt, borderTop: `1px solid ${t.border}` }}>
+        <div className="container">
+          <div style={{ textAlign: 'center', marginBottom: 56 }}>
+            <SectionLabel t={t}>Testimoni</SectionLabel>
+            <h2 style={{ fontSize: 'clamp(28px,3.5vw,44px)', fontWeight: 800, letterSpacing: '-1.5px', color: t.text }}>Kata Mereka tentang TONAS</h2>
+          </div>
+          <div className="three-col">
+            {TESTIMONIALS.map(tst => (
+              <div key={tst.name} style={{ background: t.card, border: `1px solid ${t.border}`, borderRadius: 20, padding: 28 }}>
+                <div style={{ display: 'flex', gap: 2, marginBottom: 16 }}>
+                  {[...Array(5)].map((_,i) => <span key={i} style={{ color: '#F59E0B', fontSize: 13 }}>★</span>)}
+                </div>
+                <p style={{ fontSize: 14, color: t.textSub, lineHeight: 1.75, marginBottom: 22, fontStyle: 'italic' }}>{tst.text}</p>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+                  <div style={{ width: 40, height: 40, borderRadius: '50%', background: t.accentLight, display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 800, fontSize: 15, color: t.accent, flexShrink: 0 }}>{tst.avatar}</div>
+                  <div>
+                    <div style={{ fontSize: 14, fontWeight: 700, color: t.text }}>{tst.name}</div>
+                    <div style={{ fontSize: 12, color: t.textSub }}>{tst.role}</div>
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      </section>
+    );
+
+    /* ── PRICING ──────────────────────────────────────────── */
+    const Pricing = ({ t }) => (
+      <section id="pricing" style={{ background: t.bg, borderTop: `1px solid ${t.border}` }}>
+        <div className="container">
+          <div style={{ textAlign: 'center', marginBottom: 56 }}>
+            <SectionLabel t={t}>Harga</SectionLabel>
+            <h2 style={{ fontSize: 'clamp(28px,3.5vw,44px)', fontWeight: 800, letterSpacing: '-1.5px', color: t.text, marginBottom: 12 }}>Mulai Gratis,<br />Upgrade Kapan Saja</h2>
+            <p style={{ fontSize: 16, color: t.textSub }}>Tidak ada kartu kredit yang dibutuhkan untuk paket gratis.</p>
+          </div>
+          <div className="three-col">
+            {PRICING.map(plan => {
+              const fg = plan.featured ? t.accentFg : t.text;
+              const bg = plan.featured ? t.accent : t.card;
+              const bdr = plan.featured ? t.accent : t.border;
+              const btnBg = plan.featured ? t.accentFg : plan.btnType === 'filled' ? t.accent : 'transparent';
+              const btnColor = plan.featured ? t.accent : plan.btnType === 'filled' ? t.accentFg : t.text;
+              const btnBorder = plan.btnType === 'outline' && !plan.featured ? `1.5px solid ${t.border}` : 'none';
+              return (
+                <div key={plan.name} style={{ background: bg, border: `1px solid ${bdr}`, borderRadius: 20, padding: 32, color: fg, position: 'relative' }}>
+                  {plan.badge && (
+                    <div style={{ position: 'absolute', top: -12, left: '50%', transform: 'translateX(-50%)', background: t.accentDark, color: '#fff', padding: '4px 14px', borderRadius: 100, fontSize: 11, fontWeight: 700, whiteSpace: 'nowrap' }}>{plan.badge}</div>
+                  )}
+                  <div style={{ fontSize: 17, fontWeight: 700, marginBottom: 8 }}>{plan.name}</div>
+                  <div style={{ marginBottom: 4 }}>
+                    <span style={{ fontSize: 13, opacity: 0.7 }}>Rp </span>
+                    <span style={{ fontSize: 38, fontWeight: 800, letterSpacing: '-2px' }}>{plan.price}</span>
+                    <span style={{ fontSize: 14, opacity: 0.7 }}>/bln</span>
+                  </div>
+                  <div style={{ fontSize: 13, opacity: 0.7, marginBottom: 24 }}>{plan.desc}</div>
+                  <ul style={{ marginBottom: 28 }}>
+                    {plan.features.map(f => (
+                      <li key={f} style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13, padding: '7px 0', borderBottom: `1px solid ${plan.featured ? 'rgba(255,255,255,0.15)' : t.border}` }}>
+                        <CheckIcon color={plan.featured ? t.accentFg : t.accent} />{f}
+                      </li>
+                    ))}
+                  </ul>
+                  <button style={{ width: '100%', padding: '13px', borderRadius: 100, fontSize: 14, fontWeight: 700, cursor: 'pointer', background: btnBg, color: btnColor, border: btnBorder, transition: 'transform 0.2s' }}
+                    onMouseEnter={e => e.currentTarget.style.transform = 'translateY(-2px)'}
+                    onMouseLeave={e => e.currentTarget.style.transform = 'none'}>
+                    {plan.cta}
+                  </button>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      </section>
+    );
+
+    /* ── FAQ ──────────────────────────────────────────────── */
+    const FAQ = ({ t }) => {
+      const [open, setOpen] = useState(null);
+      return (
+        <section id="faq" style={{ background: t.bgAlt, borderTop: `1px solid ${t.border}` }}>
+          <div className="container">
+            <div style={{ textAlign: 'center', marginBottom: 56 }}>
+              <SectionLabel t={t}>FAQ</SectionLabel>
+              <h2 style={{ fontSize: 'clamp(28px,3.5vw,44px)', fontWeight: 800, letterSpacing: '-1.5px', color: t.text }}>Ada Pertanyaan?</h2>
+            </div>
+            <div style={{ maxWidth: 720, margin: '0 auto' }}>
+              {FAQS.map((item, i) => (
+                <div key={i} style={{ borderBottom: `1px solid ${t.border}` }}>
+                  <button onClick={() => setOpen(open === i ? null : i)} style={{ width: '100%', textAlign: 'left', background: 'none', border: 'none', padding: '20px 0', cursor: 'pointer', display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 16, fontSize: 16, fontWeight: 600, color: t.text }}>
+                    {item.q}
+                    <span style={{ fontSize: 22, color: t.accent, transform: open === i ? 'rotate(45deg)' : 'none', transition: 'transform 0.3s', flexShrink: 0 }}>+</span>
+                  </button>
+                  <div style={{ maxHeight: open === i ? 200 : 0, overflow: 'hidden', transition: 'max-height 0.35s ease' }}>
+                    <p style={{ fontSize: 14, color: t.textSub, lineHeight: 1.8, paddingBottom: 20 }}>{item.a}</p>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        </section>
+      );
+    };
+
+    /* ── CTA ──────────────────────────────────────────────── */
+    const CTASection = ({ t }) => (
+      <section style={{ background: t.accent, padding: '100px 28px', textAlign: 'center' }}>
+        <div style={{ display: 'inline-block', background: 'rgba(255,255,255,0.2)', color: t.accentFg, padding: '5px 14px', borderRadius: 100, fontSize: 11, fontWeight: 700, letterSpacing: '0.8px', textTransform: 'uppercase', marginBottom: 20 }}>Mulai Hari Ini</div>
+        <h2 style={{ fontSize: 'clamp(34px,5vw,64px)', fontWeight: 800, letterSpacing: '-2px', color: t.accentFg, lineHeight: 1.1, marginBottom: 16 }}>
+          Seperti Tunas yang Tumbuh,<br />Mulailah dari Kebiasaan Kecil.
+        </h2>
+        <p style={{ fontSize: 17, color: t.accentFg, opacity: 0.85, maxWidth: 520, margin: '0 auto 40px', lineHeight: 1.7 }}>
+          Daftar sekarang dan mulai perjalanan keuanganmu yang lebih sehat bersama TONAS — gratis, selamanya.
+        </p>
+        <button style={{ background: t.accentFg, color: t.accent, border: 'none', borderRadius: 100, padding: '16px 40px', fontSize: 16, fontWeight: 700, cursor: 'pointer', transition: 'transform 0.2s' }}
+          onMouseEnter={e => e.currentTarget.style.transform = 'translateY(-3px)'}
+          onMouseLeave={e => e.currentTarget.style.transform = 'none'}>
+          Daftar Gratis Sekarang →
+        </button>
+      </section>
+    );
+
+    /* ── FOOTER ───────────────────────────────────────────── */
+    const Footer = ({ t }) => (
+      <footer style={{ background: t.bgAlt, borderTop: `1px solid ${t.border}`, padding: '56px 0 28px' }}>
+        <div className="container">
+          <div className="footer-grid" style={{ marginBottom: 48 }}>
+            <div>
+              <Logo t={t} />
+              <p style={{ fontSize: 13, color: t.textSub, marginTop: 14, lineHeight: 1.7, maxWidth: 240 }}>Aplikasi manajemen keuangan untuk generasi muda Indonesia yang ingin tumbuh finansial.</p>
+            </div>
+            {[{ title:'Produk', links:['Fitur','Harga','Roadmap','Changelog'] },{ title:'Perusahaan', links:['Tentang Kami','Blog','Karir','Press'] },{ title:'Dukungan', links:['Pusat Bantuan','Komunitas','Kebijakan Privasi','Syarat & Ketentuan'] }].map(col => (
+              <div key={col.title}>
+                <h4 style={{ fontSize: 13, fontWeight: 700, marginBottom: 16, color: t.text }}>{col.title}</h4>
+                {col.links.map(link => (
+                  <a key={link} href="#" style={{ display: 'block', fontSize: 13, color: t.textSub, marginBottom: 10, transition: 'color 0.2s' }}
+                    onMouseEnter={e => e.currentTarget.style.color = t.accent}
+                    onMouseLeave={e => e.currentTarget.style.color = t.textSub}>{link}</a>
+                ))}
+              </div>
+            ))}
+          </div>
+          <div style={{ borderTop: `1px solid ${t.border}`, paddingTop: 24, display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 12 }}>
+            <div style={{ fontSize: 12, color: t.textSub }}>© 2026 TONAS. Dibuat dengan ❤️ di Indonesia.</div>
+            <div style={{ fontSize: 12, color: t.textSub, fontStyle: 'italic' }}>Seperti tunas — tumbuh satu langkah kecil setiap hari.</div>
+          </div>
+        </div>
+      </footer>
+    );
+
+    /* ── APP ──────────────────────────────────────────────── */
+    const TWEAK_DEFAULTS = /*EDITMODE-BEGIN*/{
+      "theme": "green"
+    }/*EDITMODE-END*/;
+
+    function App() {
+      const [tw, setTweak] = useTweaks(TWEAK_DEFAULTS);
+      const t = THEMES[tw.theme] || THEMES.green;
+
+      useEffect(() => {
+        document.body.style.background = t.bg;
+        document.body.style.color = t.text;
+      }, [t]);
+
+      return (
+        <div style={{ fontFamily: "'Plus Jakarta Sans', sans-serif", background: t.bg, color: t.text }}>
+          <Navbar t={t} />
+          <Hero t={t} />
+          <Features t={t} />
+          <Preview t={t} />
+          <Testimonials t={t} />
+          <Pricing t={t} />
+          <FAQ t={t} />
+          <CTASection t={t} />
+          <Footer t={t} />
+
+          <TweaksPanel>
+            <TweakSection label="Tema Warna" />
+            <TweakRadio label="Pilih Tema" value={tw.theme}
+              options={['green', 'dark', 'purple']}
+              onChange={v => setTweak('theme', v)} />
+          </TweaksPanel>
+        </div>
+      );
+    }
+
+    ReactDOM.createRoot(document.getElementById('root')).render(<App />);
+  </script>
+</body>
+</html>

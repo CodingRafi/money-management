@@ -14,15 +14,15 @@ const TYPE_CONFIG: Record<
   RecentTransaction["type"],
   { icon: ElementType; iconBg: string; iconColor: string }
 > = {
-  INCOME:     { icon: ArrowDown,       iconBg: "bg-emerald-100 dark:bg-emerald-900/30", iconColor: "text-emerald-600" },
-  EXPENSE:    { icon: ArrowUp,         iconBg: "bg-red-100 dark:bg-red-900/30",         iconColor: "text-red-500" },
-  TRANSFER:   { icon: ArrowLeftRight,  iconBg: "bg-blue-100 dark:bg-blue-900/30",       iconColor: "text-blue-600" },
-  INVESTMENT: { icon: BarChart2,       iconBg: "bg-purple-100 dark:bg-purple-900/30",   iconColor: "text-purple-600" },
+  INCOME:     { icon: ArrowDown,       iconBg: "bg-primary/10",          iconColor: "text-primary" },
+  EXPENSE:    { icon: ArrowUp,         iconBg: "bg-destructive/10",      iconColor: "text-destructive" },
+  TRANSFER:   { icon: ArrowLeftRight,  iconBg: "bg-muted",               iconColor: "text-muted-foreground" },
+  INVESTMENT: { icon: BarChart2,       iconBg: "bg-secondary",           iconColor: "text-secondary-foreground" },
 }
 
 function amountColor(t: RecentTransaction) {
   if (t.type === "TRANSFER") return "text-foreground"
-  return t.isCredit ? "text-emerald-600" : "text-red-500"
+  return t.isCredit ? "text-primary" : "text-destructive"
 }
 
 export async function RecentTransactionsSection({ userId }: { userId: string }) {

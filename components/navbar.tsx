@@ -25,11 +25,11 @@ interface NavbarProps {
 }
 
 const NAV_LINKS = [
-  { href: "/",         label: "Dashboard", icon: LayoutDashboard },
-  { href: "/rekap",    label: "Cashflow",  icon: FolderOpen },
-  { href: "/dompet",   label: "Dompet",    icon: Wallet },
-  { href: "/investasi",label: "Investasi", icon: TrendingUp },
-  { href: "/pinjaman", label: "Pinjaman",  icon: Banknote },
+  { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
+  { href: "/rekap",     label: "Cashflow",  icon: FolderOpen },
+  { href: "/dompet",    label: "Dompet",    icon: Wallet },
+  { href: "/investasi", label: "Investasi", icon: TrendingUp },
+  { href: "/pinjaman",  label: "Pinjaman",  icon: Banknote },
 ]
 
 export function Navbar({ user, isAdmin }: NavbarProps) {
@@ -56,14 +56,14 @@ export function Navbar({ user, isAdmin }: NavbarProps) {
     <header className="sticky top-0 z-40 border-b border-border bg-background/95 backdrop-blur">
       <div className="mx-auto flex h-14 max-w-7xl items-center justify-between px-4">
         <div className="flex items-center gap-6">
-          <Link href="/" className="flex items-center gap-2 shrink-0">
+          <Link href="/dashboard" className="flex items-center gap-2 shrink-0">
             <Wallet className="h-5 w-5 text-primary" />
             <span className="font-semibold text-foreground hidden sm:inline">Money Management</span>
           </Link>
 
           <nav className="flex items-center gap-1">
             {NAV_LINKS.map(({ href, label }) => {
-              const isActive = href === "/" ? pathname === "/" : pathname.startsWith(href)
+              const isActive = pathname.startsWith(href)
               return (
                 <Link
                   key={href}
