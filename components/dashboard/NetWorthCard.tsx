@@ -1,6 +1,7 @@
 import { Card, CardContent } from "@/components/ui/card"
-import { getNetWorth } from "@/lib/dashboard"
-import { TrendingDown, TrendingUp } from "lucide-react"
+import { getWealthOverview } from "@/lib/dashboard"
+import { Shield } from "lucide-react"
+import { WealthCharts } from "./WealthCharts"
 
 function formatRp(n: number) {
   return new Intl.NumberFormat("id-ID", {
@@ -8,72 +9,104 @@ function formatRp(n: number) {
   }).format(n)
 }
 
-export async function NetWorthSection({ userId }: { userId: string }) {
-  const data = await getNetWorth(userId)
+export async function NetWorthSection({ userId, year }: { userId: string; year: number }) {
+  const data = getWealthOverview(userId, year)
 
-  if (data.total === 0 && data.liquid === 0 && data.nonLiquid === 0) {
-    return (
-      <Card>
-        <CardContent className="py-8 text-center">
-          <p className="text-sm text-muted-foreground">
-            Tambahkan dompet pertama kamu untuk mulai tracking
-          </p>
-        </CardContent>
-      </Card>
-    )
-  }
+  const emergencyStatus =
+    data.emergencyFundMonths >= 6 ? "AMAN"  :
+    data.emergencyFundMonths >= 3 ? "CUKUP" : "KURANG"
+
+  const emergencyColor =
+    emergencyStatus === "AMAN"  ? "text-emerald-600" :
+    emergencyStatus === "CUKUP" ? "text-amber-500"   : "text-red-500"
 
   return (
-    <Card>
-      <CardContent className="p-6">
-        <p className="text-sm text-muted-foreground mb-1">Net Worth</p>
-        <div className="flex flex-wrap items-center gap-3 mb-4">
-          <p className="text-3xl font-bold tabular-nums">{formatRp(data.total)}</p>
-          {data.changePercent !== null && (
-            <span
-              className={`flex items-center gap-1 text-sm font-medium ${
-                data.changePercent >= 0 ? "text-primary" : "text-destructive"
-              }`}
-            >
-              {data.changePercent >= 0
-                ? <TrendingUp className="h-4 w-4" />
-                : <TrendingDown className="h-4 w-4" />}
-              {Math.abs(data.changePercent).toFixed(1)}% vs bulan lalu
-            </span>
+    <>
+      <Card>
+        <CardContent className="p-6">
+          {/* Total Kekayaan */}
+          <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground mb-1">
+            Total Kekayaan
+          </p>
+          <p className="text-3xl font-bold tabular-nums mb-4">{formatRp(data.totalKekayaan)}</p>
+
+          <div className="flex flex-wrap gap-6 mb-5">
+            <div>
+              <p className="text-xs text-muted-foreground mb-0.5">Dompet</p>
+              <p className="text-sm font-semibold tabular-nums text-blue-600">{formatRp(data.totalDompet)}</p>
+            </div>
+            <div>
+              <p className="text-xs text-muted-foreground mb-0.5">Investasi</p>
+              <p className="text-sm font-semibold tabular-nums text-emerald-600">{formatRp(data.totalInvestasi)}</p>
+            </div>
+          </div>
+
+          {/* Hutang */}
+          <div className="border-t border-border pt-4">
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-xs text-muted-foreground mb-0.5">Hutang</p>
+                <p className={`text-sm font-semibold tabular-nums ${data.hutangSisa > 0 ? "text-red-600" : "text-muted-foreground"}`}>
+                  {data.hutangSisa > 0 ? formatRp(data.hutangSisa) : "Tidak ada hutang"}
+                </p>
+              </div>
+              {data.hutangSisa > 0 && (
+                <div className="text-right">
+                  <p className="text-xs text-muted-foreground mb-0.5">Kekayaan Bersih</p>
+                  <p className="text-sm font-semibold tabular-nums">
+                    {formatRp(data.totalKekayaan - data.hutangSisa)}
+                  </p>
+                </div>
+              )}
+            </div>
+          </div>
+
+          {/* Dana darurat indicator */}
+          {data.emergencyFundMonths > 0 && (
+            <div className="border-t border-border mt-4 pt-3 flex items-center justify-between">
+              <div className="flex items-center gap-1.5">
+                <Shield className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
+                <span className="text-xs text-muted-foreground">Dana Darurat (liquid)</span>
+              </div>
+              <span className={`text-xs font-semibold ${emergencyColor}`}>
+                {data.emergencyFundMonths.toFixed(1)} bulan · {emergencyStatus}
+              </span>
+            </div>
           )}
-        </div>
-        <div className="flex gap-8">
-          <div>
-            <p className="text-xs text-muted-foreground mb-0.5">Liquid</p>
-            <p className="text-sm font-semibold text-primary tabular-nums">
-              {formatRp(data.liquid)}
-            </p>
-          </div>
-          <div>
-            <p className="text-xs text-muted-foreground mb-0.5">Non-liquid</p>
-            <p className="text-sm font-semibold tabular-nums">
-              {formatRp(data.nonLiquid)}
-            </p>
-          </div>
-        </div>
-      </CardContent>
-    </Card>
+        </CardContent>
+      </Card>
+
+      <WealthCharts data={data} year={year} />
+    </>
   )
 }
 
 export function NetWorthSkeleton() {
   return (
-    <Card>
-      <CardContent className="p-6">
-        <div className="animate-pulse space-y-3">
-          <div className="h-3 w-16 bg-muted rounded" />
-          <div className="h-9 w-56 bg-muted rounded" />
-          <div className="flex gap-8">
-            <div className="h-8 w-28 bg-muted rounded" />
-            <div className="h-8 w-28 bg-muted rounded" />
+    <>
+      <Card>
+        <CardContent className="p-6">
+          <div className="animate-pulse space-y-3">
+            <div className="h-3 w-28 bg-muted rounded" />
+            <div className="h-9 w-56 bg-muted rounded" />
+            <div className="flex gap-6">
+              <div className="h-8 w-28 bg-muted rounded" />
+              <div className="h-8 w-28 bg-muted rounded" />
+            </div>
+            <div className="border-t border-border pt-4 space-y-3">
+              <div className="h-5 w-full bg-muted rounded" />
+              <div className="h-5 w-full bg-muted rounded" />
+            </div>
           </div>
+        </CardContent>
+      </Card>
+      <div className="space-y-4">
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <Card><CardContent className="p-6 animate-pulse"><div className="h-56 bg-muted rounded" /></CardContent></Card>
+          <Card><CardContent className="p-6 animate-pulse"><div className="h-56 bg-muted rounded" /></CardContent></Card>
         </div>
-      </CardContent>
-    </Card>
+        <Card><CardContent className="p-6 animate-pulse"><div className="h-56 bg-muted rounded" /></CardContent></Card>
+      </div>
+    </>
   )
 }

@@ -4,6 +4,7 @@ import { LOCAL_USER_ID } from "@/lib/auth-simple"
 import { validateSession } from "@/lib/auth-simple"
 import { cookies } from "next/headers"
 
+// Tables with a user_id column — filtered by user
 const USER_TABLES = [
   "wallets",
   "income_categories",
@@ -14,14 +15,25 @@ const USER_TABLES = [
   "incomes",
   "expenses",
   "transfers",
-  "investment_categories",
   "investments",
   "investment_goals",
-  "investment_transactions",
   "loans",
-  "loan_payments",
-  "cashflows",
 ] as const
+
+// Tables without user_id that need a JOIN to filter by user
+const JOINED_TABLES: { table: string; join: string }[] = [
+  {
+    table: "investment_transactions",
+    join: "JOIN investments i ON investment_transactions.investment_id = i.id WHERE i.user_id = ?",
+  },
+  {
+    table: "loan_payments",
+    join: "JOIN loans l ON loan_payments.loan_id = l.id WHERE l.user_id = ?",
+  },
+]
+
+// Shared master data (no user filter)
+const MASTER_TABLES = ["investment_categories"] as const
 
 function escapeSQL(val: unknown): string {
   if (val === null || val === undefined) return "NULL"
@@ -65,10 +77,17 @@ export async function GET() {
     lines.push(tableToInserts(table, rows))
   }
 
-  // Export app_settings (no user_id column)
-  const settings = db.prepare("SELECT * FROM app_settings").all() as Record<string, unknown>[]
-  lines.push(`-- Table: app_settings`)
-  lines.push(tableToInserts("app_settings", settings))
+  for (const { table, join } of JOINED_TABLES) {
+    const rows = db.prepare(`SELECT ${table}.* FROM ${table} ${join}`).all(userId) as Record<string, unknown>[]
+    lines.push(`-- Table: ${table} (${rows.length} rows)`)
+    lines.push(tableToInserts(table, rows))
+  }
+
+  for (const table of MASTER_TABLES) {
+    const rows = db.prepare(`SELECT * FROM ${table}`).all() as Record<string, unknown>[]
+    lines.push(`-- Table: ${table} (${rows.length} rows)`)
+    lines.push(tableToInserts(table, rows))
+  }
 
   lines.push(`PRAGMA foreign_keys = ON;`)
 

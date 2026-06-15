@@ -1,5 +1,6 @@
 export type LoanStatus = "ONGOING" | "LUNAS" | "TERLAMBAT"
 export type InterestType = "FLAT" | "REDUCING"
+export type PaymentLikelihood = "LANCAR" | "MERAGUKAN" | "MACET"
 
 export type LoanPaymentRow = {
   principal_paid: string

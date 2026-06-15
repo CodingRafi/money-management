@@ -2,7 +2,7 @@ import { db } from "@/lib/db"
 import { LOCAL_USER_ID } from "@/lib/auth-simple"
 import { Card, CardContent, CardHeader } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
-import { Plus, Pencil, Trash2, X, Target, TrendingUp, ChevronRight } from "lucide-react"
+import { Plus, Pencil, Trash2, X, Target, TrendingUp, ChevronRight, BarChart2 } from "lucide-react"
 import Link from "next/link"
 import { GoalForm } from "./_components/goal-form"
 import { AssetForm } from "./_components/asset-form"
@@ -67,6 +67,13 @@ export default async function InvestasiPage({
      FROM investment_transactions it JOIN investments i ON i.id = it.investment_id WHERE i.user_id = ?`
   ).get(userId) as { total_modal: number; total_hasil: number }
 
+  const perfomaTahunIni = db.prepare<[string]>(
+    `SELECT
+       COALESCE(SUM(CASE WHEN it.type='BUY'  AND strftime('%Y', it.created_at) = strftime('%Y', 'now') THEN it.total_amount ELSE 0 END),0) AS buy_tahun_ini,
+       COALESCE(SUM(CASE WHEN it.type='SELL' AND strftime('%Y', it.created_at) = strftime('%Y', 'now') THEN it.total_amount ELSE 0 END),0) AS sell_tahun_ini
+     FROM investment_transactions it JOIN investments i ON i.id = it.investment_id WHERE i.user_id = ?`
+  ).get(userId) as { buy_tahun_ini: number; sell_tahun_ini: number }
+
   const categories = db.prepare<[], CategoryRow>(
     "SELECT id, name FROM investment_categories ORDER BY sort_order, name"
   ).all() as CategoryRow[]
@@ -75,7 +82,10 @@ export default async function InvestasiPage({
   const totalModal    = investSummary?.total_modal ?? 0
   const totalHasil    = investSummary?.total_hasil ?? 0
   const modalAktif    = totalModal - totalHasil
-  const totalKekayaan = totalLiquid + modalAktif
+
+  const buyTahunIni   = perfomaTahunIni?.buy_tahun_ini  ?? 0
+  const sellTahunIni  = perfomaTahunIni?.sell_tahun_ini ?? 0
+  const netTahunIni   = sellTahunIni - buyTahunIni
 
   const liquidModalAktif    = assets.reduce((s, a) => a.is_liquid    ? s + a.total_modal - a.total_hasil : s, 0)
   const nonLiquidModalAktif = assets.reduce((s, a) => !a.is_liquid   ? s + a.total_modal - a.total_hasil : s, 0)
@@ -91,27 +101,50 @@ export default async function InvestasiPage({
           <h1 className="text-2xl font-bold">Investasi</h1>
           <p className="text-sm text-muted-foreground">Pantau semua aset dan kantong investasimu</p>
         </div>
+        <Button asChild variant="outline" size="sm">
+          <Link href="/investasi/rekap"><BarChart2 className="h-4 w-4 mr-1.5" />Lihat Rekap</Link>
+        </Button>
       </div>
 
-      <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
         <Card className="sm:col-span-1">
           <CardContent className="p-4">
-            <p className="text-xs text-muted-foreground mb-1">Total Kekayaan</p>
-            <p className="text-xl font-bold tabular-nums">{formatRupiah(totalKekayaan)}</p>
-            <p className="text-xs text-muted-foreground mt-1">Dompet + Investasi aktif</p>
+            <p className="text-xs text-muted-foreground mb-1">Total Investasi Saat Ini</p>
+            <p className="text-xl font-bold text-emerald-600 tabular-nums">{formatRupiah(modalAktif)}</p>
+            <p className="text-xs text-muted-foreground mt-1">BUY − SELL (semua waktu)</p>
           </CardContent>
         </Card>
-        <Card>
+        <Card className="sm:col-span-1">
+          <CardContent className="p-4">
+            <p className="text-xs text-muted-foreground mb-1">Aktivitas Tahun Ini</p>
+            <div className="space-y-1.5 mt-2">
+              <div className="flex items-center justify-between gap-2">
+                <span className="text-xs text-muted-foreground">Diinvestasikan</span>
+                <span className="text-sm font-bold tabular-nums text-blue-600">
+                  {buyTahunIni > 0 ? formatRupiah(buyTahunIni) : "—"}
+                </span>
+              </div>
+              <div className="flex items-center justify-between gap-2">
+                <span className="text-xs text-muted-foreground">Dicairkan (SELL)</span>
+                <span className="text-sm font-bold tabular-nums text-emerald-600">
+                  {sellTahunIni > 0 ? formatRupiah(sellTahunIni) : "—"}
+                </span>
+              </div>
+              {sellTahunIni > 0 && (
+                <div className="flex items-center justify-between gap-2 pt-1 border-t">
+                  <span className="text-xs text-muted-foreground">Net Realisasi</span>
+                  <span className={`text-sm font-bold tabular-nums ${netTahunIni >= 0 ? "text-emerald-600" : "text-red-600"}`}>
+                    {netTahunIni >= 0 ? "+" : ""}{formatRupiah(netTahunIni)}
+                  </span>
+                </div>
+              )}
+            </div>
+          </CardContent>
+        </Card>
+        <Card className="sm:col-span-1">
           <CardContent className="p-4">
             <p className="text-xs text-muted-foreground mb-1">Total Saldo Dompet</p>
-            <p className="text-base font-bold text-blue-600 tabular-nums">{formatRupiah(totalLiquid)}</p>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardContent className="p-4">
-            <p className="text-xs text-muted-foreground mb-1">Modal Aktif Investasi</p>
-            <p className="text-base font-bold text-emerald-600 tabular-nums">{formatRupiah(modalAktif)}</p>
-            <p className="text-xs text-muted-foreground mt-1">BUY − SELL</p>
+            <p className="text-xl font-bold text-blue-600 tabular-nums">{formatRupiah(totalLiquid)}</p>
           </CardContent>
         </Card>
       </div>

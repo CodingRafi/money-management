@@ -27,7 +27,7 @@ const GOAL_STATUS_COLOR: Record<GoalItem["status"], string> = {
 export async function InvestmentSection({ userId }: { userId: string }) {
   const data = await getInvestment(userId)
 
-  const hasPL = data.netProfitLoss !== 0
+  const hasPL = data.totalSell > 0
 
   return (
     <Card className="flex flex-col">

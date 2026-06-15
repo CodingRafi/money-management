@@ -56,7 +56,7 @@ export function PaymentForm({
           onChange={(e) => setPrincipalPaid(parseFloat(e.target.value) || 0)}
           placeholder="0"
           min="1"
-          max={remainingPrincipal}
+          max={Math.floor(remainingPrincipal)}
           step="1"
           required
         />

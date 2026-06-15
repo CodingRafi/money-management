@@ -5,16 +5,141 @@ function fmtDateShort(d: string) {
 }
 
 export type NetWorthData    = { total: number; liquid: number; nonLiquid: number; changePercent: number | null }
+export type WealthOverviewData = {
+  totalDompet: number
+  totalInvestasi: number
+  totalKekayaan: number
+  liquidDompet: number
+  nonLiquidDompet: number
+  liquidInvestasi: number
+  nonLiquidInvestasi: number
+  totalLiquid: number
+  totalNonLiquid: number
+  piutangSisa: number
+  hutangSisa: number
+  monthlyGrowth: { month: number; label: string; income: number; expense: number }[]
+  yearlyGrowth:  { year: number; income: number; expense: number }[]
+  emergencyFundMonths: number
+}
 export type CashflowData    = { totalIncome: number; totalExpense: number; remaining: number; expenseRatio: number; savingRatio: number; incomeCount: number; expenseCount: number }
 export type BudgetItem      = { categoryId: string; categoryName: string; target: number; realisasi: number; status: "AMAN" | "MENDEKATI" | "OVER" }
 export type BudgetData      = { overBudgetCount: number; items: BudgetItem[] }
 export type WalletItem      = { id: string; name: string; balance: number; color: string | null; isLiquid: boolean }
 export type WalletData      = { activeCount: number; items: WalletItem[] }
 export type GoalItem        = { id: string; name: string; totalModal: number; targetAmount: number | null; progress: number | null; status: "ON_TRACK" | "BEHIND" | "COMPLETED" | "NO_TARGET" }
-export type InvestmentData  = { totalModal: number; totalProfit: number; totalLoss: number; netProfitLoss: number; goals: GoalItem[] }
+export type InvestmentData  = { totalModal: number; totalSell: number; totalProfit: number; totalLoss: number; netProfitLoss: number; goals: GoalItem[] }
 export type LoanItem        = { id: string; name: string; total: number; sisa: number; dueDate: string | null; status: "ONGOING" | "TERLAMBAT"; cicilanPerBulan: number | null }
 export type LoanData        = { piutang: { totalSisa: number; items: LoanItem[] }; hutang: { totalSisa: number; items: LoanItem[] }; terlambatCount: number }
 export type RecentTransaction = { id: string; type: "INCOME" | "EXPENSE" | "TRANSFER" | "INVESTMENT"; label: string; sublabel: string; amount: number; isCredit: boolean; date: Date }
+
+export function getWealthOverview(userId: string, year: number): WealthOverviewData {
+  const walletRow = db.prepare(`
+    SELECT
+      COALESCE(SUM(balance), 0)                                              AS total,
+      COALESCE(SUM(CASE WHEN is_liquid = 1 THEN balance ELSE 0 END), 0)     AS liquid,
+      COALESCE(SUM(CASE WHEN is_liquid = 0 THEN balance ELSE 0 END), 0)     AS non_liquid
+    FROM wallets WHERE user_id = ? AND is_active = 1
+  `).get(userId) as { total: number; liquid: number; non_liquid: number }
+
+  const investRows = db.prepare(`
+    SELECT i.is_liquid,
+      COALESCE(SUM(CASE WHEN it.type = 'BUY'  THEN it.total_amount ELSE 0 END), 0) AS total_buy,
+      COALESCE(SUM(CASE WHEN it.type = 'SELL' THEN it.total_amount ELSE 0 END), 0) AS total_sell
+    FROM investments i
+    LEFT JOIN investment_transactions it ON it.investment_id = i.id
+    WHERE i.user_id = ? AND i.is_active = 1
+    GROUP BY i.is_liquid
+  `).all(userId) as { is_liquid: number; total_buy: number; total_sell: number }[]
+
+  let liquidInvestasi = 0
+  let nonLiquidInvestasi = 0
+  for (const row of investRows) {
+    const aktif = Math.max(0, row.total_buy - row.total_sell)
+    if (row.is_liquid) liquidInvestasi += aktif
+    else nonLiquidInvestasi += aktif
+  }
+
+  const piutangRow = db.prepare(`
+    SELECT COALESCE(SUM(MAX(l.principal_amount - COALESCE(pp.total_pp, 0), 0)), 0) AS sisa
+    FROM loans l
+    LEFT JOIN (
+      SELECT loan_id, SUM(principal_paid) AS total_pp FROM loan_payments GROUP BY loan_id
+    ) pp ON pp.loan_id = l.id
+    WHERE l.user_id = ? AND l.type = 'PIUTANG' AND l.is_active = 1
+  `).get(userId) as { sisa: number }
+
+  const hutangRow = db.prepare(`
+    SELECT COALESCE(SUM(MAX(l.principal_amount - COALESCE(pp.total_pp, 0), 0)), 0) AS sisa
+    FROM loans l
+    LEFT JOIN (
+      SELECT loan_id, SUM(principal_paid) AS total_pp FROM loan_payments GROUP BY loan_id
+    ) pp ON pp.loan_id = l.id
+    WHERE l.user_id = ? AND l.type = 'HUTANG' AND l.is_active = 1
+  `).get(userId) as { sisa: number }
+
+  const monthlyRows = db.prepare(`
+    SELECT month,
+      COALESCE(SUM(CASE WHEN src = 'i' THEN amount ELSE 0 END), 0) AS income,
+      COALESCE(SUM(CASE WHEN src = 'e' THEN amount ELSE 0 END), 0) AS expense
+    FROM (
+      SELECT month, 'i' AS src, amount FROM incomes  WHERE user_id = ? AND year = ? AND is_initial = 0
+      UNION ALL
+      SELECT month, 'e',        amount FROM expenses WHERE user_id = ? AND year = ? AND is_initial = 0
+    ) t
+    GROUP BY month ORDER BY month
+  `).all(userId, year, userId, year) as { month: number; income: number; expense: number }[]
+
+  const yearlyRows = db.prepare(`
+    SELECT year,
+      COALESCE(SUM(CASE WHEN src = 'i' THEN amount ELSE 0 END), 0) AS income,
+      COALESCE(SUM(CASE WHEN src = 'e' THEN amount ELSE 0 END), 0) AS expense
+    FROM (
+      SELECT year, 'i' AS src, amount FROM incomes  WHERE user_id = ? AND is_initial = 0
+      UNION ALL
+      SELECT year, 'e',        amount FROM expenses WHERE user_id = ? AND is_initial = 0
+    ) t
+    GROUP BY year ORDER BY year
+  `).all(userId, userId) as { year: number; income: number; expense: number }[]
+
+  const MONTH_LABELS = ["Jan","Feb","Mar","Apr","Mei","Jun","Jul","Agu","Sep","Okt","Nov","Des"]
+  const monthlyGrowth = Array.from({ length: 12 }, (_, i) => {
+    const row = monthlyRows.find(r => r.month === i + 1)
+    return { month: i + 1, label: MONTH_LABELS[i], income: row?.income ?? 0, expense: row?.expense ?? 0 }
+  })
+
+  const now = new Date()
+  const nowYM = now.getFullYear() * 12 + (now.getMonth() + 1)
+  const expRow = db.prepare(`
+    SELECT COALESCE(SUM(amount), 0) AS total
+    FROM expenses
+    WHERE user_id = ? AND is_initial = 0
+      AND (year * 12 + month) >= ? AND (year * 12 + month) <= ?
+  `).get(userId, nowYM - 3, nowYM - 1) as { total: number }
+  const avgMonthlyExpense = expRow.total / 3
+
+  const totalDompet    = walletRow.total
+  const totalInvestasi = liquidInvestasi + nonLiquidInvestasi
+  const totalKekayaan  = totalDompet + totalInvestasi
+  const totalLiquid    = walletRow.liquid + liquidInvestasi
+  const totalNonLiquid = walletRow.non_liquid + nonLiquidInvestasi
+
+  return {
+    totalDompet,
+    totalInvestasi,
+    totalKekayaan,
+    liquidDompet:      walletRow.liquid,
+    nonLiquidDompet:   walletRow.non_liquid,
+    liquidInvestasi,
+    nonLiquidInvestasi,
+    totalLiquid,
+    totalNonLiquid,
+    piutangSisa:       piutangRow.sisa,
+    hutangSisa:        hutangRow.sisa,
+    monthlyGrowth,
+    yearlyGrowth:      yearlyRows,
+    emergencyFundMonths: avgMonthlyExpense > 0 ? totalLiquid / avgMonthlyExpense : 0,
+  }
+}
 
 export function getNetWorth(userId: string): NetWorthData {
   const walletRow = db.prepare(`
@@ -151,7 +276,7 @@ export function getInvestment(userId: string): InvestmentData {
   })
 
   return {
-    totalModal: totalBuy, totalProfit, totalLoss, netProfitLoss: netPL,
+    totalModal: totalBuy, totalSell, totalProfit, totalLoss, netProfitLoss: netPL,
     goals: [...goals].sort((a, b) => (b.progress ?? -1) - (a.progress ?? -1)).slice(0, 3),
   }
 }

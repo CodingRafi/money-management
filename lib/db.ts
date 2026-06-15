@@ -262,6 +262,12 @@ db.exec(`
   );
 `)
 
+// ── Migrations ───────────────────────────────────────────────────────────────
+
+try {
+  db.exec(`ALTER TABLE loans ADD COLUMN payment_likelihood TEXT CHECK (payment_likelihood IN ('LANCAR', 'MERAGUKAN', 'MACET'))`)
+} catch { /* column already exists */ }
+
 // ── Seed master data ─────────────────────────────────────────────────────────
 
 function uuid() { return crypto.randomUUID() }

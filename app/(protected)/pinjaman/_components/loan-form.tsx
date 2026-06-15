@@ -21,14 +21,21 @@ interface Props {
     startDate?: string
     dueDate?: string | null
     walletId?: string
+    paymentLikelihood?: string | null
   }
   isEdit?: boolean
   cancelHref: string
 }
 
+const LIKELIHOOD_OPTIONS = [
+  { value: "LANCAR", label: "Bayar",                   desc: "Ada kemungkinan dibayar",    color: "bg-emerald-600 text-white border-emerald-600" },
+  { value: "MACET",  label: "Kemungkinan Tidak Bayar", desc: "Diragukan akan dikembalikan", color: "bg-rose-600 text-white border-rose-600" },
+]
+
 export function LoanForm({ wallets, action, defaultValues, isEdit, cancelHref }: Props) {
-  const [loanType, setLoanType]     = useState(defaultValues?.type ?? "PIUTANG")
-  const [interestRate, setInterestRate] = useState(defaultValues?.interestRate ?? 0)
+  const [loanType, setLoanType]           = useState(defaultValues?.type ?? "PIUTANG")
+  const [interestRate, setInterestRate]   = useState(defaultValues?.interestRate ?? 0)
+  const [likelihood, setLikelihood]       = useState(defaultValues?.paymentLikelihood ?? "LANCAR")
 
   const today = new Date().toISOString().split("T")[0]
 
@@ -156,6 +163,28 @@ export function LoanForm({ wallets, action, defaultValues, isEdit, cancelHref }:
           />
         </div>
       </div>
+
+      {(loanType === "PIUTANG" || (isEdit && defaultValues?.type === "PIUTANG")) && (
+        <div className="flex flex-col gap-1">
+          <label className="text-sm font-medium">Kemungkinan Bayar</label>
+          <div className="grid grid-cols-2 gap-2">
+            {LIKELIHOOD_OPTIONS.map((opt) => (
+              <button
+                key={opt.value}
+                type="button"
+                onClick={() => setLikelihood(opt.value)}
+                className={`rounded-md border px-2 py-2 text-xs font-medium transition-colors ${
+                  likelihood === opt.value ? opt.color : "text-muted-foreground hover:text-foreground border-input"
+                }`}
+              >
+                <span className="block font-semibold">{opt.label}</span>
+                <span className="block text-[10px] opacity-80 mt-0.5">{opt.desc}</span>
+              </button>
+            ))}
+          </div>
+          <input type="hidden" name="payment_likelihood" value={likelihood} />
+        </div>
+      )}
 
       {!isEdit && (
         <div className="flex flex-col gap-1">

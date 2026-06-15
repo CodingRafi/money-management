@@ -9,7 +9,7 @@ import Link from "next/link"
 import { LoanForm } from "../_components/loan-form"
 import { PaymentForm } from "../_components/payment-form"
 import { updateLoan, deleteLoan, addLoanPayment, deleteLoanPayment } from "@/app/actions/loans"
-import { calcLoanSummary, calcNextInterest, calcLoanStatus, type InterestType, type LoanStatus } from "@/lib/loan"
+import { calcLoanSummary, calcNextInterest, calcLoanStatus, type InterestType, type LoanStatus, type PaymentLikelihood } from "@/lib/loan"
 
 function formatRupiah(n: number | string) {
   return new Intl.NumberFormat("id-ID", {
@@ -25,6 +25,14 @@ type LoanDetail = {
   id: string; type: string; name: string; description: string | null
   principal_amount: number; interest_rate: number; interest_type: string
   start_date: string; due_date: string | null; wallet_id: string; wallet_name: string; status: string
+  payment_likelihood: PaymentLikelihood | null
+}
+
+const LIKELIHOOD_LABEL: Record<string, string> = {
+  LANCAR: "Bayar", MACET: "Kemungkinan Tidak Bayar",
+}
+const LIKELIHOOD_VARIANT: Record<string, "default" | "success" | "warning" | "destructive"> = {
+  LANCAR: "success", MACET: "destructive",
 }
 type PaymentRow = { id: string; principal_paid: number; interest_paid: number; total_paid: number; date: string; notes: string | null }
 
@@ -49,7 +57,7 @@ export default async function LoanDetailPage({
   const loan = db.prepare<[string, string], LoanDetail>(
     `SELECT l.id, l.type, l.name, l.description,
             l.principal_amount, l.interest_rate, l.interest_type,
-            l.start_date, l.due_date, l.status, l.wallet_id, w.name AS wallet_name
+            l.start_date, l.due_date, l.status, l.payment_likelihood, l.wallet_id, w.name AS wallet_name
      FROM loans l JOIN wallets w ON w.id = l.wallet_id
      WHERE l.id=? AND l.user_id=? AND l.is_active=1`
   ).get(loanId, userId) as LoanDetail | undefined
@@ -98,6 +106,9 @@ export default async function LoanDetailPage({
               <h1 className="text-2xl font-bold">{loan.name}</h1>
               <Badge variant={loan.type === "PIUTANG" ? "success" : "destructive"} className="text-xs">{loan.type}</Badge>
               <Badge variant={STATUS_VARIANT[liveStatus] ?? "default"} className="text-xs">{liveStatus}</Badge>
+              {loan.type === "PIUTANG" && loan.payment_likelihood && (
+                <Badge variant={LIKELIHOOD_VARIANT[loan.payment_likelihood] ?? "default"} className="text-xs">{LIKELIHOOD_LABEL[loan.payment_likelihood]}</Badge>
+              )}
             </div>
             <p className="text-sm text-muted-foreground mt-0.5">{loan.wallet_name}</p>
           </div>
@@ -135,6 +146,7 @@ export default async function LoanDetailPage({
                 principalAmount: loan.principal_amount, interestRate: loan.interest_rate,
                 interestType: loan.interest_type, startDate: loan.start_date,
                 dueDate: loan.due_date, walletId: loan.wallet_id,
+                paymentLikelihood: loan.payment_likelihood,
               }}
               isEdit cancelHref={cancelHref}
             />

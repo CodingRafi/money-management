@@ -23,7 +23,14 @@ type LoanRow = {
   id: string; type: string; name: string; description: string | null
   principal_amount: number; interest_rate: number; interest_type: string
   start_date: string; due_date: string | null; wallet_name: string
-  status: string; total_pp: number
+  status: string; total_pp: number; payment_likelihood: string | null
+}
+
+const LIKELIHOOD_LABEL: Record<string, string> = {
+  LANCAR: "Bayar", MACET: "Kemungkinan Tidak Bayar",
+}
+const LIKELIHOOD_VARIANT: Record<string, "default" | "success" | "warning" | "destructive"> = {
+  LANCAR: "success", MACET: "destructive",
 }
 type WalletRow = { id: string; name: string }
 
@@ -37,15 +44,16 @@ export default async function PinjamanPage({
   searchParams: Promise<Record<string, string | string[] | undefined>>
 }) {
   const userId = LOCAL_USER_ID
-  const sp           = await searchParams
-  const showNew      = sp.new === "1"
-  const typeFilter   = typeof sp.type === "string"   ? sp.type   : "all"
-  const statusFilter = typeof sp.status === "string" ? sp.status : "all"
+  const sp               = await searchParams
+  const showNew          = sp.new === "1"
+  const typeFilter       = typeof sp.type === "string"       ? sp.type       : "all"
+  const statusFilter     = typeof sp.status === "string"     ? sp.status     : "all"
+  const likelihoodFilter = typeof sp.likelihood === "string" ? sp.likelihood : "all"
 
   const allLoans = db.prepare<[string], LoanRow>(
     `SELECT l.id, l.type, l.name, l.description,
             l.principal_amount, l.interest_rate, l.interest_type,
-            l.start_date, l.due_date, l.status, w.name AS wallet_name,
+            l.start_date, l.due_date, l.status, l.payment_likelihood, w.name AS wallet_name,
             COALESCE(SUM(lp.principal_paid), 0) AS total_pp
      FROM loans l
      JOIN wallets w ON w.id = l.wallet_id
@@ -65,8 +73,9 @@ export default async function PinjamanPage({
       return { ...l, liveStatus, remaining }
     })
     .filter((l) => {
-      if (typeFilter !== "all"   && l.type       !== typeFilter)   return false
-      if (statusFilter !== "all" && l.liveStatus !== statusFilter) return false
+      if (typeFilter !== "all"       && l.type              !== typeFilter)       return false
+      if (statusFilter !== "all"     && l.liveStatus        !== statusFilter)     return false
+      if (likelihoodFilter !== "all" && l.payment_likelihood !== likelihoodFilter) return false
       return true
     })
 
@@ -74,7 +83,9 @@ export default async function PinjamanPage({
   const hutang            = allLoans.filter((l) => l.type === "HUTANG")
   const totalPiutangSisa  = piutang.reduce((s, l) => s + Math.max(0, l.principal_amount - l.total_pp), 0)
   const totalHutangSisa   = hutang.reduce((s, l)  => s + Math.max(0, l.principal_amount - l.total_pp), 0)
-  const terlambat = allLoans.filter((l) => calcLoanStatus(l.due_date, l.principal_amount - l.total_pp) === "TERLAMBAT")
+  const terlambat         = allLoans.filter((l) => calcLoanStatus(l.due_date, l.principal_amount - l.total_pp) === "TERLAMBAT")
+  const piutangMacet      = piutang.filter((l) => l.payment_likelihood === "MACET")
+  const totalMacetSisa    = piutangMacet.reduce((s, l) => s + Math.max(0, l.principal_amount - l.total_pp), 0)
 
   return (
     <div className="space-y-6 max-w-4xl">
@@ -88,7 +99,7 @@ export default async function PinjamanPage({
         )}
       </div>
 
-      <div className="grid grid-cols-2 gap-3">
+      <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
         <Card>
           <CardContent className="p-4">
             <p className="text-xs text-muted-foreground mb-1">Sisa Piutang</p>
@@ -103,6 +114,15 @@ export default async function PinjamanPage({
             <p className="text-xs text-muted-foreground mt-1">{hutang.length} pinjaman aktif</p>
           </CardContent>
         </Card>
+        {piutangMacet.length > 0 && (
+          <Card className="border-rose-200 bg-rose-50/50 dark:bg-rose-950/20 dark:border-rose-900/40">
+            <CardContent className="p-4">
+              <p className="text-xs text-rose-600 dark:text-rose-400 mb-1 font-medium">Piutang Macet</p>
+              <p className="text-xl font-bold text-rose-600 tabular-nums">{formatRupiah(totalMacetSisa)}</p>
+              <p className="text-xs text-muted-foreground mt-1">{piutangMacet.length} kemungkinan macet</p>
+            </CardContent>
+          </Card>
+        )}
       </div>
 
       {terlambat.length > 0 && (
@@ -132,7 +152,7 @@ export default async function PinjamanPage({
       <div className="flex flex-wrap gap-2">
         <div className="flex gap-1">
           {["all", "PIUTANG", "HUTANG"].map((t) => (
-            <Link key={t} href={`?type=${t}&status=${statusFilter}`}
+            <Link key={t} href={`?type=${t}&status=${statusFilter}&likelihood=${likelihoodFilter}`}
               className={`rounded-md px-3 py-1 text-xs font-medium border transition-colors ${typeFilter === t ? "bg-primary text-primary-foreground border-primary" : "text-muted-foreground hover:text-foreground border-border"}`}>
               {t === "all" ? "Semua" : t}
             </Link>
@@ -140,13 +160,31 @@ export default async function PinjamanPage({
         </div>
         <div className="flex gap-1 ml-auto">
           {["all", "ONGOING", "LUNAS", "TERLAMBAT"].map((s) => (
-            <Link key={s} href={`?type=${typeFilter}&status=${s}`}
+            <Link key={s} href={`?type=${typeFilter}&status=${s}&likelihood=${likelihoodFilter}`}
               className={`rounded-md px-3 py-1 text-xs font-medium border transition-colors ${statusFilter === s ? "bg-primary text-primary-foreground border-primary" : "text-muted-foreground hover:text-foreground border-border"}`}>
               {s === "all" ? "Semua" : s}
             </Link>
           ))}
         </div>
       </div>
+
+      {(typeFilter === "all" || typeFilter === "PIUTANG") && (
+        <div className="flex gap-1 flex-wrap">
+          <span className="text-xs text-muted-foreground self-center mr-1">Likelihood:</span>
+          {["all", "LANCAR", "MACET"].map((lh) => {
+            const cls = {
+              LANCAR: "bg-emerald-600 text-white border-emerald-600",
+              MACET:  "bg-rose-600 text-white border-rose-600",
+            }[lh] ?? "bg-primary text-primary-foreground border-primary"
+            return (
+              <Link key={lh} href={`?type=${typeFilter}&status=${statusFilter}&likelihood=${lh}`}
+                className={`rounded-md px-3 py-1 text-xs font-medium border transition-colors ${likelihoodFilter === lh ? cls : "text-muted-foreground hover:text-foreground border-border"}`}>
+                {lh === "all" ? "Semua" : LIKELIHOOD_LABEL[lh]}
+              </Link>
+            )
+          })}
+        </div>
+      )}
 
       {loans.length === 0 ? (
         <Card>
@@ -169,6 +207,9 @@ export default async function PinjamanPage({
                       <span className="font-medium text-sm">{l.name}</span>
                       <Badge variant={l.type === "PIUTANG" ? "success" : "destructive"} className="text-[10px] px-1.5 py-0">{l.type}</Badge>
                       <Badge variant={STATUS_VARIANT[l.liveStatus] ?? "default"} className="text-[10px] px-1.5 py-0">{l.liveStatus}</Badge>
+                      {l.type === "PIUTANG" && l.payment_likelihood && (
+                        <Badge variant={LIKELIHOOD_VARIANT[l.payment_likelihood] ?? "default"} className="text-[10px] px-1.5 py-0">{LIKELIHOOD_LABEL[l.payment_likelihood]}</Badge>
+                      )}
                     </div>
                     <div className="flex gap-3 text-xs text-muted-foreground flex-wrap">
                       <span>Pokok: {formatRupiah(l.principal_amount)}</span>

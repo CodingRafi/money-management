@@ -12,16 +12,18 @@ function formatRupiah(n: number) { return new Intl.NumberFormat("id-ID", { style
 
 export async function createLoan(formData: FormData) {
   const userId          = await requireUserIdAction()
-  const type            = formData.get("type") as string
-  const name            = (formData.get("name") as string)?.trim()
-  const description     = (formData.get("description") as string)?.trim() || null
-  const principalAmount = parseFloat(formData.get("principal_amount") as string)
-  const interestRate    = parseFloat(formData.get("interest_rate") as string) || 0
-  const interestType    = (formData.get("interest_type") as string) || "FLAT"
-  const startDate       = formData.get("start_date") as string
-  const dueDate         = (formData.get("due_date") as string) || null
-  const walletId        = formData.get("wallet_id") as string
-  const isInitial       = formData.get("is_initial") === "true" ? 1 : 0
+  const type               = formData.get("type") as string
+  const name               = (formData.get("name") as string)?.trim()
+  const description        = (formData.get("description") as string)?.trim() || null
+  const principalAmount    = parseFloat(formData.get("principal_amount") as string)
+  const interestRate       = parseFloat(formData.get("interest_rate") as string) || 0
+  const interestType       = (formData.get("interest_type") as string) || "FLAT"
+  const startDate          = formData.get("start_date") as string
+  const dueDate            = (formData.get("due_date") as string) || null
+  const walletId           = formData.get("wallet_id") as string
+  const isInitial          = formData.get("is_initial") === "true" ? 1 : 0
+  const rawLikelihood      = (formData.get("payment_likelihood") as string) || null
+  const paymentLikelihood  = type === "PIUTANG" && rawLikelihood ? rawLikelihood : null
 
   if (!["PIUTANG", "HUTANG"].includes(type)) throw new Error("Tipe tidak valid")
   if (!name)                                 throw new Error("Nama wajib diisi")
@@ -48,27 +50,32 @@ export async function createLoan(formData: FormData) {
 
     loanId = uuid()
     db.prepare(
-      "INSERT INTO loans (id, user_id, type, name, description, principal_amount, interest_rate, interest_type, start_date, due_date, wallet_id, is_initial) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
-    ).run(loanId, userId, type, name, description, principalAmount, interestRate, interestType, startDate, dueDate, walletId, isInitial)
+      "INSERT INTO loans (id, user_id, type, name, description, principal_amount, interest_rate, interest_type, start_date, due_date, wallet_id, is_initial, payment_likelihood) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
+    ).run(loanId, userId, type, name, description, principalAmount, interestRate, interestType, startDate, dueDate, walletId, isInitial, paymentLikelihood)
   })()
 
   redirect(`/pinjaman/${loanId}`)
 }
 
 export async function updateLoan(id: string, formData: FormData) {
-  const userId      = await requireUserIdAction()
-  const name        = (formData.get("name") as string)?.trim()
-  const description = (formData.get("description") as string)?.trim() || null
-  const dueDate     = (formData.get("due_date") as string) || null
-  const interestRate = parseFloat(formData.get("interest_rate") as string) || 0
-  const interestType = (formData.get("interest_type") as string) || "FLAT"
+  const userId            = await requireUserIdAction()
+  const name              = (formData.get("name") as string)?.trim()
+  const description       = (formData.get("description") as string)?.trim() || null
+  const dueDate           = (formData.get("due_date") as string) || null
+  const interestRate      = parseFloat(formData.get("interest_rate") as string) || 0
+  const interestType      = (formData.get("interest_type") as string) || "FLAT"
+  const rawLikelihood     = (formData.get("payment_likelihood") as string) || null
+  const paymentLikelihood = rawLikelihood || null
 
   if (!name)            throw new Error("Nama wajib diisi")
   if (interestRate < 0) throw new Error("Bunga tidak boleh negatif")
 
+  const loan = db.prepare("SELECT type FROM loans WHERE id=? AND user_id=?").get(id, userId) as { type: string } | undefined
+  const finalLikelihood = loan?.type === "PIUTANG" ? paymentLikelihood : null
+
   db.prepare(
-    "UPDATE loans SET name=?, description=?, due_date=?, interest_rate=?, interest_type=?, updated_at=datetime('now') WHERE id=? AND user_id=?"
-  ).run(name, description, dueDate, interestRate, interestType, id, userId)
+    "UPDATE loans SET name=?, description=?, due_date=?, interest_rate=?, interest_type=?, payment_likelihood=?, updated_at=datetime('now') WHERE id=? AND user_id=?"
+  ).run(name, description, dueDate, interestRate, interestType, finalLikelihood, id, userId)
 
   revalidatePath(`/pinjaman/${id}`)
   revalidatePath("/pinjaman")

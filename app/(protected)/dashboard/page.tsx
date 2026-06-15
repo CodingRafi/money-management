@@ -53,43 +53,52 @@ export default async function DashboardPage({
 
   return (
     <div className="space-y-5">
-      <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-        <div>
-          <h1 className="text-2xl font-bold">{getGreeting()}, {firstName}!</h1>
-          <p className="text-sm text-muted-foreground">Ringkasan keuangan kamu</p>
-        </div>
-        <div className="flex items-center gap-1">
-          <Button variant="ghost" size="icon" className="h-8 w-8" asChild>
-            <Link href={prevMonthHref(month, year)}><ChevronLeft className="h-4 w-4" /></Link>
-          </Button>
-          <span className="min-w-[120px] text-center text-sm font-medium">
-            {MONTHS[month - 1]} {year}
-          </span>
-          <Button variant="ghost" size="icon" className="h-8 w-8" disabled={isCurrentMonth} asChild={!isCurrentMonth}>
-            {isCurrentMonth ? (
-              <span><ChevronRight className="h-4 w-4" /></span>
-            ) : (
-              <Link href={nextMonthHref(month, year)}><ChevronRight className="h-4 w-4" /></Link>
-            )}
-          </Button>
-        </div>
+      {/* Greeting — tanpa filter */}
+      <div>
+        <h1 className="text-2xl font-bold">{getGreeting()}, {firstName}!</h1>
+        <p className="text-sm text-muted-foreground">Ringkasan keuangan kamu</p>
       </div>
 
+      {/* Wealth section — selalu data terkini, tidak ikut filter bulan */}
       <Suspense fallback={<NetWorthSkeleton />}>
-        <NetWorthSection userId={userId} />
+        <NetWorthSection userId={userId} year={now.getFullYear()} />
       </Suspense>
 
-      <Suspense fallback={<CashflowSkeleton />}>
-        <CashflowSection userId={userId} month={month} year={year} />
-      </Suspense>
+      {/* ── Cashflow & Budget — pakai filter bulan ── */}
+      <div className="space-y-4">
+        <div className="flex items-center justify-between">
+          <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+            Cashflow &amp; Budget
+          </p>
+          <div className="flex items-center gap-0.5">
+            <Button variant="ghost" size="icon" className="h-7 w-7" asChild>
+              <Link href={prevMonthHref(month, year)}><ChevronLeft className="h-3.5 w-3.5" /></Link>
+            </Button>
+            <span className="min-w-[110px] text-center text-sm font-medium">
+              {MONTHS[month - 1]} {year}
+            </span>
+            <Button variant="ghost" size="icon" className="h-7 w-7" disabled={isCurrentMonth} asChild={!isCurrentMonth}>
+              {isCurrentMonth ? (
+                <span><ChevronRight className="h-3.5 w-3.5" /></span>
+              ) : (
+                <Link href={nextMonthHref(month, year)}><ChevronRight className="h-3.5 w-3.5" /></Link>
+              )}
+            </Button>
+          </div>
+        </div>
 
-      <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
-        <Suspense fallback={<BudgetSkeleton />}>
-          <BudgetSection userId={userId} month={month} year={year} />
+        <Suspense fallback={<CashflowSkeleton />}>
+          <CashflowSection userId={userId} month={month} year={year} />
         </Suspense>
-        <Suspense fallback={<WalletSkeleton />}>
-          <WalletSection userId={userId} />
-        </Suspense>
+
+        <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+          <Suspense fallback={<BudgetSkeleton />}>
+            <BudgetSection userId={userId} month={month} year={year} />
+          </Suspense>
+          <Suspense fallback={<WalletSkeleton />}>
+            <WalletSection userId={userId} />
+          </Suspense>
+        </div>
       </div>
 
       <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
