@@ -1,62 +1,64 @@
-import { auth } from "@/lib/auth"
-import { headers } from "next/headers"
-import { redirect } from "next/navigation"
-import { pool } from "@/lib/db"
+import { db } from "@/lib/db"
+import { LOCAL_USER_ID } from "@/lib/auth-simple"
 import { Plus } from "lucide-react"
 import Link from "next/link"
 import { RekapTabs, type YearChartEntry } from "./_components/rekap-tabs"
 
 type YearRow = {
   year: number
-  total_income: string
-  total_expense: string
-  balance: string
+  total_income: number
+  total_expense: number
 }
 
-function formatRupiah(amount: number | string) {
+function formatRupiah(amount: number) {
   return new Intl.NumberFormat("id-ID", {
     style: "currency", currency: "IDR", maximumFractionDigits: 0,
-  }).format(Number(amount))
+  }).format(amount)
 }
 
 export default async function RekapPage() {
-  const session = await auth.api.getSession({ headers: await headers() })
-  if (!session) redirect("/login")
-  const userId = session.user.id
+  const userId = LOCAL_USER_ID
 
-  const { rows: yearRows } = await pool.query<YearRow>(
-    `SELECT year, total_income::text, total_expense::text, balance::text
-     FROM yearly_recap
-     WHERE user_id = $1
-     ORDER BY year DESC`,
-    [userId],
-  )
+  const incomeRows = db.prepare<[string], { year: number; total: number }>(
+    "SELECT year, COALESCE(SUM(amount), 0) AS total FROM incomes WHERE user_id = ? GROUP BY year"
+  ).all(userId) as { year: number; total: number }[]
 
-  const currentYear = new Date().getFullYear()
+  const expenseRows = db.prepare<[string], { year: number; total: number }>(
+    "SELECT year, COALESCE(SUM(amount), 0) AS total FROM expenses WHERE user_id = ? GROUP BY year"
+  ).all(userId) as { year: number; total: number }[]
+
+  // Merge into year map
+  const yearMap = new Map<number, { total_income: number; total_expense: number }>()
+  for (const r of incomeRows) {
+    yearMap.set(r.year, { total_income: r.total, total_expense: 0 })
+  }
+  for (const r of expenseRows) {
+    const existing = yearMap.get(r.year) ?? { total_income: 0, total_expense: 0 }
+    yearMap.set(r.year, { ...existing, total_expense: r.total })
+  }
+
+  const yearRows: YearRow[] = Array.from(yearMap.entries())
+    .map(([year, v]) => ({ year, ...v }))
+    .sort((a, b) => b.year - a.year)
+
+  const currentYear    = new Date().getFullYear()
   const hasCurrentYear = yearRows.some((r) => r.year === currentYear)
 
-  // Compute YoY growth (sorted ASC for sequential comparison)
   const sortedAsc = [...yearRows].sort((a, b) => a.year - b.year)
   const chartData: YearChartEntry[] = sortedAsc.map((row, i) => {
-    const prev = i > 0 ? sortedAsc[i - 1] : null
-    const income = parseFloat(row.total_income)
-    const expense = parseFloat(row.total_expense)
-    const prevIncome = prev ? parseFloat(prev.total_income) : null
-    const prevExpense = prev ? parseFloat(prev.total_expense) : null
+    const prev        = i > 0 ? sortedAsc[i - 1] : null
+    const income      = row.total_income
+    const expense     = row.total_expense
+    const prevIncome  = prev?.total_income ?? null
+    const prevExpense = prev?.total_expense ?? null
     return {
       year: row.year,
       income,
       expense,
-      income_growth_nominal: prevIncome !== null ? income - prevIncome : null,
-      income_growth_pct:
-        prevIncome !== null && prevIncome > 0
-          ? parseFloat((((income - prevIncome) / prevIncome) * 100).toFixed(1))
-          : null,
+      income_growth_nominal:  prevIncome  !== null ? income  - prevIncome  : null,
+      income_growth_pct:      prevIncome  !== null && prevIncome  > 0 ? parseFloat((((income  - prevIncome)  / prevIncome)  * 100).toFixed(1)) : null,
       expense_growth_nominal: prevExpense !== null ? expense - prevExpense : null,
-      expense_growth_pct:
-        prevExpense !== null && prevExpense > 0
-          ? parseFloat((((expense - prevExpense) / prevExpense) * 100).toFixed(1))
-          : null,
+      expense_growth_pct:     prevExpense !== null && prevExpense > 0 ? parseFloat((((expense - prevExpense) / prevExpense) * 100).toFixed(1)) : null,
     }
   })
 
@@ -67,10 +69,9 @@ export default async function RekapPage() {
       </div>
 
       <RekapTabs chartData={chartData}>
-        {/* Year list */}
         <div className="space-y-3">
           {yearRows.map((row) => {
-            const balance = parseFloat(row.balance)
+            const balance = row.total_income - row.total_expense
             return (
               <Link
                 key={row.year}
@@ -82,7 +83,7 @@ export default async function RekapPage() {
                   <span className="text-emerald-600">↑ {formatRupiah(row.total_income)}</span>
                   <span className="text-red-600">↓ {formatRupiah(row.total_expense)}</span>
                   <span className={balance >= 0 ? "text-blue-600" : "text-red-600"}>
-                    = {formatRupiah(row.balance)}
+                    = {formatRupiah(balance)}
                   </span>
                 </div>
               </Link>

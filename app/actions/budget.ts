@@ -1,56 +1,39 @@
 "use server"
 
-import { headers } from "next/headers"
 import { revalidatePath } from "next/cache"
 import { redirect } from "next/navigation"
-import { auth } from "@/lib/auth"
-import { pool } from "@/lib/db"
-import { requirePermission } from "@/lib/licence"
+import { db } from "@/lib/db"
+import { requireUserIdAction } from "@/lib/session"
+import crypto from "crypto"
 
-async function requireUser() {
-  const session = await auth.api.getSession({ headers: await headers() })
-  if (!session) throw new Error("Unauthenticated")
-  return session
-}
+function uuid() { return crypto.randomUUID() }
 
 export async function setBudget(formData: FormData) {
-  const session    = await requireUser()
-  const userId     = session.user.id
-  await requirePermission(userId, "change_category")
-
+  const userId     = await requireUserIdAction()
   const categoryId = formData.get("category_id") as string
   const pctRaw     = formData.get("percentage") as string
   const month      = parseInt(formData.get("month") as string)
-  const year       = parseInt(formData.get("year") as string)
+  const year       = parseInt(formData.get("year")  as string)
   const pct        = parseFloat(pctRaw)
 
-  if (!categoryId || isNaN(pct) || isNaN(month) || isNaN(year))
-    throw new Error("Invalid input")
-  if (pct < 0 || pct > 100)
-    throw new Error("Percentage must be between 0 and 100")
+  if (!categoryId || isNaN(pct) || isNaN(month) || isNaN(year)) throw new Error("Invalid input")
+  if (pct < 0 || pct > 100) throw new Error("Percentage must be between 0 and 100")
 
-  const catRes = await pool.query(
-    `SELECT 1 FROM expense_categories WHERE id = $1 AND user_id = $2`,
-    [categoryId, userId],
-  )
-  if (catRes.rows.length === 0) throw new Error("Category not found")
+  const cat = db.prepare("SELECT 1 FROM expense_categories WHERE id = ? AND user_id = ?").get(categoryId, userId)
+  if (!cat) throw new Error("Category not found")
 
-  await pool.query(
-    `INSERT INTO budgets (user_id, category_id, percentage, month, year)
-     VALUES ($1, $2, $3, $4, $5)
-     ON CONFLICT (user_id, category_id, month, year)
-     DO UPDATE SET percentage = EXCLUDED.percentage`,
-    [userId, categoryId, pct, month, year],
-  )
+  db.prepare(`
+    INSERT INTO budgets (id, user_id, category_id, percentage, month, year)
+    VALUES (?, ?, ?, ?, ?, ?)
+    ON CONFLICT (user_id, category_id, month, year) DO UPDATE SET percentage = excluded.percentage
+  `).run(uuid(), userId, categoryId, pct, month, year)
+
   revalidatePath("/settings/categories")
   revalidatePath("/rekap", "layout")
 }
 
 export async function setTypeAllocations(formData: FormData) {
-  const session = await requireUser()
-  const userId  = session.user.id
-  await requirePermission(userId, "change_category")
-
+  const userId  = await requireUserIdAction()
   const year    = parseInt(formData.get("year") as string) || new Date().getFullYear()
   const rawBack = formData.get("back_url") as string | null
   const backUrl = rawBack?.startsWith("/") ? rawBack : "/settings/categories?tab=expense"
@@ -65,22 +48,16 @@ export async function setTypeAllocations(formData: FormData) {
   }
 
   const total = pairs.reduce((s, p) => s + p.pct, 0)
-  if (Math.abs(total - 100) > 0.01) {
-    redirect(`${backUrl}&alloc_error=1`)
-  }
+  if (Math.abs(total - 100) > 0.01) redirect(`${backUrl}&alloc_error=1`)
 
   for (const { typeId, pct } of pairs) {
-    const check = await pool.query(
-      `SELECT 1 FROM expense_types WHERE id = $1 AND user_id = $2`,
-      [typeId, userId],
-    )
-    if (check.rows.length === 0) continue
-    await pool.query(
-      `INSERT INTO type_allocations (user_id, type_id, percentage, year)
-       VALUES ($1, $2, $3, $4)
-       ON CONFLICT (user_id, type_id, year) DO UPDATE SET percentage = EXCLUDED.percentage`,
-      [userId, typeId, pct, year],
-    )
+    const check = db.prepare("SELECT 1 FROM expense_types WHERE id = ? AND user_id = ?").get(typeId, userId)
+    if (!check) continue
+    db.prepare(`
+      INSERT INTO type_allocations (id, user_id, type_id, percentage, year)
+      VALUES (?, ?, ?, ?, ?)
+      ON CONFLICT (user_id, type_id, year) DO UPDATE SET percentage = excluded.percentage
+    `).run(uuid(), userId, typeId, pct, year)
   }
 
   redirect(backUrl)

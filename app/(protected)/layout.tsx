@@ -1,22 +1,14 @@
-import { auth } from "@/lib/auth"
-import { headers } from "next/headers"
+import { getSession } from "@/lib/session"
 import { redirect } from "next/navigation"
 import { Navbar } from "@/components/navbar"
-import { LicenceBanner } from "@/components/licence-banner"
-import { checkLicenceStatus } from "@/lib/licence"
 
 export default async function ProtectedLayout({ children }: { children: React.ReactNode }) {
-  const headersList = await headers()
-  const session     = await auth.api.getSession({ headers: headersList })
-
+  const session = await getSession()
   if (!session) redirect("/login")
-
-  await checkLicenceStatus(session.user.id).catch(() => {})
 
   return (
     <div className="min-h-screen bg-background">
-      <Navbar user={session.user} />
-      <LicenceBanner />
+      <Navbar username={session.username} />
       <main className="mx-auto max-w-7xl px-4 py-8">{children}</main>
     </div>
   )

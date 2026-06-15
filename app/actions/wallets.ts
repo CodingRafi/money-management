@@ -1,103 +1,71 @@
 "use server"
 
-import { headers } from "next/headers"
 import { revalidatePath } from "next/cache"
 import { redirect } from "next/navigation"
-import { auth } from "@/lib/auth"
-import { pool } from "@/lib/db"
-import { requirePermission } from "@/lib/licence"
+import { db } from "@/lib/db"
+import { requireUserIdAction } from "@/lib/session"
+import crypto from "crypto"
 
-async function requireUser() {
-  const session = await auth.api.getSession({ headers: await headers() })
-  if (!session) throw new Error("Unauthenticated")
-  return session
-}
+function uuid() { return crypto.randomUUID() }
 
 export async function createWallet(formData: FormData) {
-  const session = await requireUser()
-  const userId = session.user.id
-  await requirePermission(userId, "add_wallet")
-
-  const name = (formData.get("name") as string)?.trim()
-  const categoryId = formData.get("category_id") as string
-  const color = (formData.get("color") as string)?.trim() || null
+  const userId         = await requireUserIdAction()
+  const name           = (formData.get("name") as string)?.trim()
+  const categoryId     = formData.get("category_id") as string
+  const color          = (formData.get("color") as string)?.trim() || null
   const initialBalance = parseFloat((formData.get("initial_balance") as string) || "0") || 0
 
-  if (!name) throw new Error("Nama dompet tidak boleh kosong")
+  if (!name)       throw new Error("Nama dompet tidak boleh kosong")
   if (!categoryId) throw new Error("Kategori wajib dipilih")
 
-  const orderRes = await pool.query<{ max: number }>(
-    `SELECT COALESCE(MAX(sort_order), 0) + 1 AS max FROM wallets WHERE user_id = $1`,
-    [userId],
-  )
+  const orderRow = db.prepare(
+    "SELECT COALESCE(MAX(sort_order), 0) + 1 AS max FROM wallets WHERE user_id = ?"
+  ).get(userId) as { max: number }
 
-  await pool.query(
-    `INSERT INTO wallets (user_id, category_id, name, is_liquid, color, sort_order, initial_balance, balance)
-     VALUES ($1, $2, $3, true, $4, $5, $6, $6)`,
-    [userId, categoryId, name, color, orderRes.rows[0].max, initialBalance],
-  )
+  db.prepare(
+    "INSERT INTO wallets (id, user_id, category_id, name, is_liquid, color, sort_order, initial_balance, balance) VALUES (?, ?, ?, ?, 1, ?, ?, ?, ?)"
+  ).run(uuid(), userId, categoryId, name, color, orderRow.max, initialBalance, initialBalance)
 
   redirect("/dompet")
 }
 
 export async function updateWallet(id: string, formData: FormData) {
-  const session = await requireUser()
-  const userId = session.user.id
-  await requirePermission(userId, "change_wallet")
-
-  const name = (formData.get("name") as string)?.trim()
-  const color = (formData.get("color") as string)?.trim() || null
+  const userId = await requireUserIdAction()
+  const name   = (formData.get("name") as string)?.trim()
+  const color  = (formData.get("color") as string)?.trim() || null
 
   if (!name) throw new Error("Nama dompet tidak boleh kosong")
 
-  await pool.query(
-    `UPDATE wallets
-     SET name = $1, is_liquid = true, color = $2, updated_at = now()
-     WHERE id = $3 AND user_id = $4 AND is_active = true`,
-    [name, color, id, userId],
-  )
+  db.prepare(
+    "UPDATE wallets SET name = ?, is_liquid = 1, color = ?, updated_at = datetime('now') WHERE id = ? AND user_id = ? AND is_active = 1"
+  ).run(name, color, id, userId)
 
   redirect("/dompet")
 }
 
 export async function deleteWallet(id: string) {
-  const session = await requireUser()
-  const userId = session.user.id
-  await requirePermission(userId, "delete_wallet")
-
-  await pool.query(
-    `UPDATE wallets SET is_active = false, updated_at = now()
-     WHERE id = $1 AND user_id = $2`,
-    [id, userId],
-  )
-
+  const userId = await requireUserIdAction()
+  db.prepare(
+    "UPDATE wallets SET is_active = 0, updated_at = datetime('now') WHERE id = ? AND user_id = ?"
+  ).run(id, userId)
   revalidatePath("/dompet")
 }
 
 export async function adjustBalance(id: string, formData: FormData) {
-  const session = await requireUser()
-  const userId = session.user.id
-  await requirePermission(userId, "change_wallet")
-
-  const raw = formData.get("target_balance") as string
+  const userId = await requireUserIdAction()
+  const raw    = formData.get("target_balance") as string
   const targetBalance = raw === "" || raw === null ? 0 : parseFloat(raw)
   if (isNaN(targetBalance)) throw new Error("Nominal tidak valid")
 
-  const res = await pool.query<{ balance: string; initial_balance: string }>(
-    `SELECT balance::text, initial_balance::text FROM wallets WHERE id = $1 AND user_id = $2 AND is_active = true`,
-    [id, userId],
-  )
-  if (!res.rows[0]) throw new Error("Dompet tidak ditemukan")
+  const row = db.prepare(
+    "SELECT balance, initial_balance FROM wallets WHERE id = ? AND user_id = ? AND is_active = 1"
+  ).get(id, userId) as { balance: number; initial_balance: number } | undefined
+  if (!row) throw new Error("Dompet tidak ditemukan")
 
-  const currentBalance  = parseFloat(res.rows[0].balance)
-  const currentInitial  = parseFloat(res.rows[0].initial_balance)
-  const newInitial      = currentInitial + (targetBalance - currentBalance)
-
-  await pool.query(
-    `UPDATE wallets SET initial_balance = $1, balance = $2, updated_at = now()
-     WHERE id = $3 AND user_id = $4`,
-    [newInitial, targetBalance, id, userId],
-  )
+  const newInitial = row.initial_balance + (targetBalance - row.balance)
+  db.prepare(
+    "UPDATE wallets SET initial_balance = ?, balance = ?, updated_at = datetime('now') WHERE id = ? AND user_id = ?"
+  ).run(newInitial, targetBalance, id, userId)
 
   revalidatePath("/investasi")
   redirect("/dompet")

@@ -1,96 +1,62 @@
-import { pool } from "./db"
+import { db } from "./db"
+import crypto from "crypto"
 
 const DEFAULT_TYPE_ALLOCATIONS: Record<string, number> = {
   TETAP:     50,
   FLEKSIBEL: 30,
 }
 
-export async function seedUserCategories(userId: string): Promise<void> {
-  const client = await pool.connect()
-  try {
-    await client.query("BEGIN")
+function uuid() { return crypto.randomUUID() }
 
-    const existing = await client.query(
-      `SELECT 1 FROM income_categories WHERE user_id = $1 LIMIT 1`,
-      [userId],
-    )
-    if (existing.rows.length > 0) {
-      await client.query("COMMIT")
-      return
-    }
+export function seedUserCategories(userId: string): void {
+  const existing = db.prepare("SELECT 1 FROM income_categories WHERE user_id = ? LIMIT 1").get(userId)
+  if (existing) return
 
-    const now   = new Date()
-    const month = now.getMonth() + 1
-    const year  = now.getFullYear()
+  const now   = new Date()
+  const year  = now.getFullYear()
+  const month = now.getMonth() + 1
 
-    // Copy income categories
-    await client.query(
-      `INSERT INTO income_categories (name, is_default, user_id, color, sort_order, year)
-       SELECT name, false, $1, color, sort_order, $2
-       FROM income_categories
-       WHERE is_default = true AND user_id IS NULL
-       ORDER BY sort_order`,
-      [userId, year],
-    )
+  const seedTx = db.transaction(() => {
+    // Copy income categories from defaults
+    const defaultIncome = db.prepare(
+      "SELECT name, color, sort_order FROM income_categories WHERE is_default = 1 AND user_id IS NULL ORDER BY sort_order"
+    ).all() as { name: string; color: string | null; sort_order: number }[]
+    const inStmt = db.prepare("INSERT INTO income_categories (id, name, is_default, user_id, color, sort_order, year) VALUES (?, ?, 0, ?, ?, ?, ?)")
+    for (const row of defaultIncome) inStmt.run(uuid(), row.name, userId, row.color, row.sort_order, year)
 
-    // Copy expense types + categories + set type allocations
-    const typesRes = await client.query<{ id: string; name: string; sort_order: number }>(
-      `SELECT id, name, sort_order FROM expense_types
-       WHERE is_default = true AND user_id IS NULL
-       ORDER BY sort_order`,
-    )
+    // Copy expense types + categories
+    const defaultTypes = db.prepare(
+      "SELECT id, name, sort_order FROM expense_types WHERE is_default = 1 AND user_id IS NULL ORDER BY sort_order"
+    ).all() as { id: string; name: string; sort_order: number }[]
 
-    for (const type of typesRes.rows) {
-      const newTypeRes = await client.query<{ id: string }>(
-        `INSERT INTO expense_types (name, is_default, user_id, sort_order, year)
-         VALUES ($1, false, $2, $3, $4) RETURNING id`,
-        [type.name, userId, type.sort_order, year],
+    for (const type of defaultTypes) {
+      const newTypeId = uuid()
+      db.prepare("INSERT INTO expense_types (id, name, is_default, user_id, sort_order, year) VALUES (?, ?, 0, ?, ?, ?)").run(
+        newTypeId, type.name, userId, type.sort_order, year
       )
-      const newTypeId = newTypeRes.rows[0].id
 
-      // Default type allocation (40/20/40)
       const allocPct = DEFAULT_TYPE_ALLOCATIONS[type.name] ?? 0
-      await client.query(
-        `INSERT INTO type_allocations (user_id, type_id, percentage, year)
-         VALUES ($1, $2, $3, $4)
-         ON CONFLICT (user_id, type_id, year) DO NOTHING`,
-        [userId, newTypeId, allocPct, year],
+      db.prepare("INSERT OR IGNORE INTO type_allocations (id, user_id, type_id, percentage, year) VALUES (?, ?, ?, ?, ?)").run(
+        uuid(), userId, newTypeId, allocPct, year
       )
 
-      // Copy expense categories for this type
-      const catsRes = await client.query<{
-        name: string; sort_order: number; default_percentage: string
-      }>(
-        `SELECT name, sort_order, default_percentage
-         FROM expense_categories
-         WHERE type_id = $1 AND is_default = true AND user_id IS NULL
-         ORDER BY sort_order`,
-        [type.id],
-      )
+      const defaultCats = db.prepare(
+        "SELECT name, sort_order, default_percentage FROM expense_categories WHERE type_id = ? AND is_default = 1 AND user_id IS NULL ORDER BY sort_order"
+      ).all(type.id) as { name: string; sort_order: number; default_percentage: number }[]
 
-      for (const cat of catsRes.rows) {
-        const newCatRes = await client.query<{ id: string }>(
-          `INSERT INTO expense_categories (name, type_id, is_default, user_id, sort_order, year)
-           VALUES ($1, $2, false, $3, $4, $5) RETURNING id`,
-          [cat.name, newTypeId, userId, cat.sort_order, year],
+      for (const cat of defaultCats) {
+        const newCatId = uuid()
+        db.prepare("INSERT INTO expense_categories (id, name, type_id, is_default, user_id, sort_order, year) VALUES (?, ?, ?, 0, ?, ?, ?)").run(
+          newCatId, cat.name, newTypeId, userId, cat.sort_order, year
         )
-        const pct = parseFloat(cat.default_percentage)
-        if (pct > 0) {
-          await client.query(
-            `INSERT INTO budgets (user_id, category_id, percentage, month, year)
-             VALUES ($1, $2, $3, $4, $5)
-             ON CONFLICT (user_id, category_id, month, year) DO NOTHING`,
-            [userId, newCatRes.rows[0].id, pct, month, year],
+        if (cat.default_percentage > 0) {
+          db.prepare("INSERT OR IGNORE INTO budgets (id, user_id, category_id, percentage, month, year) VALUES (?, ?, ?, ?, ?, ?)").run(
+            uuid(), userId, newCatId, cat.default_percentage, month, year
           )
         }
       }
     }
+  })
 
-    await client.query("COMMIT")
-  } catch (err) {
-    await client.query("ROLLBACK")
-    throw err
-  } finally {
-    client.release()
-  }
+  seedTx()
 }

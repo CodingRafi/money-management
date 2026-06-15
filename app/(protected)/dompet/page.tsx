@@ -1,7 +1,5 @@
-import { auth } from "@/lib/auth"
-import { headers } from "next/headers"
-import { redirect } from "next/navigation"
-import { pool } from "@/lib/db"
+import { db } from "@/lib/db"
+import { LOCAL_USER_ID } from "@/lib/auth-simple"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Plus, Pencil, Trash2, X, Wallet, SlidersHorizontal } from "lucide-react"
@@ -9,7 +7,6 @@ import Link from "next/link"
 import { Input } from "@/components/ui/input"
 import { WalletForm } from "./_components/wallet-form"
 import { createWallet, updateWallet, deleteWallet, adjustBalance } from "@/app/actions/wallets"
-import { canEdit } from "@/lib/licence"
 
 function formatRupiah(n: number | string) {
   return new Intl.NumberFormat("id-ID", {
@@ -24,7 +21,7 @@ type WalletRow = {
   category_name: string
   name: string
   color: string | null
-  balance: string
+  balance: number
 }
 
 export default async function DompetPage({
@@ -32,34 +29,25 @@ export default async function DompetPage({
 }: {
   searchParams: Promise<Record<string, string | string[] | undefined>>
 }) {
-  const session = await auth.api.getSession({ headers: await headers() })
-  if (!session) redirect("/login")
-  const userId = session.user.id
+  const userId = LOCAL_USER_ID
 
-  const isActive = await canEdit(userId)
+  const sp       = await searchParams
+  const showNew  = sp.new === "1"
+  const editId   = typeof sp.edit === "string" ? sp.edit : null
+  const adjustId = typeof sp.adjust === "string" ? sp.adjust : null
 
-  const sp        = await searchParams
-  const showNew   = sp.new === "1" && isActive
-  const editId    = typeof sp.edit === "string" && isActive ? sp.edit : null
-  const adjustId  = typeof sp.adjust === "string" && isActive ? sp.adjust : null
+  const categories = db.prepare<[], WalletCategory>(
+    "SELECT id, name FROM wallet_categories ORDER BY sort_order, name"
+  ).all() as WalletCategory[]
 
-  const [categoriesRes, walletsRes] = await Promise.all([
-    pool.query<WalletCategory>(
-      `SELECT id, name FROM wallet_categories ORDER BY sort_order, name`,
-    ),
-    pool.query<WalletRow>(
-      `SELECT w.id, w.category_id, wc.name AS category_name,
-              w.name, w.color, w.balance::text
-       FROM wallets w
-       JOIN wallet_categories wc ON wc.id = w.category_id
-       WHERE w.user_id = $1 AND w.is_active = true
-       ORDER BY wc.sort_order, w.sort_order, w.name`,
-      [userId],
-    ),
-  ])
-
-  const categories = categoriesRes.rows
-  const wallets    = walletsRes.rows
+  const wallets = db.prepare<[string], WalletRow>(
+    `SELECT w.id, w.category_id, wc.name AS category_name,
+            w.name, w.color, w.balance
+     FROM wallets w
+     JOIN wallet_categories wc ON wc.id = w.category_id
+     WHERE w.user_id = ? AND w.is_active = 1
+     ORDER BY wc.sort_order, w.sort_order, w.name`
+  ).all(userId) as WalletRow[]
 
   const byCategory = wallets.reduce<Record<string, WalletRow[]>>((acc, w) => {
     acc[w.category_id] ??= []
@@ -67,9 +55,8 @@ export default async function DompetPage({
     return acc
   }, {})
 
-  const usedCats = categories.filter((c) => byCategory[c.id]?.length)
-
-  const totalBalance = wallets.reduce((s, w) => s + Number(w.balance), 0)
+  const usedCats     = categories.filter((c) => byCategory[c.id]?.length)
+  const totalBalance = wallets.reduce((s, w) => s + w.balance, 0)
 
   return (
     <div className="space-y-6 max-w-3xl">
@@ -78,7 +65,7 @@ export default async function DompetPage({
           <h1 className="text-2xl font-bold">Dompet</h1>
           <p className="text-sm text-muted-foreground">Kelola semua akun keuangan kamu</p>
         </div>
-        {!showNew && isActive && (
+        {!showNew && (
           <Button asChild size="sm">
             <Link href="?new=1">
               <Plus className="h-4 w-4 mr-1" />
@@ -88,7 +75,6 @@ export default async function DompetPage({
         )}
       </div>
 
-      {/* Balance summary */}
       {wallets.length > 0 && (
         <Card>
           <CardContent className="p-4">
@@ -100,16 +86,13 @@ export default async function DompetPage({
         </Card>
       )}
 
-      {/* Add form */}
       {showNew && (
         <Card>
           <CardHeader className="pb-3">
             <div className="flex items-center justify-between">
               <CardTitle className="text-sm font-medium">Tambah Dompet Baru</CardTitle>
               <Button asChild variant="ghost" size="icon" className="h-7 w-7">
-                <Link href="/dompet">
-                  <X className="h-4 w-4" />
-                </Link>
+                <Link href="/dompet"><X className="h-4 w-4" /></Link>
               </Button>
             </div>
           </CardHeader>
@@ -119,7 +102,6 @@ export default async function DompetPage({
         </Card>
       )}
 
-      {/* Empty state */}
       {wallets.length === 0 && !showNew && (
         <Card>
           <CardContent className="py-12 text-center">
@@ -131,10 +113,9 @@ export default async function DompetPage({
         </Card>
       )}
 
-      {/* Wallet list grouped by category */}
       {usedCats.map((cat) => {
         const catWallets = byCategory[cat.id] ?? []
-        const catTotal   = catWallets.reduce((s, w) => s + Number(w.balance), 0)
+        const catTotal   = catWallets.reduce((s, w) => s + w.balance, 0)
         return (
           <Card key={cat.id}>
             <CardHeader className="pb-3">
@@ -150,18 +131,11 @@ export default async function DompetPage({
             <CardContent className="space-y-2">
               {catWallets.map((w) =>
                 editId === w.id ? (
-                  <div
-                    key={w.id}
-                    className="rounded-lg border border-primary/40 bg-muted/30 p-4"
-                  >
+                  <div key={w.id} className="rounded-lg border border-primary/40 bg-muted/30 p-4">
                     <WalletForm
                       categories={categories}
                       action={updateWallet.bind(null, w.id)}
-                      defaultValues={{
-                        name:       w.name,
-                        categoryId: w.category_id,
-                        color:      w.color ?? undefined,
-                      }}
+                      defaultValues={{ name: w.name, categoryId: w.category_id, color: w.color ?? undefined }}
                       isEdit
                       cancelHref="/dompet"
                     />
@@ -180,7 +154,7 @@ export default async function DompetPage({
                         name="target_balance"
                         type="number"
                         step="any"
-                        defaultValue={Number(w.balance)}
+                        defaultValue={w.balance}
                         className="h-8 max-w-[180px] text-sm"
                         autoFocus
                       />
@@ -191,50 +165,33 @@ export default async function DompetPage({
                     </form>
                   </div>
                 ) : (
-                  <div
-                    key={w.id}
-                    className="flex items-center justify-between rounded-lg border px-4 py-3"
-                  >
+                  <div key={w.id} className="flex items-center justify-between rounded-lg border px-4 py-3">
                     <div className="flex min-w-0 items-center gap-3">
                       {w.color && (
-                        <span
-                          className="h-3 w-3 shrink-0 rounded-full border"
-                          style={{ backgroundColor: w.color }}
-                        />
+                        <span className="h-3 w-3 shrink-0 rounded-full border" style={{ backgroundColor: w.color }} />
                       )}
                       <p className="truncate font-medium">{w.name}</p>
                     </div>
                     <div className="flex shrink-0 items-center gap-3">
-                      <p className={`tabular-nums font-semibold ${Number(w.balance) < 0 ? "text-red-600" : "text-foreground"}`}>
+                      <p className={`tabular-nums font-semibold ${w.balance < 0 ? "text-red-600" : "text-foreground"}`}>
                         {formatRupiah(w.balance)}
                       </p>
-                      {isActive && (
                       <div className="flex items-center gap-1">
                         <Button asChild variant="ghost" size="icon" className="h-8 w-8" title="Sesuaikan saldo">
-                          <Link href={`?adjust=${w.id}`}>
-                            <SlidersHorizontal className="h-4 w-4" />
-                          </Link>
+                          <Link href={`?adjust=${w.id}`}><SlidersHorizontal className="h-4 w-4" /></Link>
                         </Button>
                         <Button asChild variant="ghost" size="icon" className="h-8 w-8">
-                          <Link href={`?edit=${w.id}`}>
-                            <Pencil className="h-4 w-4" />
-                          </Link>
+                          <Link href={`?edit=${w.id}`}><Pencil className="h-4 w-4" /></Link>
                         </Button>
                         <form action={deleteWallet.bind(null, w.id)}>
-                          <Button
-                            type="submit"
-                            variant="ghost"
-                            size="icon"
-                            className="h-8 w-8 text-destructive hover:text-destructive"
-                          >
+                          <Button type="submit" variant="ghost" size="icon" className="h-8 w-8 text-destructive hover:text-destructive">
                             <Trash2 className="h-4 w-4" />
                           </Button>
                         </form>
                       </div>
-                      )}
                     </div>
                   </div>
-                ),
+                )
               )}
             </CardContent>
           </Card>

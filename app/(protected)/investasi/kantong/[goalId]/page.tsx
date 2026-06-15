@@ -1,7 +1,6 @@
-import { auth } from "@/lib/auth"
-import { headers } from "next/headers"
 import { redirect } from "next/navigation"
-import { pool } from "@/lib/db"
+import { db } from "@/lib/db"
+import { LOCAL_USER_ID } from "@/lib/auth-simple"
 import { Card, CardContent } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
@@ -15,98 +14,53 @@ function formatRupiah(n: number | string) {
 }
 
 function formatDate(dateStr: string) {
-  return new Date(dateStr).toLocaleDateString("id-ID", {
-    day: "numeric", month: "short", year: "numeric",
-  })
+  return new Date(dateStr).toLocaleDateString("id-ID", { day: "numeric", month: "short", year: "numeric" })
 }
 
-
-type GoalDetail = {
-  id: string
-  name: string
-  color: string | null
-  target_amount: string | null
-  target_date: string | null
-}
-
-type AssetInGoal = {
-  id: string
-  name: string
-  category_name: string
-  total_modal: string
-  total_hasil: string
-}
-
-type TxInGoal = {
-  id: string
-  date: string
-  type: string
-  quantity: string
-  price_per_unit: string
-  total_amount: string
-  asset_name: string
-  from_wallet_name: string | null
-  to_wallet_name: string | null
-  notes: string | null
-}
+type GoalDetail = { id: string; name: string; color: string | null; target_amount: number | null; target_date: string | null }
+type AssetInGoal = { id: string; name: string; category_name: string; total_modal: number; total_hasil: number }
+type TxInGoal = { id: string; date: string; type: string; quantity: number; price_per_unit: number; total_amount: number; asset_name: string; from_wallet_name: string | null; to_wallet_name: string | null; notes: string | null }
 
 export default async function KantongDetailPage({
   params,
 }: {
   params: Promise<{ goalId: string }>
 }) {
-  const session = await auth.api.getSession({ headers: await headers() })
-  if (!session) redirect("/login")
-  const userId = session.user.id
-
+  const userId = LOCAL_USER_ID
   const { goalId } = await params
 
-  const [goalRes, assetsRes, txRes] = await Promise.all([
-    pool.query<GoalDetail>(
-      `SELECT id, name, color, target_amount::text, target_date::text
-       FROM investment_goals
-       WHERE id=$1 AND user_id=$2 AND is_active=true`,
-      [goalId, userId],
-    ),
-    pool.query<AssetInGoal>(
-      `SELECT i.id, i.name, ic.name AS category_name,
-              COALESCE(SUM(CASE WHEN it.type='BUY'  THEN it.total_amount ELSE 0 END),0)::text AS total_modal,
-              COALESCE(SUM(CASE WHEN it.type='SELL' THEN it.total_amount ELSE 0 END),0)::text AS total_hasil
-       FROM investments i
-       JOIN investment_categories ic ON ic.id = i.category_id
-       JOIN investment_transactions it ON it.investment_id = i.id AND it.goal_id = $1
-       WHERE i.user_id = $2
-       GROUP BY i.id, i.name, ic.name, ic.sort_order
-       ORDER BY ic.sort_order, i.name`,
-      [goalId, userId],
-    ),
-    pool.query<TxInGoal>(
-      `SELECT it.id, it.date::text, it.type,
-              it.quantity::text, it.price_per_unit::text, it.total_amount::text,
-              i.name AS asset_name,
-              fw.name AS from_wallet_name,
-              tw.name AS to_wallet_name,
-              it.notes
-       FROM investment_transactions it
-       JOIN investments i ON i.id = it.investment_id
-       LEFT JOIN wallets fw ON fw.id = it.from_wallet_id
-       LEFT JOIN wallets tw ON tw.id = it.to_wallet_id
-       WHERE it.goal_id = $1 AND i.user_id = $2
-       ORDER BY it.date DESC, it.created_at DESC`,
-      [goalId, userId],
-    ),
-  ])
+  const goal = db.prepare<[string, string], GoalDetail>(
+    "SELECT id, name, color, target_amount, target_date FROM investment_goals WHERE id=? AND user_id=? AND is_active=1"
+  ).get(goalId, userId) as GoalDetail | undefined
+  if (!goal) redirect("/investasi")
 
-  if (!goalRes.rows[0]) redirect("/investasi")
+  const assets = db.prepare<[string, string], AssetInGoal>(
+    `SELECT i.id, i.name, ic.name AS category_name,
+            COALESCE(SUM(CASE WHEN it.type='BUY'  THEN it.total_amount ELSE 0 END),0) AS total_modal,
+            COALESCE(SUM(CASE WHEN it.type='SELL' THEN it.total_amount ELSE 0 END),0) AS total_hasil
+     FROM investments i
+     JOIN investment_categories ic ON ic.id = i.category_id
+     JOIN investment_transactions it ON it.investment_id = i.id AND it.goal_id = ?
+     WHERE i.user_id = ?
+     GROUP BY i.id, i.name, ic.name, ic.sort_order
+     ORDER BY ic.sort_order, i.name`
+  ).all(goalId, userId) as AssetInGoal[]
 
-  const goal   = goalRes.rows[0]
-  const assets = assetsRes.rows
-  const txs    = txRes.rows
+  const txs = db.prepare<[string, string], TxInGoal>(
+    `SELECT it.id, it.date, it.type, it.quantity, it.price_per_unit, it.total_amount,
+            i.name AS asset_name, fw.name AS from_wallet_name, tw.name AS to_wallet_name, it.notes
+     FROM investment_transactions it
+     JOIN investments i ON i.id = it.investment_id
+     LEFT JOIN wallets fw ON fw.id = it.from_wallet_id
+     LEFT JOIN wallets tw ON tw.id = it.to_wallet_id
+     WHERE it.goal_id = ? AND i.user_id = ?
+     ORDER BY it.date DESC, it.created_at DESC`
+  ).all(goalId, userId) as TxInGoal[]
 
-  const totalModal = assets.reduce((s, a) => s + Number(a.total_modal), 0)
-  const totalHasil = assets.reduce((s, a) => s + Number(a.total_hasil), 0)
+  const totalModal = assets.reduce((s, a) => s + a.total_modal, 0)
+  const totalHasil = assets.reduce((s, a) => s + a.total_hasil, 0)
   const modalAktif = totalModal - totalHasil
-  const target     = goal.target_amount ? Number(goal.target_amount) : null
+  const target     = goal.target_amount
   const progress   = target && target > 0 ? Math.min(100, (modalAktif / target) * 100) : null
 
   const bulanSisa = goal.target_date && target && modalAktif < target
@@ -116,52 +70,23 @@ export default async function KantongDetailPage({
 
   return (
     <div className="space-y-5 max-w-4xl">
-      {/* Header */}
       <div className="flex items-center gap-3">
         <Button asChild variant="ghost" size="icon" className="h-8 w-8 shrink-0">
           <Link href="/investasi"><ArrowLeft className="h-4 w-4" /></Link>
         </Button>
         <div className="flex items-center gap-3 min-w-0">
-          {goal.color && (
-            <span className="h-4 w-4 shrink-0 rounded-full" style={{ backgroundColor: goal.color }} />
-          )}
+          {goal.color && <span className="h-4 w-4 shrink-0 rounded-full" style={{ backgroundColor: goal.color }} />}
           <h1 className="text-2xl font-bold truncate">{goal.name}</h1>
         </div>
       </div>
 
-      {/* Summary cards */}
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-        <Card>
-          <CardContent className="p-4">
-            <p className="text-xs text-muted-foreground mb-1">Total Modal BUY</p>
-            <p className="font-bold text-blue-600 tabular-nums">{formatRupiah(totalModal)}</p>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardContent className="p-4">
-            <p className="text-xs text-muted-foreground mb-1">Total Hasil SELL</p>
-            <p className="font-bold text-emerald-600 tabular-nums">{formatRupiah(totalHasil)}</p>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardContent className="p-4">
-            <p className="text-xs text-muted-foreground mb-1">Modal Aktif</p>
-            <p className="font-bold tabular-nums" style={{ color: goal.color ?? "#3b82f6" }}>{formatRupiah(modalAktif)}</p>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardContent className="p-4">
-            <p className="text-xs text-muted-foreground mb-1">P/L Direalisasi</p>
-            <p className={`font-bold tabular-nums ${totalHasil - totalModal >= 0 ? "text-emerald-600" : "text-red-600"}`}>
-              {totalHasil > 0
-                ? `${totalHasil - totalModal >= 0 ? "+" : ""}${formatRupiah(totalHasil - totalModal)}`
-                : "—"}
-            </p>
-          </CardContent>
-        </Card>
+        <Card><CardContent className="p-4"><p className="text-xs text-muted-foreground mb-1">Total Modal BUY</p><p className="font-bold text-blue-600 tabular-nums">{formatRupiah(totalModal)}</p></CardContent></Card>
+        <Card><CardContent className="p-4"><p className="text-xs text-muted-foreground mb-1">Total Hasil SELL</p><p className="font-bold text-emerald-600 tabular-nums">{formatRupiah(totalHasil)}</p></CardContent></Card>
+        <Card><CardContent className="p-4"><p className="text-xs text-muted-foreground mb-1">Modal Aktif</p><p className="font-bold tabular-nums" style={{ color: goal.color ?? "#3b82f6" }}>{formatRupiah(modalAktif)}</p></CardContent></Card>
+        <Card><CardContent className="p-4"><p className="text-xs text-muted-foreground mb-1">P/L Direalisasi</p><p className={`font-bold tabular-nums ${totalHasil - totalModal >= 0 ? "text-emerald-600" : "text-red-600"}`}>{totalHasil > 0 ? `${totalHasil - totalModal >= 0 ? "+" : ""}${formatRupiah(totalHasil - totalModal)}` : "—"}</p></CardContent></Card>
       </div>
 
-      {/* Progress bar */}
       {target && (
         <Card>
           <CardContent className="p-4 space-y-2">
@@ -170,36 +95,26 @@ export default async function KantongDetailPage({
               <p className="text-sm font-bold tabular-nums">{progress?.toFixed(1)}%</p>
             </div>
             <div className="h-3 rounded-full bg-muted overflow-hidden">
-              <div
-                className="h-full rounded-full transition-all"
-                style={{ width: `${progress}%`, backgroundColor: goal.color ?? "#3b82f6" }}
-              />
+              <div className="h-full rounded-full transition-all" style={{ width: `${progress}%`, backgroundColor: goal.color ?? "#3b82f6" }} />
             </div>
             <div className="flex flex-wrap gap-x-4 gap-y-1 text-xs text-muted-foreground">
               <span>Modal Aktif: {formatRupiah(modalAktif)}</span>
               <span>Target: {formatRupiah(target)}</span>
-              {goal.target_date && (
-                <span>Deadline: {formatDate(goal.target_date)}</span>
-              )}
-              {perBulan && perBulan > 0 && (
-                <span className="font-medium text-foreground">
-                  Estimasi: {formatRupiah(perBulan)}/bulan ({bulanSisa} bulan lagi)
-                </span>
-              )}
+              {goal.target_date && <span>Deadline: {formatDate(goal.target_date)}</span>}
+              {perBulan && perBulan > 0 && <span className="font-medium text-foreground">Estimasi: {formatRupiah(perBulan)}/bulan ({bulanSisa} bulan lagi)</span>}
             </div>
           </CardContent>
         </Card>
       )}
 
-      {/* Aset dalam kantong ini */}
       {assets.length > 0 && (
         <div className="space-y-2">
           <h2 className="text-base font-semibold">Aset dalam Kantong Ini</h2>
           <Card>
             <CardContent className="p-0 divide-y">
               {assets.map((a) => {
-                const aktifAset = Number(a.total_modal) - Number(a.total_hasil)
-                const plAset    = Number(a.total_hasil) - Number(a.total_modal)
+                const aktifAset = a.total_modal - a.total_hasil
+                const plAset    = a.total_hasil - a.total_modal
                 return (
                   <div key={a.id} className="flex items-center justify-between px-4 py-3 gap-3">
                     <div className="min-w-0 flex-1">
@@ -208,11 +123,7 @@ export default async function KantongDetailPage({
                     </div>
                     <div className="text-right shrink-0 space-y-0.5">
                       <p className="text-sm font-semibold tabular-nums text-blue-600">{formatRupiah(aktifAset)}</p>
-                      {Number(a.total_hasil) > 0 && (
-                        <p className={`text-xs tabular-nums ${plAset >= 0 ? "text-emerald-600" : "text-red-600"}`}>
-                          P/L: {plAset >= 0 ? "+" : ""}{formatRupiah(plAset)}
-                        </p>
-                      )}
+                      {a.total_hasil > 0 && <p className={`text-xs tabular-nums ${plAset >= 0 ? "text-emerald-600" : "text-red-600"}`}>P/L: {plAset >= 0 ? "+" : ""}{formatRupiah(plAset)}</p>}
                     </div>
                   </div>
                 )
@@ -222,15 +133,12 @@ export default async function KantongDetailPage({
         </div>
       )}
 
-      {/* Riwayat transaksi */}
       <div className="space-y-2">
         <h2 className="text-base font-semibold">Riwayat Transaksi</h2>
         <Card>
           <CardContent className="p-0">
             {txs.length === 0 ? (
-              <p className="py-10 text-center text-sm text-muted-foreground">
-                Belum ada transaksi di kantong ini.
-              </p>
+              <p className="py-10 text-center text-sm text-muted-foreground">Belum ada transaksi di kantong ini.</p>
             ) : (
               <div className="overflow-x-auto">
                 <table className="w-full text-sm">
@@ -247,37 +155,19 @@ export default async function KantongDetailPage({
                   <tbody>
                     {txs.map((tx) => (
                       <tr key={tx.id} className="border-b hover:bg-muted/30 transition-colors">
-                        <td className="px-4 py-3 tabular-nums text-muted-foreground whitespace-nowrap">
-                          {formatDate(tx.date)}
-                        </td>
+                        <td className="px-4 py-3 tabular-nums text-muted-foreground whitespace-nowrap">{formatDate(tx.date)}</td>
                         <td className="px-4 py-3 font-medium">{tx.asset_name}</td>
-                        <td className="px-4 py-3">
-                          <Badge variant={tx.type === "BUY" ? "default" : "destructive"} className="text-xs">
-                            {tx.type}
-                          </Badge>
-                        </td>
-                        <td className="px-4 py-3 text-right tabular-nums">
-                          {tx.quantity}
-                        </td>
-                        <td className={`px-4 py-3 text-right tabular-nums font-medium ${
-                          tx.type === "BUY" ? "text-blue-600" : "text-emerald-600"
-                        }`}>
-                          {formatRupiah(Number(tx.total_amount))}
-                        </td>
-                        <td className="px-4 py-3 text-muted-foreground">
-                          {tx.type === "BUY" ? (tx.from_wallet_name ?? "—") : (tx.to_wallet_name ?? "—")}
-                        </td>
+                        <td className="px-4 py-3"><Badge variant={tx.type === "BUY" ? "default" : "destructive"} className="text-xs">{tx.type}</Badge></td>
+                        <td className="px-4 py-3 text-right tabular-nums">{tx.quantity}</td>
+                        <td className={`px-4 py-3 text-right tabular-nums font-medium ${tx.type === "BUY" ? "text-blue-600" : "text-emerald-600"}`}>{formatRupiah(tx.total_amount)}</td>
+                        <td className="px-4 py-3 text-muted-foreground">{tx.type === "BUY" ? (tx.from_wallet_name ?? "—") : (tx.to_wallet_name ?? "—")}</td>
                       </tr>
                     ))}
                   </tbody>
                   <tfoot>
                     <tr className="bg-muted/20">
-                      <td colSpan={4} className="px-4 py-3 text-right text-sm font-medium text-muted-foreground">
-                        Total BUY
-                      </td>
-                      <td className="px-4 py-3 text-right tabular-nums font-bold text-blue-600">
-                        {formatRupiah(totalModal)}
-                      </td>
+                      <td colSpan={4} className="px-4 py-3 text-right text-sm font-medium text-muted-foreground">Total BUY</td>
+                      <td className="px-4 py-3 text-right tabular-nums font-bold text-blue-600">{formatRupiah(totalModal)}</td>
                       <td />
                     </tr>
                   </tfoot>

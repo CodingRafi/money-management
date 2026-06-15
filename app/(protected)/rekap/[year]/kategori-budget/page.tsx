@@ -1,11 +1,9 @@
 export const dynamic = "force-dynamic"
 
-import { auth } from "@/lib/auth"
-import { headers } from "next/headers"
 import { redirect } from "next/navigation"
-import { pool } from "@/lib/db"
+import { db } from "@/lib/db"
+import { LOCAL_USER_ID } from "@/lib/auth-simple"
 import { ensureYearlyCategories } from "@/lib/ensureYearlyCategories"
-import { canEdit } from "@/lib/licence"
 import { Button } from "@/components/ui/button"
 import { ArrowLeft } from "lucide-react"
 import Link from "next/link"
@@ -16,6 +14,10 @@ import {
   type KatExpenseCat,
 } from "../_components/kategori-budget-tab"
 
+type IncomeRaw  = { id: string; name: string; color: string | null; is_hidden: number }
+type TypeRaw    = { id: string; name: string; allocation: number | null }
+type ExpCatRaw  = { id: string; name: string; type_id: string; type_name: string; is_hidden: number; budget_pct: number | null }
+
 export default async function KategoriBudgetPage({
   params,
   searchParams,
@@ -23,57 +25,48 @@ export default async function KategoriBudgetPage({
   params: Promise<{ year: string }>
   searchParams: Promise<Record<string, string | string[] | undefined>>
 }) {
-  const session = await auth.api.getSession({ headers: await headers() })
-  if (!session) redirect("/login")
-  const userId = session.user.id
-
+  const userId = LOCAL_USER_ID
   const { year: yearStr } = await params
   const year = parseInt(yearStr)
   if (isNaN(year)) redirect("/rekap")
 
   if (year === new Date().getFullYear()) {
-    await ensureYearlyCategories(userId, year)
+    ensureYearlyCategories(userId, year)
   }
 
-  const isActive = await canEdit(userId)
   const sp = await searchParams
-  const ktab       = sp.ktab === "expense" ? "expense" : "income"
+  const ktab         = sp.ktab === "expense" ? "expense" : "income"
   const editKIncome  = typeof sp.edit_kincome  === "string" ? sp.edit_kincome  : null
   const editKExpense = typeof sp.edit_kexpense === "string" ? sp.edit_kexpense : null
   const allocError   = sp.alloc_error === "1"
-  const rawMonth = typeof sp.bulan === "string" ? parseInt(sp.bulan) : new Date().getMonth() + 1
-  const month    = Math.max(1, Math.min(12, isNaN(rawMonth) ? 1 : rawMonth))
+  const rawMonth     = typeof sp.bulan === "string" ? parseInt(sp.bulan) : new Date().getMonth() + 1
+  const month        = Math.max(1, Math.min(12, isNaN(rawMonth) ? 1 : rawMonth))
 
-  const [katIncomeRes, katTypesRes, katExpenseCatRes] = await Promise.all([
-    pool.query<KatIncomeCat>(
-      `SELECT id, name, color, is_hidden FROM income_categories
-       WHERE user_id = $1 AND year = $2
-       ORDER BY sort_order, name`,
-      [userId, year],
-    ),
-    pool.query<KatExpenseType>(
-      `SELECT et.id, et.name, COALESCE(ta.percentage, 0)::text AS allocation
-       FROM expense_types et
-       LEFT JOIN type_allocations ta ON ta.type_id = et.id AND ta.user_id = $1 AND ta.year = $2
-       WHERE et.user_id = $1 AND et.year = $2
-       ORDER BY et.sort_order, et.name`,
-      [userId, year],
-    ),
-    pool.query<KatExpenseCat>(
-      `SELECT ec.id, ec.name, ec.type_id, et.name AS type_name, ec.is_hidden,
-              b.percentage::text AS budget_pct
-       FROM expense_categories ec
-       JOIN expense_types et ON et.id = ec.type_id
-       LEFT JOIN budgets b ON b.category_id = ec.id AND b.user_id = $1 AND b.month = $2 AND b.year = $3
-       WHERE ec.user_id = $1 AND ec.year = $3
-       ORDER BY ec.sort_order, ec.name`,
-      [userId, month, year],
-    ),
-  ])
+  const katIncomeRows = (db.prepare<[string, number], IncomeRaw>(
+    "SELECT id, name, color, is_hidden FROM income_categories WHERE user_id=? AND year=? ORDER BY sort_order, name"
+  ).all(userId, year) as IncomeRaw[]).map<KatIncomeCat>((r) => ({ ...r, is_hidden: !!r.is_hidden }))
 
-  const katIncomeRows = katIncomeRes.rows
-  const katTypeRows   = katTypesRes.rows
-  const katExpCatRows = katExpenseCatRes.rows
+  const katTypeRows = (db.prepare<[string, number, string, number], TypeRaw>(
+    `SELECT et.id, et.name, COALESCE(ta.percentage, 0) AS allocation
+     FROM expense_types et
+     LEFT JOIN type_allocations ta ON ta.type_id = et.id AND ta.user_id = ? AND ta.year = ?
+     WHERE et.user_id = ? AND et.year = ?
+     ORDER BY et.sort_order, et.name`
+  ).all(userId, year, userId, year) as TypeRaw[]).map<KatExpenseType>((r) => ({ id: r.id, name: r.name, allocation: String(r.allocation ?? 0) }))
+
+  const katExpCatRows = (db.prepare<[string, number, number, string, number], ExpCatRaw>(
+    `SELECT ec.id, ec.name, ec.type_id, et.name AS type_name, ec.is_hidden,
+            b.percentage AS budget_pct
+     FROM expense_categories ec
+     JOIN expense_types et ON et.id = ec.type_id
+     LEFT JOIN budgets b ON b.category_id = ec.id AND b.user_id = ? AND b.month = ? AND b.year = ?
+     WHERE ec.user_id = ? AND ec.year = ?
+     ORDER BY ec.sort_order, ec.name`
+  ).all(userId, month, year, userId, year) as ExpCatRaw[]).map<KatExpenseCat>((r) => ({
+    id: r.id, name: r.name, type_id: r.type_id, type_name: r.type_name,
+    is_hidden: !!r.is_hidden,
+    budget_pct: r.budget_pct != null ? String(r.budget_pct) : null,
+  }))
 
   const katByType = katExpCatRows.reduce<Record<string, KatExpenseCat[]>>((acc, cat) => {
     acc[cat.type_id] ??= []
@@ -89,9 +82,7 @@ export default async function KategoriBudgetPage({
     <div className="space-y-5">
       <div className="flex items-center gap-3">
         <Button asChild variant="ghost" size="icon" className="h-8 w-8">
-          <Link href={`/rekap/${year}`}>
-            <ArrowLeft className="h-4 w-4" />
-          </Link>
+          <Link href={`/rekap/${year}`}><ArrowLeft className="h-4 w-4" /></Link>
         </Button>
         <div>
           <h1 className="text-2xl font-bold">Kategori &amp; Budget {year}</h1>
@@ -109,10 +100,10 @@ export default async function KategoriBudgetPage({
         allocTotal={katAllocTotal}
         allocOk={katAllocOk}
         activeKTab={ktab}
-        editKIncome={isActive ? editKIncome : null}
-        editKExpense={isActive ? editKExpense : null}
+        editKIncome={editKIncome}
+        editKExpense={editKExpense}
         allocError={allocError}
-        isActive={isActive}
+        isActive={true}
       />
     </div>
   )

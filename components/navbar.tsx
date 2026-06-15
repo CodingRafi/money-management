@@ -1,7 +1,6 @@
 "use client"
 
-import { authClient } from "@/lib/auth-client"
-import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
+import { Avatar, AvatarFallback } from "@/components/ui/avatar"
 import { Button } from "@/components/ui/button"
 import {
   DropdownMenu,
@@ -11,16 +10,14 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
-import { LogOut, Wallet, FolderOpen, TrendingUp, LayoutDashboard, Banknote } from "lucide-react"
+import { LogOut, FolderOpen, TrendingUp, LayoutDashboard, Banknote, Settings, Wallet } from "lucide-react"
+import Image from "next/image"
 import Link from "next/link"
-import { usePathname } from "next/navigation"
+import { usePathname, useRouter } from "next/navigation"
+import { logout } from "@/app/actions/session"
 
 interface NavbarProps {
-  user: {
-    name: string
-    email: string
-    image?: string | null
-  }
+  username: string
 }
 
 const NAV_LINKS = [
@@ -31,33 +28,23 @@ const NAV_LINKS = [
   { href: "/pinjaman",  label: "Pinjaman",  icon: Banknote },
 ]
 
-export function Navbar({ user }: NavbarProps) {
+export function Navbar({ username }: NavbarProps) {
   const pathname = usePathname()
+  const router   = useRouter()
 
-  const handleSignOut = () => {
-    authClient.signOut({
-      fetchOptions: {
-        onSuccess: () => {
-          window.location.href = "/login"
-        },
-      },
-    })
+  const initials = username.slice(0, 2).toUpperCase()
+
+  const handleSignOut = async () => {
+    await logout()
+    router.push("/login")
   }
-
-  const initials = user.name
-    .split(" ")
-    .map((n) => n[0])
-    .slice(0, 2)
-    .join("")
-    .toUpperCase()
 
   return (
     <header className="sticky top-0 z-40 border-b border-border bg-background/95 backdrop-blur">
       <div className="mx-auto flex h-14 max-w-7xl items-center justify-between px-4">
         <div className="flex items-center gap-6">
-          <Link href="/dashboard" className="flex items-center gap-2 shrink-0">
-            <Wallet className="h-5 w-5 text-primary" />
-            <span className="font-semibold text-foreground hidden sm:inline">Money Management</span>
+          <Link href="/dashboard" className="flex items-center shrink-0">
+            <Image src="/logo.svg" alt="TONAS" width={90} height={35} />
           </Link>
 
           <nav className="flex items-center gap-1">
@@ -84,19 +71,22 @@ export function Navbar({ user }: NavbarProps) {
           <DropdownMenuTrigger asChild>
             <Button variant="ghost" className="h-9 gap-2 px-2">
               <Avatar className="h-7 w-7">
-                <AvatarImage src={user.image ?? undefined} alt={user.name} />
                 <AvatarFallback className="text-xs">{initials}</AvatarFallback>
               </Avatar>
-              <span className="hidden text-sm sm:inline-block">{user.name}</span>
+              <span className="hidden text-sm sm:inline-block">{username}</span>
             </Button>
           </DropdownMenuTrigger>
-          <DropdownMenuContent align="end" className="w-56">
+          <DropdownMenuContent align="end" className="w-48">
             <DropdownMenuLabel className="font-normal">
-              <div className="flex flex-col space-y-1">
-                <p className="text-sm font-medium leading-none">{user.name}</p>
-                <p className="text-xs leading-none text-muted-foreground">{user.email}</p>
-              </div>
+              <p className="text-sm font-medium leading-none">{username}</p>
             </DropdownMenuLabel>
+            <DropdownMenuSeparator />
+            <DropdownMenuItem asChild className="cursor-pointer">
+              <Link href="/settings/account">
+                <Settings className="h-4 w-4" />
+                Pengaturan Akun
+              </Link>
+            </DropdownMenuItem>
             <DropdownMenuSeparator />
             <DropdownMenuItem onSelect={handleSignOut} className="cursor-pointer text-destructive focus:text-destructive">
               <LogOut className="h-4 w-4" />
