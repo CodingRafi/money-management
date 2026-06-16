@@ -11,7 +11,7 @@
     "migrate": "bun scripts/migrate.ts",
     "electron": "electron .",
     "electron:dev": "concurrently \"next dev\" \"wait-on http://localhost:3000 && electron .\"",
-    "electron:build": "next build && electron-builder --win"
+    "electron:build": "next build && electron-rebuild --module-dir .next/standalone -f -w better-sqlite3 && node scripts/prep-standalone.js && electron-builder --win"
   },
   "dependencies": {
     "@radix-ui/react-avatar": "^1.1.11",
@@ -30,6 +30,7 @@
     "tailwind-merge": "^3.6.0"
   },
   "devDependencies": {
+    "@electron/rebuild": "^4.0.4",
     "@tailwindcss/postcss": "^4",
     "@types/bcryptjs": "^2.4.6",
     "@types/better-sqlite3": "^7.6.13",
@@ -47,39 +48,53 @@
   },
   "build": {
     "appId": "com.tonas.money-management",
-    "productName": "Money Management",
+    "productName": "TOnas",
     "directories": {
       "output": "dist"
     },
     "files": [
-      ".next/standalone/**/*",
-      ".next/static/**/*",
-      "public/**/*",
       "electron/**/*",
-      "data/**/*",
-      "node_modules/better-sqlite3/**/*"
+      "!node_modules/**/*",
+      "!.next/**/*",
+      "!public/**/*",
+      "!app/**/*",
+      "!lib/**/*",
+      "!components/**/*",
+      "!scripts/**/*"
     ],
     "extraResources": [
       {
-        "from": "data",
-        "to": "data",
+        "from": ".next/standalone",
+        "to": ".next/standalone",
+        "filter": [
+          "**/*",
+          "!node_modules"
+        ]
+      },
+      {
+        "from": ".next/standalone/node_modules",
+        "to": ".next/standalone/node_modules",
         "filter": [
           "**/*"
         ]
       },
       {
         "from": ".next/static",
-        "to": ".next/static",
+        "to": ".next/standalone/.next/static",
         "filter": [
           "**/*"
         ]
       },
       {
         "from": "public",
-        "to": "public",
+        "to": ".next/standalone/public",
         "filter": [
           "**/*"
         ]
+      },
+      {
+        "from": "public/icon.ico",
+        "to": "icon.ico"
       }
     ],
     "win": {
