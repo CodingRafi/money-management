@@ -11,7 +11,7 @@
     "migrate": "bun scripts/migrate.ts",
     "electron": "electron .",
     "electron:dev": "concurrently \"next dev\" \"wait-on http://localhost:3000 && electron .\"",
-    "electron:build": "next build && electron-rebuild --module-dir .next/standalone -f -w better-sqlite3 && node scripts/prep-standalone.js && electron-builder --win"
+    "electron:build": "npm rebuild better-sqlite3 && next build && npx electron-rebuild -f -w better-sqlite3 && node scripts/prep-standalone.js && electron-builder --win"
   },
   "dependencies": {
     "@radix-ui/react-avatar": "^1.1.11",

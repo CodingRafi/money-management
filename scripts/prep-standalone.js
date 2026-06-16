@@ -1,17 +1,23 @@
-// Dijalankan setelah electron-rebuild pada standalone/node_modules.
-// Copy binary yang sudah benar (Electron ABI) ke lokasi hashed di standalone/.next/node_modules/
-const { unlinkSync, copyFileSync, readdirSync, statSync, existsSync } = require("fs")
+// Copy the Electron-rebuilt better-sqlite3 binary (from root node_modules)
+// into all locations inside the Next.js standalone output.
+const { copyFileSync, mkdirSync, readdirSync, statSync, existsSync } = require("fs")
 const path = require("path")
 
-// Source: hasil rebuild Electron di dalam standalone (bukan root node_modules)
+// Source: rebuilt for Electron's ABI by `electron-rebuild` against root node_modules
 const srcBinary = path.join(
-  ".next", "standalone", "node_modules", "better-sqlite3", "build", "Release", "better_sqlite3.node"
+  "node_modules", "better-sqlite3", "build", "Release", "better_sqlite3.node"
 )
 
 if (!existsSync(srcBinary)) {
-  console.error("ERROR: better_sqlite3.node tidak ditemukan di", srcBinary)
-  console.error("Pastikan electron-rebuild sudah selesai dengan benar.")
+  console.error("ERROR: better_sqlite3.node not found at", srcBinary)
+  console.error("Run: npx electron-rebuild -f -w better-sqlite3")
   process.exit(1)
+}
+
+function copyTo(dest) {
+  mkdirSync(path.dirname(dest), { recursive: true })
+  // COPYFILE_FICLONE_FORCE not needed; default mode overwrites existing file
+  copyFileSync(srcBinary, dest)
 }
 
 function findAll(dir, name, results = []) {
@@ -25,17 +31,37 @@ function findAll(dir, name, results = []) {
   return results
 }
 
-// Hanya update hashed copies di standalone/.next/node_modules/ (bukan src itu sendiri)
+let updated = 0
+
+// 1. Patch standalone/node_modules/better-sqlite3/ (regular require path)
+const standaloneNm = path.join(
+  ".next", "standalone", "node_modules", "better-sqlite3", "build", "Release", "better_sqlite3.node"
+)
+copyTo(standaloneNm)
+console.log("✓ standalone/node_modules:", standaloneNm)
+updated++
+
+// 2. Patch hashed copies in standalone/.next/node_modules/ (Next.js trace output)
 const hashDir = path.join(".next", "standalone", ".next", "node_modules")
-if (!existsSync(hashDir)) {
-  console.log("Tidak ada hashed node_modules, selesai.")
-  process.exit(0)
+if (existsSync(hashDir)) {
+  // Update any existing better_sqlite3.node files found by the trace
+  const targets = findAll(hashDir, "better_sqlite3.node")
+  for (const t of targets) {
+    copyTo(t)
+    console.log("✓ hashed (existing):", t)
+    updated++
+  }
+
+  // Ensure binary exists in every better-sqlite3-* package dir (even if trace skipped the .node)
+  const targetSet = new Set(targets)
+  for (const pkg of readdirSync(hashDir).filter(d => d.startsWith("better-sqlite3"))) {
+    const dest = path.join(hashDir, pkg, "build", "Release", "better_sqlite3.node")
+    if (!targetSet.has(dest)) {
+      copyTo(dest)
+      console.log("✓ hashed (created):", dest)
+      updated++
+    }
+  }
 }
 
-const targets = findAll(hashDir, "better_sqlite3.node")
-for (const t of targets) {
-  try { unlinkSync(t) } catch { /* tidak ada */ }
-  copyFileSync(srcBinary, t)
-  console.log("✓ Updated:", t)
-}
-console.log(`Done — updated ${targets.length} file(s)`)
+console.log(`Done — updated ${updated} file(s)`)

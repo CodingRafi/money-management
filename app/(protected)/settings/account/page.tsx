@@ -27,7 +27,8 @@ export default function AccountSettingsPage() {
       const res = await fetch("/api/import", { method: "POST", body: form })
       const data = await res.json()
       if (data.success) {
-        setImportMsg({ type: "ok", text: "Data berhasil diimport. Refresh halaman untuk melihat perubahan." })
+        setImportMsg({ type: "ok", text: "Data berhasil diimport. Memuat ulang aplikasi..." })
+        setTimeout(() => window.location.reload(), 1500)
       } else {
         setImportMsg({ type: "err", text: data.error ?? "Import gagal" })
       }
