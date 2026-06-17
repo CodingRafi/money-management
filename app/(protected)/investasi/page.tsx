@@ -2,11 +2,13 @@ import { db } from "@/lib/db"
 import { LOCAL_USER_ID } from "@/lib/auth-simple"
 import { Card, CardContent, CardHeader } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
-import { Plus, Pencil, Trash2, X, Target, TrendingUp, ChevronRight, BarChart2 } from "lucide-react"
+import { Badge } from "@/components/ui/badge"
+import { Plus, Pencil, X, Target, TrendingUp, ChevronRight, BarChart2 } from "lucide-react"
 import Link from "next/link"
 import { GoalForm } from "./_components/goal-form"
 import { AssetForm } from "./_components/asset-form"
-import { createGoal, updateGoal, deleteGoal } from "@/app/actions/investment-goals"
+import { DeleteGoalButton } from "./_components/delete-goal-button"
+import { createGoal, updateGoal } from "@/app/actions/investment-goals"
 import { createInvestmentDirect } from "@/app/actions/investments"
 
 function formatRupiah(n: number | string) {
@@ -17,7 +19,7 @@ function formatRupiah(n: number | string) {
 
 type WalletRow   = { id: string; name: string; color: string | null; balance: number; category_name: string }
 type GoalRow     = { id: string; name: string; color: string | null; target_amount: number | null; target_date: string | null; total_modal: number; total_hasil: number }
-type AssetRow    = { id: string; name: string; category_name: string; is_liquid: number; total_modal: number; total_hasil: number }
+type AssetRow    = { id: string; name: string; category_name: string; is_liquid: number; is_closed: number; total_modal: number; total_hasil: number }
 type CategoryRow = { id: string; name: string }
 
 export default async function InvestasiPage({
@@ -30,6 +32,7 @@ export default async function InvestasiPage({
   const showNew     = sp.new === "1"
   const showNewAset = sp.newAset === "1"
   const editId      = typeof sp.edit === "string" ? sp.edit : null
+  const asetTab     = sp.asetTab === "history" ? "history" : "aktif"
 
   const wallets = db.prepare<[string], WalletRow>(
     `SELECT w.id, w.name, w.color, w.balance, wc.name AS category_name
@@ -50,29 +53,37 @@ export default async function InvestasiPage({
   ).all(userId) as GoalRow[]
 
   const assets = db.prepare<[string], AssetRow>(
-    `SELECT i.id, i.name, ic.name AS category_name, i.is_liquid,
+    `SELECT i.id, i.name, ic.name AS category_name, i.is_liquid, i.is_closed,
             COALESCE(SUM(CASE WHEN it.type='BUY'  THEN it.total_amount ELSE 0 END),0) AS total_modal,
             COALESCE(SUM(CASE WHEN it.type='SELL' THEN it.total_amount ELSE 0 END),0) AS total_hasil
      FROM investments i
      JOIN investment_categories ic ON ic.id = i.category_id
      LEFT JOIN investment_transactions it ON it.investment_id = i.id
      WHERE i.user_id = ? AND i.is_active = 1
-     GROUP BY i.id, i.name, ic.name, ic.sort_order, i.is_liquid, i.created_at
+     GROUP BY i.id, i.name, ic.name, ic.sort_order, i.is_liquid, i.is_closed, i.created_at
      ORDER BY ic.sort_order, i.created_at`
   ).all(userId) as AssetRow[]
+
+  const activeAssets = assets.filter((a) => !a.is_closed)
+  const closedAssets = assets.filter((a) => a.is_closed)
 
   const investSummary = db.prepare<[string]>(
     `SELECT COALESCE(SUM(CASE WHEN it.type='BUY'  THEN it.total_amount ELSE 0 END),0) AS total_modal,
             COALESCE(SUM(CASE WHEN it.type='SELL' THEN it.total_amount ELSE 0 END),0) AS total_hasil
-     FROM investment_transactions it JOIN investments i ON i.id = it.investment_id WHERE i.user_id = ?`
+     FROM investment_transactions it JOIN investments i ON i.id = it.investment_id
+     WHERE i.user_id = ? AND i.is_closed = 0`
   ).get(userId) as { total_modal: number; total_hasil: number }
 
-  const perfomaTahunIni = db.prepare<[string]>(
+  const realizedTahunIni = db.prepare<[string]>(
     `SELECT
-       COALESCE(SUM(CASE WHEN it.type='BUY'  AND strftime('%Y', it.created_at) = strftime('%Y', 'now') THEN it.total_amount ELSE 0 END),0) AS buy_tahun_ini,
-       COALESCE(SUM(CASE WHEN it.type='SELL' AND strftime('%Y', it.created_at) = strftime('%Y', 'now') THEN it.total_amount ELSE 0 END),0) AS sell_tahun_ini
-     FROM investment_transactions it JOIN investments i ON i.id = it.investment_id WHERE i.user_id = ?`
-  ).get(userId) as { buy_tahun_ini: number; sell_tahun_ini: number }
+       COALESCE(SUM(CASE WHEN it.type='BUY'  THEN it.total_amount ELSE 0 END),0) AS total_modal,
+       COALESCE(SUM(CASE WHEN it.type='SELL' THEN it.total_amount ELSE 0 END),0) AS total_hasil,
+       COUNT(DISTINCT i.id) AS jumlah_aset
+     FROM investment_transactions it
+     JOIN investments i ON i.id = it.investment_id
+     WHERE i.user_id = ? AND i.is_closed = 1
+       AND strftime('%Y', i.closed_at) = strftime('%Y', 'now')`
+  ).get(userId) as { total_modal: number; total_hasil: number; jumlah_aset: number }
 
   const categories = db.prepare<[], CategoryRow>(
     "SELECT id, name FROM investment_categories ORDER BY sort_order, name"
@@ -83,19 +94,20 @@ export default async function InvestasiPage({
   const totalHasil    = investSummary?.total_hasil ?? 0
   const modalAktif    = totalModal - totalHasil
 
-  const buyTahunIni   = perfomaTahunIni?.buy_tahun_ini  ?? 0
-  const sellTahunIni  = perfomaTahunIni?.sell_tahun_ini ?? 0
-  const netTahunIni   = sellTahunIni - buyTahunIni
+  const realizedModal  = realizedTahunIni?.total_modal  ?? 0
+  const realizedHasil  = realizedTahunIni?.total_hasil  ?? 0
+  const realizedPL     = realizedHasil - realizedModal
+  const realizedCount  = realizedTahunIni?.jumlah_aset  ?? 0
 
-  const liquidModalAktif    = assets.reduce((s, a) => a.is_liquid    ? s + a.total_modal - a.total_hasil : s, 0)
-  const nonLiquidModalAktif = assets.reduce((s, a) => !a.is_liquid   ? s + a.total_modal - a.total_hasil : s, 0)
+  const liquidModalAktif    = activeAssets.reduce((s, a) => a.is_liquid  ? s + a.total_modal - a.total_hasil : s, 0)
+  const nonLiquidModalAktif = activeAssets.reduce((s, a) => !a.is_liquid ? s + a.total_modal - a.total_hasil : s, 0)
   const liquidPct    = modalAktif > 0 ? (liquidModalAktif    / modalAktif) * 100 : 0
   const nonLiquidPct = modalAktif > 0 ? (nonLiquidModalAktif / modalAktif) * 100 : 0
 
   const editGoal = editId ? goals.find((g) => g.id === editId) : null
 
   return (
-    <div className="space-y-6 max-w-5xl">
+    <div className="space-y-6">
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-2xl font-bold">Investasi</h1>
@@ -116,29 +128,19 @@ export default async function InvestasiPage({
         </Card>
         <Card className="sm:col-span-1">
           <CardContent className="p-4">
-            <p className="text-xs text-muted-foreground mb-1">Aktivitas Tahun Ini</p>
-            <div className="space-y-1.5 mt-2">
-              <div className="flex items-center justify-between gap-2">
-                <span className="text-xs text-muted-foreground">Diinvestasikan</span>
-                <span className="text-sm font-bold tabular-nums text-blue-600">
-                  {buyTahunIni > 0 ? formatRupiah(buyTahunIni) : "—"}
-                </span>
-              </div>
-              <div className="flex items-center justify-between gap-2">
-                <span className="text-xs text-muted-foreground">Dicairkan (SELL)</span>
-                <span className="text-sm font-bold tabular-nums text-emerald-600">
-                  {sellTahunIni > 0 ? formatRupiah(sellTahunIni) : "—"}
-                </span>
-              </div>
-              {sellTahunIni > 0 && (
-                <div className="flex items-center justify-between gap-2 pt-1 border-t">
-                  <span className="text-xs text-muted-foreground">Net Realisasi</span>
-                  <span className={`text-sm font-bold tabular-nums ${netTahunIni >= 0 ? "text-emerald-600" : "text-red-600"}`}>
-                    {netTahunIni >= 0 ? "+" : ""}{formatRupiah(netTahunIni)}
-                  </span>
-                </div>
-              )}
-            </div>
+            <p className="text-xs text-muted-foreground mb-1">Realized P/L Tahun Ini</p>
+            {realizedCount === 0 ? (
+              <p className="text-sm text-muted-foreground mt-2">Belum ada aset yang ditutup tahun ini</p>
+            ) : (
+              <>
+                <p className={`text-xl font-bold tabular-nums mt-1 ${realizedPL > 0 ? "text-emerald-600" : realizedPL < 0 ? "text-red-600" : "text-foreground"}`}>
+                  {realizedPL >= 0 ? "+" : ""}{formatRupiah(realizedPL)}
+                </p>
+                <p className="text-xs text-muted-foreground mt-1">
+                  dari {realizedCount} aset ditutup · modal {formatRupiah(realizedModal)}
+                </p>
+              </>
+            )}
           </CardContent>
         </Card>
         <Card className="sm:col-span-1">
@@ -209,62 +211,136 @@ export default async function InvestasiPage({
         <div className="space-y-3">
           <div className="flex items-center justify-between">
             <h2 className="text-base font-semibold">Semua Aset</h2>
-            {!showNewAset && (
+            {!showNewAset && asetTab === "aktif" && (
               <Button asChild size="sm"><Link href="?newAset=1"><Plus className="h-4 w-4 mr-1" />Tambah Aset</Link></Button>
             )}
           </div>
 
-          {showNewAset && (
-            <Card>
-              <CardHeader className="pb-2 pt-4 px-4">
-                <div className="flex items-center justify-between">
-                  <p className="text-sm font-medium">Tambah Aset Baru</p>
-                  <Button asChild variant="ghost" size="icon" className="h-7 w-7"><Link href="/investasi"><X className="h-4 w-4" /></Link></Button>
-                </div>
-              </CardHeader>
-              <CardContent className="px-4 pb-4">
-                <AssetForm categories={categories} wallets={wallets} action={createInvestmentDirect} cancelHref="/investasi" />
-              </CardContent>
-            </Card>
-          )}
+          {/* Tab navigation */}
+          <div className="flex items-center gap-1 border-b">
+            <Link
+              href="?asetTab=aktif"
+              className={`px-3 py-1.5 text-sm font-medium border-b-2 -mb-px transition-colors ${
+                asetTab === "aktif"
+                  ? "border-primary text-foreground"
+                  : "border-transparent text-muted-foreground hover:text-foreground"
+              }`}
+            >
+              Aktif
+              {activeAssets.length > 0 && (
+                <span className="ml-1.5 rounded-full bg-muted px-1.5 py-0.5 text-[10px] font-semibold tabular-nums">
+                  {activeAssets.length}
+                </span>
+              )}
+            </Link>
+            <Link
+              href="?asetTab=history"
+              className={`px-3 py-1.5 text-sm font-medium border-b-2 -mb-px transition-colors ${
+                asetTab === "history"
+                  ? "border-primary text-foreground"
+                  : "border-transparent text-muted-foreground hover:text-foreground"
+              }`}
+            >
+              History
+              {closedAssets.length > 0 && (
+                <span className="ml-1.5 rounded-full bg-muted px-1.5 py-0.5 text-[10px] font-semibold tabular-nums">
+                  {closedAssets.length}
+                </span>
+              )}
+            </Link>
+          </div>
 
-          {assets.length === 0 && !showNewAset ? (
-            <Card>
-              <CardContent className="py-8 text-center text-sm text-muted-foreground">
-                Belum ada aset investasi. <Link href="?newAset=1" className="text-primary underline underline-offset-2">Tambah sekarang</Link>.
-              </CardContent>
-            </Card>
-          ) : assets.length > 0 && (
-            <Card>
-              <CardContent className="p-0 divide-y">
-                {assets.map((a) => {
-                  const modalAktifAset = a.total_modal - a.total_hasil
-                  const pl             = a.total_hasil - a.total_modal
-                  return (
-                    <Link key={a.id} href={`/investasi/aset/${a.id}`}
-                      className="flex items-center justify-between px-4 py-3 gap-3 hover:bg-muted/40 transition-colors">
-                      <div className="min-w-0 flex-1">
-                        <p className="font-medium text-sm truncate">{a.name}</p>
-                        <p className="text-xs text-muted-foreground">{a.category_name}</p>
-                      </div>
-                      <div className="flex items-center gap-2 shrink-0">
-                        <div className="text-right">
-                          <p className="text-sm font-semibold tabular-nums text-emerald-600">{formatRupiah(modalAktifAset)}</p>
-                          {a.total_hasil > 0 && (
-                            <p className={`text-xs tabular-nums ${pl >= 0 ? "text-emerald-600" : "text-red-600"}`}>P/L: {pl >= 0 ? "+" : ""}{formatRupiah(pl)}</p>
-                          )}
-                        </div>
-                        <ChevronRight className="h-4 w-4 text-muted-foreground" />
-                      </div>
-                    </Link>
-                  )
-                })}
-                <div className="flex items-center justify-between px-4 py-2.5 bg-muted/30">
-                  <p className="text-xs font-medium text-muted-foreground">Total Modal Aktif</p>
-                  <p className="text-sm font-bold tabular-nums text-emerald-600">{formatRupiah(modalAktif)}</p>
-                </div>
-              </CardContent>
-            </Card>
+          {asetTab === "aktif" ? (
+            <>
+              {showNewAset && (
+                <Card>
+                  <CardHeader className="pb-2 pt-4 px-4">
+                    <div className="flex items-center justify-between">
+                      <p className="text-sm font-medium">Tambah Aset Baru</p>
+                      <Button asChild variant="ghost" size="icon" className="h-7 w-7"><Link href="/investasi"><X className="h-4 w-4" /></Link></Button>
+                    </div>
+                  </CardHeader>
+                  <CardContent className="px-4 pb-4">
+                    <AssetForm categories={categories} wallets={wallets} action={createInvestmentDirect} cancelHref="/investasi" />
+                  </CardContent>
+                </Card>
+              )}
+
+              {activeAssets.length === 0 && !showNewAset ? (
+                <Card>
+                  <CardContent className="py-8 text-center text-sm text-muted-foreground">
+                    Belum ada aset investasi aktif. <Link href="?newAset=1" className="text-primary underline underline-offset-2">Tambah sekarang</Link>.
+                  </CardContent>
+                </Card>
+              ) : activeAssets.length > 0 && (
+                <Card>
+                  <CardContent className="p-0 divide-y">
+                    {activeAssets.map((a) => {
+                      const modalAktifAset = a.total_modal - a.total_hasil
+                      const pl             = a.total_hasil - a.total_modal
+                      return (
+                        <Link key={a.id} href={`/investasi/aset/${a.id}`}
+                          className="flex items-center justify-between px-4 py-3 gap-3 hover:bg-muted/40 transition-colors">
+                          <div className="min-w-0 flex-1">
+                            <p className="font-medium text-sm truncate">{a.name}</p>
+                            <p className="text-xs text-muted-foreground">{a.category_name}</p>
+                          </div>
+                          <div className="flex items-center gap-2 shrink-0">
+                            <div className="text-right">
+                              <p className="text-sm font-semibold tabular-nums text-emerald-600">{formatRupiah(modalAktifAset)}</p>
+                              {a.total_hasil > 0 && (
+                                <p className={`text-xs tabular-nums ${pl >= 0 ? "text-emerald-600" : "text-red-600"}`}>P/L: {pl >= 0 ? "+" : ""}{formatRupiah(pl)}</p>
+                              )}
+                            </div>
+                            <ChevronRight className="h-4 w-4 text-muted-foreground" />
+                          </div>
+                        </Link>
+                      )
+                    })}
+                    <div className="flex items-center justify-between px-4 py-2.5 bg-muted/30">
+                      <p className="text-xs font-medium text-muted-foreground">Total Modal Aktif</p>
+                      <p className="text-sm font-bold tabular-nums text-emerald-600">{formatRupiah(modalAktif)}</p>
+                    </div>
+                  </CardContent>
+                </Card>
+              )}
+            </>
+          ) : (
+            <>
+              {closedAssets.length === 0 ? (
+                <Card>
+                  <CardContent className="py-8 text-center text-sm text-muted-foreground">
+                    Belum ada aset yang ditutup.
+                  </CardContent>
+                </Card>
+              ) : (
+                <Card>
+                  <CardContent className="p-0 divide-y">
+                    {closedAssets.map((a) => {
+                      const pl = a.total_hasil - a.total_modal
+                      return (
+                        <Link key={a.id} href={`/investasi/aset/${a.id}`}
+                          className="flex items-center justify-between px-4 py-3 gap-3 hover:bg-muted/40 transition-colors">
+                          <div className="min-w-0 flex-1">
+                            <p className="font-medium text-sm truncate text-muted-foreground">{a.name}</p>
+                            <p className="text-xs text-muted-foreground">{a.category_name}</p>
+                          </div>
+                          <div className="flex items-center gap-2 shrink-0">
+                            <div className="text-right">
+                              <p className={`text-sm font-semibold tabular-nums ${pl >= 0 ? "text-emerald-600" : "text-red-600"}`}>
+                                P/L: {pl >= 0 ? "+" : ""}{formatRupiah(pl)}
+                              </p>
+                              <p className="text-xs text-muted-foreground tabular-nums">Modal: {formatRupiah(a.total_modal)}</p>
+                            </div>
+                            <ChevronRight className="h-4 w-4 text-muted-foreground" />
+                          </div>
+                        </Link>
+                      )
+                    })}
+                  </CardContent>
+                </Card>
+              )}
+            </>
           )}
         </div>
       </div>
@@ -273,7 +349,7 @@ export default async function InvestasiPage({
         <div className="flex items-center justify-between">
           <h2 className="text-base font-semibold">Kantong Investasi</h2>
           {!showNew && !editId && (
-            <Button asChild size="sm"><Link href="?new=1"><Plus className="h-4 w-4 mr-1" />Buat Kantong</Link></Button>
+            <Button asChild size="sm"><Link href="?new=1" scroll={false}><Plus className="h-4 w-4 mr-1" />Buat Kantong</Link></Button>
           )}
         </div>
 
@@ -282,7 +358,7 @@ export default async function InvestasiPage({
             <CardHeader className="pb-2 pt-4 px-4">
               <div className="flex items-center justify-between">
                 <p className="text-sm font-medium">Buat Kantong Baru</p>
-                <Button asChild variant="ghost" size="icon" className="h-7 w-7"><Link href="/investasi"><X className="h-4 w-4" /></Link></Button>
+                <Button asChild variant="ghost" size="icon" className="h-7 w-7"><Link href="/investasi" scroll={false}><X className="h-4 w-4" /></Link></Button>
               </div>
             </CardHeader>
             <CardContent className="px-4 pb-4">
@@ -315,7 +391,7 @@ export default async function InvestasiPage({
                       <CardHeader className="pb-2 pt-4 px-4">
                         <div className="flex items-center justify-between">
                           <p className="text-sm font-medium">Edit Kantong</p>
-                          <Button asChild variant="ghost" size="icon" className="h-7 w-7"><Link href="/investasi"><X className="h-4 w-4" /></Link></Button>
+                          <Button asChild variant="ghost" size="icon" className="h-7 w-7"><Link href="/investasi" scroll={false}><X className="h-4 w-4" /></Link></Button>
                         </div>
                       </CardHeader>
                       <CardContent className="px-4 pb-4">
@@ -345,11 +421,9 @@ export default async function InvestasiPage({
                       </div>
                       <div className="flex items-center gap-0.5 shrink-0">
                         <Button asChild variant="ghost" size="icon" className="h-7 w-7">
-                          <Link href={`?edit=${g.id}`}><Pencil className="h-3.5 w-3.5" /></Link>
+                          <Link href={`?edit=${g.id}`} scroll={false}><Pencil className="h-3.5 w-3.5" /></Link>
                         </Button>
-                        <form action={deleteGoal.bind(null, g.id)}>
-                          <Button type="submit" variant="ghost" size="icon" className="h-7 w-7 text-destructive hover:text-destructive"><Trash2 className="h-3.5 w-3.5" /></Button>
-                        </form>
+                        <DeleteGoalButton goalId={g.id} />
                       </div>
                     </div>
                     <div>

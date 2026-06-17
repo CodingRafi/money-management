@@ -1,12 +1,12 @@
 "use client"
 
-import { useActionState, useRef, useState } from "react"
+import { useActionState, useEffect, useRef, useState } from "react"
 import { updateCredentials } from "@/app/actions/session"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
-import { CheckCircle, AlertCircle, Download, Upload } from "lucide-react"
+import { CheckCircle, AlertCircle, Download, Upload, FolderOpen } from "lucide-react"
 
 type State = { error?: string; success?: boolean } | null
 
@@ -15,6 +15,14 @@ export default function AccountSettingsPage() {
   const fileRef = useRef<HTMLInputElement>(null)
   const [importMsg, setImportMsg] = useState<{ type: "ok" | "err"; text: string } | null>(null)
   const [importing, setImporting] = useState(false)
+  const [dbPath, setDbPath] = useState<string | null>(null)
+
+  useEffect(() => {
+    fetch("/api/db-path")
+      .then((r) => r.json())
+      .then((d) => { if (d.path) setDbPath(d.path) })
+      .catch(() => {})
+  }, [])
 
   async function handleImport(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0]
@@ -28,7 +36,7 @@ export default function AccountSettingsPage() {
       const data = await res.json()
       if (data.success) {
         setImportMsg({ type: "ok", text: "Data berhasil diimport. Memuat ulang aplikasi..." })
-        setTimeout(() => window.location.reload(), 1500)
+        setTimeout(() => { window.location.href = "/" }, 1500)
       } else {
         setImportMsg({ type: "err", text: data.error ?? "Import gagal" })
       }
@@ -93,6 +101,22 @@ export default function AccountSettingsPage() {
               {importMsg.text}
             </div>
           )}
+        </CardContent>
+      </Card>
+
+      {/* Database location */}
+      <Card>
+        <CardHeader className="pb-3 pt-5 px-5">
+          <CardTitle className="text-base">Lokasi Database</CardTitle>
+        </CardHeader>
+        <CardContent className="px-5 pb-5 space-y-2">
+          <p className="text-sm text-muted-foreground">Direktori tempat file database SQLite disimpan.</p>
+          <div className="flex items-start gap-2 rounded-md border bg-muted/40 px-3 py-2">
+            <FolderOpen className="h-4 w-4 mt-0.5 shrink-0 text-muted-foreground" />
+            <span className="text-sm font-mono break-all">
+              {dbPath ?? "Memuat..."}
+            </span>
+          </div>
         </CardContent>
       </Card>
 

@@ -29,26 +29,28 @@ export async function POST(req: NextRequest) {
   }
 
   try {
+    // Must be outside the transaction — SQLite silently ignores PRAGMA foreign_keys inside a transaction
+    db.exec("PRAGMA foreign_keys = OFF")
+
     db.transaction(() => {
-      db.exec("PRAGMA foreign_keys = OFF")
-      // Split on semicolons but preserve string literals
-      const statements = sqlText
-        .split(/;\s*\n/)
-        .map((s) => s.trim())
-        .filter((s) => s && !s.startsWith("--") && !s.toUpperCase().startsWith("PRAGMA"))
-      for (const stmt of statements) {
-        if (!stmt) continue
+      for (const line of sqlText.split("\n")) {
+        const stmt = line.trim()
+        if (!stmt || stmt.startsWith("--") || stmt.toUpperCase().startsWith("PRAGMA")) continue
+        const sql = stmt.endsWith(";") ? stmt.slice(0, -1) : stmt
+        if (!sql) continue
         try {
-          db.prepare(stmt).run()
+          db.prepare(sql).run()
         } catch {
           // Skip statements that fail (e.g. table doesn't exist yet)
         }
       }
-      db.exec("PRAGMA foreign_keys = ON")
     })()
+
+    db.exec("PRAGMA foreign_keys = ON")
 
     return NextResponse.json({ success: true, message: "Data berhasil diimport" })
   } catch (err) {
+    db.exec("PRAGMA foreign_keys = ON")
     const msg = err instanceof Error ? err.message : "Unknown error"
     return NextResponse.json({ error: `Gagal import: ${msg}` }, { status: 500 })
   }

@@ -1,6 +1,7 @@
 "use client"
 
-import { useState } from "react"
+import { useState, useTransition } from "react"
+import { useRouter } from "next/navigation"
 import { Input } from "@/components/ui/input"
 import { Button } from "@/components/ui/button"
 import Link from "next/link"
@@ -25,14 +26,25 @@ interface Props {
 }
 
 export function GoalForm({ action, defaultValues, isEdit, cancelHref }: Props) {
+  const router = useRouter()
+  const [isPending, startTransition] = useTransition()
   const [selectedColor, setSelectedColor] = useState(defaultValues?.color ?? COLORS[0])
 
   const defaultTargetDate = defaultValues?.targetDate
     ? new Date(defaultValues.targetDate).toISOString().split("T")[0]
     : ""
 
+  function handleSubmit(e: React.FormEvent<HTMLFormElement>) {
+    e.preventDefault()
+    const formData = new FormData(e.currentTarget)
+    startTransition(async () => {
+      await action(formData)
+      router.push(cancelHref, { scroll: false })
+    })
+  }
+
   return (
-    <form action={action} className="space-y-3">
+    <form onSubmit={handleSubmit} className="space-y-3">
       <input type="hidden" name="color" value={selectedColor} />
 
       <div className="flex flex-col gap-1">
@@ -87,9 +99,9 @@ export function GoalForm({ action, defaultValues, isEdit, cancelHref }: Props) {
       </div>
 
       <div className="flex gap-2">
-        <Button type="submit" size="sm">{isEdit ? "Simpan" : "Buat Kantong"}</Button>
+        <Button type="submit" size="sm" disabled={isPending}>{isPending ? "Menyimpan..." : isEdit ? "Simpan" : "Buat Kantong"}</Button>
         <Button asChild variant="outline" size="sm">
-          <Link href={cancelHref}>Batal</Link>
+          <Link href={cancelHref} scroll={false}>Batal</Link>
         </Button>
       </div>
     </form>

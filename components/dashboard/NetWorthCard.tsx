@@ -20,6 +20,9 @@ export async function NetWorthSection({ userId, year }: { userId: string; year: 
     emergencyStatus === "AMAN"  ? "text-emerald-600" :
     emergencyStatus === "CUKUP" ? "text-amber-500"   : "text-red-500"
 
+  const totalKekayaanDenganPiutang = data.totalKekayaan + data.piutangSisa
+  const totalKekayaanRealistis     = data.totalKekayaan + data.piutangSisa - data.piutangMacetSisa
+
   return (
     <>
       <Card>
@@ -41,25 +44,30 @@ export async function NetWorthSection({ userId, year }: { userId: string; year: 
             </div>
           </div>
 
-          {/* Hutang */}
-          <div className="border-t border-border pt-4">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-xs text-muted-foreground mb-0.5">Hutang</p>
-                <p className={`text-sm font-semibold tabular-nums ${data.hutangSisa > 0 ? "text-red-600" : "text-muted-foreground"}`}>
-                  {data.hutangSisa > 0 ? formatRp(data.hutangSisa) : "Tidak ada hutang"}
-                </p>
-              </div>
-              {data.hutangSisa > 0 && (
-                <div className="text-right">
-                  <p className="text-xs text-muted-foreground mb-0.5">Kekayaan Bersih</p>
-                  <p className="text-sm font-semibold tabular-nums">
-                    {formatRp(data.totalKekayaan - data.hutangSisa)}
-                  </p>
-                </div>
-              )}
+          {/* Metric 2 & 3 — berdampingan */}
+          <div className="border-t border-border pt-4 grid grid-cols-2 gap-4 mb-4">
+            <div>
+              <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground mb-1">
+                + Piutang
+              </p>
+              <p className="text-lg font-bold tabular-nums">{formatRp(totalKekayaanDenganPiutang)}</p>
+              <p className="text-xs text-muted-foreground mt-1.5">Piutang sisa</p>
+              <p className={`text-xs font-semibold tabular-nums ${data.piutangSisa > 0 ? "text-emerald-600" : "text-muted-foreground"}`}>
+                {formatRp(data.piutangSisa)}
+              </p>
+            </div>
+            <div>
+              <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground mb-1">
+                + Piutang (Realistis)
+              </p>
+              <p className="text-lg font-bold tabular-nums">{formatRp(totalKekayaanRealistis)}</p>
+              <p className="text-xs text-muted-foreground mt-1.5">- Piutang Macet</p>
+              <p className={`text-xs font-semibold tabular-nums ${data.piutangMacetSisa > 0 ? "text-rose-600" : "text-muted-foreground"}`}>
+                {data.piutangMacetSisa > 0 ? formatRp(data.piutangMacetSisa) : "Rp 0"}
+              </p>
             </div>
           </div>
+
 
           {/* Dana darurat indicator */}
           {data.emergencyFundMonths > 0 && (

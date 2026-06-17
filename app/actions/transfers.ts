@@ -48,6 +48,7 @@ export async function addTransfer(formData: FormData) {
     }
   })()
 
+  revalidatePath("/dashboard")
   redirect(`/rekap/${year}?bulan=${month}&tab=transfer`)
 }
 
@@ -69,4 +70,5 @@ export async function deleteTransfer(id: string, year: string, month: string) {
 
   revalidatePath(`/rekap/${year}`)
   revalidatePath("/dompet")
+  revalidatePath("/dashboard")
 }

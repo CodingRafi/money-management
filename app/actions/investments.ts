@@ -1,6 +1,6 @@
 "use server"
 
-import { revalidatePath } from "next/cache"
+import { revalidatePath, refresh } from "next/cache"
 import { redirect } from "next/navigation"
 import { db } from "@/lib/db"
 import { requireUserIdAction } from "@/lib/session"
@@ -90,13 +90,29 @@ export async function deleteInvestmentDirect(id: string) {
   redirect("/investasi")
 }
 
+export async function closeInvestmentDirect(id: string) {
+  const userId = await requireUserIdAction()
+  db.prepare(
+    "UPDATE investments SET is_closed=1, closed_at=datetime('now'), updated_at=datetime('now') WHERE id=? AND user_id=?"
+  ).run(id, userId)
+  redirect(`/investasi/aset/${id}`)
+}
+
+export async function reopenInvestmentDirect(id: string) {
+  const userId = await requireUserIdAction()
+  db.prepare(
+    "UPDATE investments SET is_closed=0, closed_at=NULL, updated_at=datetime('now') WHERE id=? AND user_id=?"
+  ).run(id, userId)
+  redirect(`/investasi/aset/${id}`)
+}
+
 // ── Transaction helpers ───────────────────────────────────────────────────────
 
 function execAddInvestmentTransaction(investmentId: string, userId: string, formData: FormData) {
   const inv = db.prepare(
-    "SELECT id FROM investments WHERE id=? AND user_id=? AND is_active=1"
+    "SELECT id FROM investments WHERE id=? AND user_id=? AND is_active=1 AND is_closed=0"
   ).get(investmentId, userId)
-  if (!inv) throw new Error("Aset tidak ditemukan")
+  if (!inv) throw new Error("Aset tidak ditemukan atau sudah ditutup")
 
   const type         = formData.get("type") as string
   const goalId       = (formData.get("goal_id") as string) || null
@@ -167,6 +183,7 @@ export async function addInvestmentTransaction(investmentId: string, year: strin
   execAddInvestmentTransaction(investmentId, userId, formData)
   revalidatePath("/dompet")
   revalidatePath("/investasi")
+  revalidatePath("/dashboard")
   redirect(`/rekap/${year}/investasi/${investmentId}`)
 }
 
@@ -175,6 +192,7 @@ export async function addInvestmentTransactionDirect(investmentId: string, formD
   execAddInvestmentTransaction(investmentId, userId, formData)
   revalidatePath("/dompet")
   revalidatePath("/investasi")
+  revalidatePath("/dashboard")
   redirect(`/investasi/aset/${investmentId}`)
 }
 
@@ -184,6 +202,7 @@ export async function deleteInvestmentTransaction(id: string, investmentId: stri
   revalidatePath(`/rekap/${year}/investasi/${investmentId}`)
   revalidatePath("/dompet")
   revalidatePath("/investasi")
+  revalidatePath("/dashboard")
 }
 
 export async function deleteInvestmentTransactionDirect(id: string, investmentId: string) {
@@ -192,5 +211,6 @@ export async function deleteInvestmentTransactionDirect(id: string, investmentId
   revalidatePath(`/investasi/aset/${investmentId}`)
   revalidatePath("/dompet")
   revalidatePath("/investasi")
-  redirect(`/investasi/aset/${investmentId}`)
+  revalidatePath("/dashboard")
+  refresh()
 }

@@ -9,8 +9,6 @@ import { ArrowLeft, Plus, Trash2, Pencil } from "lucide-react"
 import Link from "next/link"
 import { IncomeForm } from "./_components/income-form"
 import { ExpenseForm } from "./_components/expense-form"
-import { LoanGivenForm } from "./_components/loan-given-form"
-import { LoanTakenForm } from "./_components/loan-taken-form"
 import { ReportTab } from "./_components/report-tab"
 import { StatChart } from "./_components/stat-chart"
 import { IncomeDetailTabs } from "./_components/income-detail-tabs"
@@ -19,8 +17,6 @@ import { TransferForm } from "./_components/transfer-form"
 import {
   addIncome, deleteIncome, updateIncome,
   addExpense, deleteExpense, updateExpense,
-  addLoanGiven, deleteLoanGiven, updateLoanGiven,
-  addLoanTaken, deleteLoanTaken, updateLoanTaken,
 } from "@/app/actions/transactions"
 import { addTransfer, deleteTransfer } from "@/app/actions/transfers"
 
@@ -32,8 +28,6 @@ const MONTHS = [
 const TABS = [
   { key: "pendapatan",  label: "Pendapatan" },
   { key: "pengeluaran", label: "Pengeluaran" },
-  { key: "dipinjam",    label: "Dipinjam" },
-  { key: "hutang",      label: "Hutang" },
   { key: "transfer",    label: "Transfer" },
 ]
 
@@ -57,8 +51,6 @@ function expenseStatus(pct: number, max: number, spent: number): "DANGER" | "WAR
 
 type IncomeRow      = { id: string; date: string; name: string; category_id: string | null; category_name: string | null; wallet_id: string | null; wallet_name: string | null; amount: number; is_initial: number }
 type ExpenseRow     = { id: string; date: string; name: string; wallet_id: string | null; wallet_name: string | null; category_id: string | null; category_name: string | null; needs_type: string; amount: number; is_initial: number }
-type LoanGivenRow   = { id: string; borrower: string; amount: number; status: string; notes: string | null }
-type LoanTakenRow   = { id: string; lender: string; amount: number; notes: string | null }
 type TransferRow    = { id: string; date: string; amount: number; notes: string | null; from_wallet_name: string; from_wallet_color: string | null; to_wallet_name: string; to_wallet_color: string | null }
 type LiquidWallet   = { id: string; name: string; color: string | null }
 type IncomeCatRow   = { id: string; name: string }
@@ -88,7 +80,7 @@ export default async function YearDetailPage({
   const detail   = sp.detail === "pendapatan" ? "pendapatan" : sp.detail === "pengeluaran" ? "pengeluaran" : null
   const rawMonth = typeof sp.bulan === "string" ? parseInt(sp.bulan) : new Date().getMonth() + 1
   const month    = Math.max(1, Math.min(12, isNaN(rawMonth) ? 1 : rawMonth))
-  const tab      = ["pendapatan", "pengeluaran", "dipinjam", "hutang", "transfer"].includes(sp.tab as string)
+  const tab      = ["pendapatan", "pengeluaran", "transfer"].includes(sp.tab as string)
     ? (sp.tab as string) : "pendapatan"
   const showNew    = sp.new === "1" && isActive
   const editId     = typeof sp.edit === "string" && isActive ? sp.edit as string : null
@@ -149,18 +141,6 @@ export default async function YearDetailPage({
      ORDER BY e.date DESC, e.created_at DESC`
   ).all(userId, year, month) as ExpenseRow[]
 
-  const loansGiven = db.prepare<[string, number, number], LoanGivenRow>(
-    `SELECT id, borrower, amount, status, notes FROM loans_given
-     WHERE user_id = ? AND year = ? AND month = ?
-     ORDER BY created_at DESC`
-  ).all(userId, year, month) as LoanGivenRow[]
-
-  const loansTaken = db.prepare<[string, number, number], LoanTakenRow>(
-    `SELECT id, lender, amount, notes FROM loans_taken
-     WHERE user_id = ? AND year = ? AND month = ?
-     ORDER BY created_at DESC`
-  ).all(userId, year, month) as LoanTakenRow[]
-
   // ── Yearly aggregate data (replaces yearly_recap table) ───────────────────────
   const totalIncomeRow  = db.prepare<[string, number]>("SELECT COALESCE(SUM(amount), 0) AS total FROM incomes  WHERE user_id=? AND year=?").get(userId, year) as { total: number }
   const totalExpenseRow = db.prepare<[string, number]>("SELECT COALESCE(SUM(amount), 0) AS total FROM expenses WHERE user_id=? AND year=?").get(userId, year) as { total: number }
@@ -214,7 +194,7 @@ export default async function YearDetailPage({
        WHERE ic.user_id = ? AND ic.is_hidden = 0 AND ic.year = best_year.y
        GROUP BY ic.name, ic.sort_order, i.month
        ORDER BY ic.sort_order, ic.name, i.month`
-    ).all(userId, year, userId, year, userId, year, userId) as { category_name: string; sort_order: number; month: number | null; total: number }[]
+    ).all(userId, year, userId, year, userId, year, userId, userId) as { category_name: string; sort_order: number; month: number | null; total: number }[]
   }
 
   // ── Budget % per category per month ───────────────────────────────────────────
@@ -356,8 +336,7 @@ export default async function YearDetailPage({
   const tambahHref = `${cancelHref}&new=1`
 
   const tabLabel: Record<string, string> = {
-    pendapatan: "Pendapatan", pengeluaran: "Pengeluaran",
-    dipinjam: "Pinjaman", hutang: "Hutang", transfer: "Transfer",
+    pendapatan: "Pendapatan", pengeluaran: "Pengeluaran", transfer: "Transfer",
   }
 
   return (
@@ -649,19 +628,15 @@ export default async function YearDetailPage({
                 <CardContent className="px-4 pb-4">
                   {tab === "pendapatan"  && <IncomeForm   action={addIncome}   year={year} month={month} categories={incomeCats}  wallets={wallets} />}
                   {tab === "pengeluaran" && <ExpenseForm  action={addExpense}  year={year} month={month} categories={expenseCats} wallets={wallets} />}
-                  {tab === "dipinjam"    && <LoanGivenForm action={addLoanGiven} year={year} month={month} />}
-                  {tab === "hutang"      && <LoanTakenForm action={addLoanTaken} year={year} month={month} />}
                   {tab === "transfer"    && <TransferForm wallets={liquidWallets} action={addTransfer} year={year} month={month} />}
                 </CardContent>
               </Card>
             )}
 
             {editId && !showReport && (() => {
-              const incomeRow  = tab === "pendapatan"  ? incomes.find((r) => r.id === editId)    : null
-              const expenseRow = tab === "pengeluaran" ? expenses.find((r) => r.id === editId)   : null
-              const loanGivRow = tab === "dipinjam"    ? loansGiven.find((r) => r.id === editId) : null
-              const loanTakRow = tab === "hutang"      ? loansTaken.find((r) => r.id === editId) : null
-              const found      = incomeRow ?? expenseRow ?? loanGivRow ?? loanTakRow
+              const incomeRow  = tab === "pendapatan"  ? incomes.find((r) => r.id === editId)  : null
+              const expenseRow = tab === "pengeluaran" ? expenses.find((r) => r.id === editId) : null
+              const found      = incomeRow ?? expenseRow
               if (!found) return null
               return (
                 <Card className="border-primary/40">
@@ -682,16 +657,6 @@ export default async function YearDetailPage({
                     {expenseRow && (
                       <ExpenseForm action={updateExpense.bind(null, editId)} year={year} month={month} categories={expenseCats} wallets={wallets}
                         defaultValues={{ date: expenseRow.date, name: expenseRow.name, walletId: expenseRow.wallet_id, categoryId: expenseRow.category_id, needsType: expenseRow.needs_type, amount: expenseRow.amount, isInitial: !!expenseRow.is_initial }}
-                        submitLabel="Simpan Perubahan" />
-                    )}
-                    {loanGivRow && (
-                      <LoanGivenForm action={updateLoanGiven.bind(null, editId)} year={year} month={month}
-                        defaultValues={{ borrower: loanGivRow.borrower, amount: loanGivRow.amount, status: loanGivRow.status, notes: loanGivRow.notes }}
-                        submitLabel="Simpan Perubahan" />
-                    )}
-                    {loanTakRow && (
-                      <LoanTakenForm action={updateLoanTaken.bind(null, editId)} year={year} month={month}
-                        defaultValues={{ lender: loanTakRow.lender, amount: loanTakRow.amount, notes: loanTakRow.notes }}
                         submitLabel="Simpan Perubahan" />
                     )}
                   </CardContent>
@@ -831,110 +796,6 @@ export default async function YearDetailPage({
                   </Card>
                 )}
               </>
-            )}
-
-            {/* Dipinjam tab */}
-            {tab === "dipinjam" && (
-              <Card>
-                <CardContent className="p-0">
-                  {loansGiven.length === 0 ? (
-                    <p className="py-10 text-center text-sm text-muted-foreground">Belum ada data pinjaman bulan ini.</p>
-                  ) : (
-                    <div className="overflow-x-auto">
-                      <table className="w-full text-sm">
-                        <thead>
-                          <tr className="border-b bg-muted/40 text-muted-foreground">
-                            <th className="px-4 py-3 text-left font-medium">Nama Peminjam</th>
-                            <th className="px-4 py-3 text-right font-medium">Jumlah</th>
-                            <th className="px-4 py-3 text-left font-medium">Status</th>
-                            <th className="px-4 py-3 text-left font-medium">Keterangan</th>
-                            <th className="px-4 py-3" />
-                          </tr>
-                        </thead>
-                        <tbody>
-                          {loansGiven.map((row) => (
-                            <tr key={row.id} className={`border-b transition-colors ${editId === row.id ? "bg-primary/5" : "hover:bg-muted/30"}`}>
-                              <td className="px-4 py-3 font-medium">{row.borrower}</td>
-                              <td className="px-4 py-3 text-right tabular-nums font-medium">{formatRupiah(row.amount)}</td>
-                              <td className="px-4 py-3">
-                                <Badge variant={row.status === "FIX" ? "success" : "warning"} className="text-xs">{row.status}</Badge>
-                              </td>
-                              <td className="px-4 py-3 text-muted-foreground">{row.notes ?? "—"}</td>
-                              <td className="px-3 py-3 text-right">
-                                <div className="flex items-center justify-end gap-0.5">
-                                  <Button asChild variant="ghost" size="icon" className="h-7 w-7">
-                                    <Link href={`${base}?bulan=${month}&tab=dipinjam&edit=${row.id}`}><Pencil className="h-3.5 w-3.5" /></Link>
-                                  </Button>
-                                  <form action={deleteLoanGiven.bind(null, row.id, yearStr, String(month))}>
-                                    <Button type="submit" variant="ghost" size="icon" className="h-7 w-7 text-destructive hover:text-destructive"><Trash2 className="h-3.5 w-3.5" /></Button>
-                                  </form>
-                                </div>
-                              </td>
-                            </tr>
-                          ))}
-                        </tbody>
-                        <tfoot>
-                          <tr className="bg-muted/20">
-                            <td className="px-4 py-3 text-right text-sm font-medium text-muted-foreground">Total</td>
-                            <td className="px-4 py-3 text-right tabular-nums font-bold">{formatRupiah(loansGiven.reduce((s, r) => s + r.amount, 0))}</td>
-                            <td colSpan={3} />
-                          </tr>
-                        </tfoot>
-                      </table>
-                    </div>
-                  )}
-                </CardContent>
-              </Card>
-            )}
-
-            {/* Hutang tab */}
-            {tab === "hutang" && (
-              <Card>
-                <CardContent className="p-0">
-                  {loansTaken.length === 0 ? (
-                    <p className="py-10 text-center text-sm text-muted-foreground">Belum ada data hutang bulan ini.</p>
-                  ) : (
-                    <div className="overflow-x-auto">
-                      <table className="w-full text-sm">
-                        <thead>
-                          <tr className="border-b bg-muted/40 text-muted-foreground">
-                            <th className="px-4 py-3 text-left font-medium">Nama Pemberi Hutang</th>
-                            <th className="px-4 py-3 text-right font-medium">Jumlah</th>
-                            <th className="px-4 py-3 text-left font-medium">Keterangan</th>
-                            <th className="px-4 py-3" />
-                          </tr>
-                        </thead>
-                        <tbody>
-                          {loansTaken.map((row) => (
-                            <tr key={row.id} className={`border-b transition-colors ${editId === row.id ? "bg-primary/5" : "hover:bg-muted/30"}`}>
-                              <td className="px-4 py-3 font-medium">{row.lender}</td>
-                              <td className="px-4 py-3 text-right tabular-nums font-medium">{formatRupiah(row.amount)}</td>
-                              <td className="px-4 py-3 text-muted-foreground">{row.notes ?? "—"}</td>
-                              <td className="px-3 py-3 text-right">
-                                <div className="flex items-center justify-end gap-0.5">
-                                  <Button asChild variant="ghost" size="icon" className="h-7 w-7">
-                                    <Link href={`${base}?bulan=${month}&tab=hutang&edit=${row.id}`}><Pencil className="h-3.5 w-3.5" /></Link>
-                                  </Button>
-                                  <form action={deleteLoanTaken.bind(null, row.id, yearStr, String(month))}>
-                                    <Button type="submit" variant="ghost" size="icon" className="h-7 w-7 text-destructive hover:text-destructive"><Trash2 className="h-3.5 w-3.5" /></Button>
-                                  </form>
-                                </div>
-                              </td>
-                            </tr>
-                          ))}
-                        </tbody>
-                        <tfoot>
-                          <tr className="bg-muted/20">
-                            <td className="px-4 py-3 text-right text-sm font-medium text-muted-foreground">Total</td>
-                            <td className="px-4 py-3 text-right tabular-nums font-bold">{formatRupiah(loansTaken.reduce((s, r) => s + r.amount, 0))}</td>
-                            <td colSpan={2} />
-                          </tr>
-                        </tfoot>
-                      </table>
-                    </div>
-                  )}
-                </CardContent>
-              </Card>
             )}
 
             {/* Transfer tab */}

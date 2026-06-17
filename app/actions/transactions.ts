@@ -25,6 +25,7 @@ export async function deleteYearData(year: string) {
 
   revalidatePath("/rekap")
   revalidatePath("/dompet")
+  revalidatePath("/dashboard")
 }
 
 // ── Income ───────────────────────────────────────────────────────────────────
@@ -51,6 +52,7 @@ export async function addIncome(formData: FormData) {
     }
   })()
 
+  revalidatePath("/dashboard")
   redirect(`/rekap/${year}?bulan=${month}&tab=pendapatan`)
 }
 
@@ -84,6 +86,7 @@ export async function updateIncome(id: string, formData: FormData) {
     ).run(date, name, categoryId, walletId, amount, isInitial, id, userId)
   })()
 
+  revalidatePath("/dashboard")
   redirect(`/rekap/${year}?bulan=${month}&tab=pendapatan`)
 }
 
@@ -103,6 +106,7 @@ export async function deleteIncome(id: string, year: string, month: string) {
   revalidatePath(`/rekap/${year}`)
   revalidatePath("/rekap")
   revalidatePath("/dompet")
+  revalidatePath("/dashboard")
 }
 
 // ── Expense ──────────────────────────────────────────────────────────────────
@@ -130,6 +134,7 @@ export async function addExpense(formData: FormData) {
     }
   })()
 
+  revalidatePath("/dashboard")
   redirect(`/rekap/${year}?bulan=${month}&tab=pengeluaran`)
 }
 
@@ -164,6 +169,7 @@ export async function updateExpense(id: string, formData: FormData) {
     ).run(date, name, walletId, categoryId, needsType, amount, isInitial, id, userId)
   })()
 
+  revalidatePath("/dashboard")
   redirect(`/rekap/${year}?bulan=${month}&tab=pengeluaran`)
 }
 
@@ -183,6 +189,7 @@ export async function deleteExpense(id: string, year: string, month: string) {
   revalidatePath(`/rekap/${year}`)
   revalidatePath("/rekap")
   revalidatePath("/dompet")
+  revalidatePath("/dashboard")
 }
 
 // ── Loan Given ───────────────────────────────────────────────────────────────

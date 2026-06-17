@@ -16,6 +16,7 @@ export type WealthOverviewData = {
   totalLiquid: number
   totalNonLiquid: number
   piutangSisa: number
+  piutangMacetSisa: number
   hutangSisa: number
   monthlyGrowth: { month: number; label: string; income: number; expense: number }[]
   yearlyGrowth:  { year: number; income: number; expense: number }[]
@@ -47,7 +48,7 @@ export function getWealthOverview(userId: string, year: number): WealthOverviewD
       COALESCE(SUM(CASE WHEN it.type = 'SELL' THEN it.total_amount ELSE 0 END), 0) AS total_sell
     FROM investments i
     LEFT JOIN investment_transactions it ON it.investment_id = i.id
-    WHERE i.user_id = ? AND i.is_active = 1
+    WHERE i.user_id = ? AND i.is_active = 1 AND i.is_closed = 0
     GROUP BY i.is_liquid
   `).all(userId) as { is_liquid: number; total_buy: number; total_sell: number }[]
 
@@ -75,6 +76,15 @@ export function getWealthOverview(userId: string, year: number): WealthOverviewD
       SELECT loan_id, SUM(principal_paid) AS total_pp FROM loan_payments GROUP BY loan_id
     ) pp ON pp.loan_id = l.id
     WHERE l.user_id = ? AND l.type = 'HUTANG' AND l.is_active = 1
+  `).get(userId) as { sisa: number }
+
+  const piutangMacetRow = db.prepare(`
+    SELECT COALESCE(SUM(MAX(l.principal_amount - COALESCE(pp.total_pp, 0), 0)), 0) AS sisa
+    FROM loans l
+    LEFT JOIN (
+      SELECT loan_id, SUM(principal_paid) AS total_pp FROM loan_payments GROUP BY loan_id
+    ) pp ON pp.loan_id = l.id
+    WHERE l.user_id = ? AND l.type = 'PIUTANG' AND l.is_active = 1 AND l.payment_likelihood = 'MACET'
   `).get(userId) as { sisa: number }
 
   const monthlyRows = db.prepare(`
@@ -133,8 +143,9 @@ export function getWealthOverview(userId: string, year: number): WealthOverviewD
     nonLiquidInvestasi,
     totalLiquid,
     totalNonLiquid,
-    piutangSisa:       piutangRow.sisa,
-    hutangSisa:        hutangRow.sisa,
+    piutangSisa:         piutangRow.sisa,
+    piutangMacetSisa:    piutangMacetRow.sisa,
+    hutangSisa:          hutangRow.sisa,
     monthlyGrowth,
     yearlyGrowth:      yearlyRows,
     emergencyFundMonths: avgMonthlyExpense > 0 ? totalLiquid / avgMonthlyExpense : 0,
@@ -245,7 +256,7 @@ export function getInvestment(userId: string): InvestmentData {
       COALESCE(SUM(CASE WHEN it.type='SELL' THEN it.total_amount ELSE 0 END), 0) AS total_sell
     FROM investment_transactions it
     JOIN investments i ON i.id = it.investment_id
-    WHERE i.user_id = ?
+    WHERE i.user_id = ? AND i.is_closed = 0
   `).get(userId) as { total_buy: number; total_sell: number }
 
   const goalsRows = db.prepare(`
@@ -312,6 +323,119 @@ export function getLoans(userId: string): LoanData {
     terlambatCount,
   }
 }
+
+// ── Per-module recent transactions ──────────────────────────────────────────
+
+export type RecentCashflowTx = {
+  id: string
+  type: "INCOME" | "EXPENSE" | "TRANSFER"
+  label: string
+  sublabel: string
+  amount: number
+  isCredit: boolean
+  dateStr: string
+}
+
+export type RecentInvestmentTx = {
+  id: string
+  txType: "BUY" | "SELL"
+  investmentName: string
+  goalName: string | null
+  amount: number
+  dateStr: string
+}
+
+export type RecentLoanTx = {
+  id: string
+  loanName: string
+  loanType: "PIUTANG" | "HUTANG"
+  totalPaid: number
+  notes: string | null
+  dateStr: string
+}
+
+function dateCutoff(days: number): string {
+  const d = new Date()
+  d.setDate(d.getDate() - days)
+  return d.toISOString().slice(0, 10)
+}
+
+export function getRecentCashflowTx(userId: string, days = 30, limit = 10): RecentCashflowTx[] {
+  const cutoff = dateCutoff(days)
+
+  const incomes = db.prepare(`
+    SELECT i.id, i.date, i.name, c.name AS cat, i.amount
+    FROM incomes i LEFT JOIN income_categories c ON c.id = i.category_id
+    WHERE i.user_id = ? AND i.is_initial = 0 AND i.date >= ?
+    ORDER BY i.date DESC, i.created_at DESC LIMIT ?
+  `).all(userId, cutoff, limit) as { id: string; date: string; name: string; cat: string | null; amount: number }[]
+
+  const expenses = db.prepare(`
+    SELECT e.id, e.date, e.name, c.name AS cat, e.amount
+    FROM expenses e LEFT JOIN expense_categories c ON c.id = e.category_id
+    WHERE e.user_id = ? AND e.is_initial = 0 AND e.date >= ?
+    ORDER BY e.date DESC, e.created_at DESC LIMIT ?
+  `).all(userId, cutoff, limit) as { id: string; date: string; name: string; cat: string | null; amount: number }[]
+
+  const transfers = db.prepare(`
+    SELECT t.id, t.date, t.amount, fw.name AS from_name, tw.name AS to_name
+    FROM transfers t
+    JOIN wallets fw ON fw.id = t.from_wallet_id
+    JOIN wallets tw ON tw.id = t.to_wallet_id
+    WHERE t.user_id = ? AND t.is_initial = 0 AND t.date >= ?
+    ORDER BY t.date DESC, t.created_at DESC LIMIT ?
+  `).all(userId, cutoff, limit) as { id: string; date: string; amount: number; from_name: string; to_name: string }[]
+
+  const rows: RecentCashflowTx[] = [
+    ...incomes.map(t => ({ id: `i-${t.id}`, type: "INCOME" as const, label: t.name, sublabel: t.cat ?? "-", amount: t.amount, isCredit: true, dateStr: t.date })),
+    ...expenses.map(t => ({ id: `e-${t.id}`, type: "EXPENSE" as const, label: t.name, sublabel: t.cat ?? "-", amount: t.amount, isCredit: false, dateStr: t.date })),
+    ...transfers.map(t => ({ id: `t-${t.id}`, type: "TRANSFER" as const, label: `Transfer ke ${t.to_name}`, sublabel: `dari ${t.from_name}`, amount: t.amount, isCredit: false, dateStr: t.date })),
+  ]
+  return rows.sort((a, b) => b.dateStr.localeCompare(a.dateStr)).slice(0, limit)
+}
+
+export function getRecentInvestmentTx(userId: string, days = 30, limit = 10): RecentInvestmentTx[] {
+  const cutoff = dateCutoff(days)
+  const rows = db.prepare(`
+    SELECT it.id, it.date, it.type, i.name AS investment_name, g.name AS goal_name, it.total_amount
+    FROM investment_transactions it
+    JOIN investments i ON i.id = it.investment_id
+    LEFT JOIN investment_goals g ON g.id = it.goal_id
+    WHERE i.user_id = ? AND it.is_initial = 0 AND it.date >= ?
+    ORDER BY it.date DESC, it.created_at DESC LIMIT ?
+  `).all(userId, cutoff, limit) as { id: string; date: string; type: string; investment_name: string; goal_name: string | null; total_amount: number }[]
+
+  return rows.map(t => ({
+    id: t.id,
+    txType: t.type as "BUY" | "SELL",
+    investmentName: t.investment_name,
+    goalName: t.goal_name,
+    amount: t.total_amount,
+    dateStr: t.date,
+  }))
+}
+
+export function getRecentLoanTx(userId: string, days = 30, limit = 10): RecentLoanTx[] {
+  const cutoff = dateCutoff(days)
+  const rows = db.prepare(`
+    SELECT lp.id, lp.date, lp.total_paid, lp.notes, l.name AS loan_name, l.type AS loan_type
+    FROM loan_payments lp
+    JOIN loans l ON l.id = lp.loan_id
+    WHERE l.user_id = ? AND lp.is_initial = 0 AND lp.date >= ?
+    ORDER BY lp.date DESC, lp.created_at DESC LIMIT ?
+  `).all(userId, cutoff, limit) as { id: string; date: string; total_paid: number; notes: string | null; loan_name: string; loan_type: string }[]
+
+  return rows.map(t => ({
+    id: t.id,
+    loanName: t.loan_name,
+    loanType: t.loan_type as "PIUTANG" | "HUTANG",
+    totalPaid: t.total_paid,
+    notes: t.notes,
+    dateStr: t.date,
+  }))
+}
+
+// ── Legacy combined recent transactions ──────────────────────────────────────
 
 export function getRecentTransactions(userId: string, limit = 10): RecentTransaction[] {
   const incomes = db.prepare(`

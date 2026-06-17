@@ -1,7 +1,6 @@
 "use server"
 
 import { revalidatePath } from "next/cache"
-import { redirect } from "next/navigation"
 import { db } from "@/lib/db"
 import { requireUserIdAction } from "@/lib/session"
 import crypto from "crypto"
@@ -23,7 +22,6 @@ export async function createGoal(formData: FormData) {
   ).run(uuid(), userId, name, targetAmount, targetDate, color)
 
   revalidatePath("/investasi")
-  redirect("/investasi")
 }
 
 export async function updateGoal(id: string, formData: FormData) {
@@ -41,7 +39,6 @@ export async function updateGoal(id: string, formData: FormData) {
   ).run(name, targetAmount, targetDate, color, id, userId)
 
   revalidatePath("/investasi")
-  redirect("/investasi")
 }
 
 export async function deleteGoal(id: string) {
@@ -57,5 +54,4 @@ export async function deleteGoal(id: string) {
   ).run(id, userId)
 
   revalidatePath("/investasi")
-  redirect("/investasi")
 }

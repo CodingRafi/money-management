@@ -18,6 +18,8 @@ const USER_TABLES = [
   "investments",
   "investment_goals",
   "loans",
+  "loans_given",
+  "loans_taken",
 ] as const
 
 // Tables without user_id that need a JOIN to filter by user
@@ -32,8 +34,8 @@ const JOINED_TABLES: { table: string; join: string }[] = [
   },
 ]
 
-// Shared master data (no user filter)
-const MASTER_TABLES = ["investment_categories"] as const
+// Shared master data (no user filter) — exported FIRST so FK refs resolve on import
+const MASTER_TABLES = ["wallet_categories", "investment_categories"] as const
 
 function escapeSQL(val: unknown): string {
   if (val === null || val === undefined) return "NULL"
@@ -71,6 +73,12 @@ export async function GET() {
     ``,
   ]
 
+  for (const table of MASTER_TABLES) {
+    const rows = db.prepare(`SELECT * FROM ${table}`).all() as Record<string, unknown>[]
+    lines.push(`-- Table: ${table} (${rows.length} rows)`)
+    lines.push(tableToInserts(table, rows))
+  }
+
   for (const table of USER_TABLES) {
     const rows = db.prepare(`SELECT * FROM ${table} WHERE user_id = ?`).all(userId) as Record<string, unknown>[]
     lines.push(`-- Table: ${table} (${rows.length} rows)`)
@@ -79,12 +87,6 @@ export async function GET() {
 
   for (const { table, join } of JOINED_TABLES) {
     const rows = db.prepare(`SELECT ${table}.* FROM ${table} ${join}`).all(userId) as Record<string, unknown>[]
-    lines.push(`-- Table: ${table} (${rows.length} rows)`)
-    lines.push(tableToInserts(table, rows))
-  }
-
-  for (const table of MASTER_TABLES) {
-    const rows = db.prepare(`SELECT * FROM ${table}`).all() as Record<string, unknown>[]
     lines.push(`-- Table: ${table} (${rows.length} rows)`)
     lines.push(tableToInserts(table, rows))
   }

@@ -39,7 +39,7 @@ export default async function RekapPage() {
 
   const yearRows: YearRow[] = Array.from(yearMap.entries())
     .map(([year, v]) => ({ year, ...v }))
-    .sort((a, b) => b.year - a.year)
+    .sort((a, b) => a.year - b.year)
 
   const currentYear    = new Date().getFullYear()
   const hasCurrentYear = yearRows.some((r) => r.year === currentYear)

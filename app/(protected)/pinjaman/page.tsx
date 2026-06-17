@@ -88,7 +88,7 @@ export default async function PinjamanPage({
   const totalMacetSisa    = piutangMacet.reduce((s, l) => s + Math.max(0, l.principal_amount - l.total_pp), 0)
 
   return (
-    <div className="space-y-6 max-w-4xl">
+    <div className="space-y-6">
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-2xl font-bold">Pinjaman</h1>
@@ -99,7 +99,7 @@ export default async function PinjamanPage({
         )}
       </div>
 
-      <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+      <div className="grid grid-cols-3 gap-3">
         <Card>
           <CardContent className="p-4">
             <p className="text-xs text-muted-foreground mb-1">Sisa Piutang</p>

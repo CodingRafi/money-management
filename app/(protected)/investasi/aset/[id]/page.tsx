@@ -4,7 +4,7 @@ import { LOCAL_USER_ID } from "@/lib/auth-simple"
 import { Card, CardContent } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
-import { ArrowLeft, Plus, Trash2, Pencil, X } from "lucide-react"
+import { ArrowLeft, Plus, Trash2, Pencil, X, Lock, LockOpen, History } from "lucide-react"
 import Link from "next/link"
 import { AssetForm } from "../../_components/asset-form"
 import { TransactionForm } from "../../_components/transaction-form"
@@ -12,6 +12,8 @@ import { calcProfitLoss } from "@/lib/investment"
 import {
   updateInvestmentDirect,
   deleteInvestmentDirect,
+  closeInvestmentDirect,
+  reopenInvestmentDirect,
   addInvestmentTransactionDirect,
   deleteInvestmentTransactionDirect,
 } from "@/app/actions/investments"
@@ -33,7 +35,7 @@ function formatDate(dateStr: string) {
 }
 
 type AssetDetail = {
-  id: string; name: string; notes: string | null; is_liquid: number
+  id: string; name: string; notes: string | null; is_liquid: number; is_closed: number
   category_name: string; wallet_id: string | null; wallet_name: string | null
 }
 type TxRow = {
@@ -58,20 +60,21 @@ export default async function AsetDetailPage({
 }) {
   const userId = LOCAL_USER_ID
   const { id: investmentId } = await params
-  const isActive = true
 
   const sp      = await searchParams
   const showNew = sp.new === "1"
   const isEdit  = sp.edit === "1"
 
   const asset = db.prepare<[string, string], AssetDetail>(
-    `SELECT i.id, i.name, i.notes, i.is_liquid, ic.name AS category_name, i.wallet_id, w.name AS wallet_name
+    `SELECT i.id, i.name, i.notes, i.is_liquid, i.is_closed, ic.name AS category_name, i.wallet_id, w.name AS wallet_name
      FROM investments i
      JOIN investment_categories ic ON ic.id = i.category_id
      LEFT JOIN wallets w ON w.id = i.wallet_id
      WHERE i.id = ? AND i.user_id = ? AND i.is_active = 1`
   ).get(investmentId, userId) as AssetDetail | undefined
   if (!asset) redirect("/investasi")
+
+  const isClosed = !!asset.is_closed
 
   const txs = db.prepare<[string], TxRow>(
     `SELECT it.id, it.type, it.quantity, it.price_per_unit, it.total_amount,
@@ -111,7 +114,14 @@ export default async function AsetDetailPage({
             <Link href="/investasi"><ArrowLeft className="h-4 w-4" /></Link>
           </Button>
           <div>
-            <h1 className="text-2xl font-bold">{asset.name}</h1>
+            <div className="flex items-center gap-2">
+              <h1 className="text-2xl font-bold">{asset.name}</h1>
+              {isClosed && (
+                <Badge variant="secondary" className="flex items-center gap-1">
+                  <History className="h-3 w-3" />CLOSED
+                </Badge>
+              )}
+            </div>
             <div className="flex flex-wrap items-center gap-x-2 gap-y-1 mt-0.5 text-sm text-muted-foreground">
               <span>{asset.category_name}</span>
               {asset.wallet_name && <><span>·</span><span>{asset.wallet_name}</span></>}
@@ -119,9 +129,24 @@ export default async function AsetDetailPage({
           </div>
         </div>
         <div className="flex items-center gap-2 shrink-0">
-          <Button asChild variant="outline" size="sm">
-            <Link href={`${cancelHref}?edit=1`}><Pencil className="h-3.5 w-3.5 mr-1" />Edit</Link>
-          </Button>
+          {!isClosed && (
+            <Button asChild variant="outline" size="sm">
+              <Link href={`${cancelHref}?edit=1`}><Pencil className="h-3.5 w-3.5 mr-1" />Edit</Link>
+            </Button>
+          )}
+          {isClosed ? (
+            <form action={reopenInvestmentDirect.bind(null, investmentId)}>
+              <Button type="submit" variant="outline" size="sm" className="text-emerald-600 hover:text-emerald-700 border-emerald-300">
+                <LockOpen className="h-3.5 w-3.5 mr-1" />Buka Kembali
+              </Button>
+            </form>
+          ) : (
+            <form action={closeInvestmentDirect.bind(null, investmentId)}>
+              <Button type="submit" variant="outline" size="sm" className="text-amber-600 hover:text-amber-700 border-amber-300">
+                <Lock className="h-3.5 w-3.5 mr-1" />Tutup Investasi
+              </Button>
+            </form>
+          )}
           <form action={deleteInvestmentDirect.bind(null, investmentId)}>
             <Button type="submit" variant="outline" size="sm" className="text-destructive hover:text-destructive border-destructive/30">
               <Trash2 className="h-3.5 w-3.5 mr-1" />Hapus
@@ -165,12 +190,18 @@ export default async function AsetDetailPage({
       <div className="space-y-3">
         <div className="flex items-center justify-between">
           <h2 className="text-base font-semibold">Riwayat Transaksi</h2>
-          {!showNew && (
+          {!showNew && !isClosed && (
             <Button asChild size="sm"><Link href={`${cancelHref}?new=1`}><Plus className="h-4 w-4 mr-1" />Tambah Transaksi</Link></Button>
           )}
         </div>
 
-        {showNew && (
+        {isClosed && (
+          <p className="text-xs text-muted-foreground bg-muted/50 rounded px-3 py-2">
+            Investasi ini sudah ditutup. Untuk menambah transaksi, buka kembali terlebih dahulu.
+          </p>
+        )}
+
+        {showNew && !isClosed && (
           <Card>
             <CardContent className="pt-4 pb-4 px-4">
               <div className="flex items-center justify-between mb-4">
