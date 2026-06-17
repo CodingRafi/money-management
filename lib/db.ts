@@ -217,7 +217,7 @@ db.exec(`
     id             TEXT PRIMARY KEY,
     investment_id  TEXT NOT NULL REFERENCES investments(id) ON DELETE CASCADE,
     goal_id        TEXT REFERENCES investment_goals(id) ON DELETE SET NULL,
-    type           TEXT NOT NULL CHECK (type IN ('BUY', 'SELL')),
+    type           TEXT NOT NULL CHECK (type IN ('BUY', 'SELL', 'DIVIDEND')),
     quantity       TEXT NOT NULL DEFAULT '1',
     price_per_unit REAL NOT NULL CHECK (price_per_unit > 0),
     total_amount   REAL NOT NULL,
@@ -271,6 +271,37 @@ try {
 try {
   db.exec(`ALTER TABLE investments ADD COLUMN is_closed INTEGER NOT NULL DEFAULT 0`)
 } catch { /* column already exists */ }
+
+// Migrate investment_transactions: tambah DIVIDEND ke CHECK constraint
+// SQLite tidak support ALTER COLUMN, jadi recreate table jika perlu
+try {
+  const row = db.prepare("SELECT sql FROM sqlite_master WHERE type='table' AND name='investment_transactions'").get() as { sql: string } | undefined
+  if (row && !row.sql.includes('DIVIDEND')) {
+    db.transaction(() => {
+      db.exec(`
+        CREATE TABLE investment_transactions_new (
+          id             TEXT PRIMARY KEY,
+          investment_id  TEXT NOT NULL REFERENCES investments(id) ON DELETE CASCADE,
+          goal_id        TEXT REFERENCES investment_goals(id) ON DELETE SET NULL,
+          type           TEXT NOT NULL CHECK (type IN ('BUY', 'SELL', 'DIVIDEND')),
+          quantity       TEXT NOT NULL DEFAULT '1',
+          price_per_unit REAL NOT NULL CHECK (price_per_unit > 0),
+          total_amount   REAL NOT NULL,
+          from_wallet_id TEXT REFERENCES wallets(id) ON DELETE SET NULL,
+          to_wallet_id   TEXT REFERENCES wallets(id) ON DELETE SET NULL,
+          date           TEXT NOT NULL,
+          year           INTEGER NOT NULL,
+          notes          TEXT,
+          created_at     TEXT NOT NULL DEFAULT (datetime('now')),
+          is_initial     INTEGER NOT NULL DEFAULT 0
+        );
+        INSERT INTO investment_transactions_new SELECT * FROM investment_transactions;
+        DROP TABLE investment_transactions;
+        ALTER TABLE investment_transactions_new RENAME TO investment_transactions;
+      `)
+    })()
+  }
+} catch { /* already migrated */ }
 
 try {
   db.exec(`ALTER TABLE investments ADD COLUMN closed_at TEXT`)

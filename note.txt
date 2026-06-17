@@ -1,5 +1,5 @@
 fetch('/api/admin/setup', { method: 'POST' }).then(r => r.json()).then(console.log) -> for assign user can admin
-bun migrate -> buat migrate
+npm migrate -> buat migrate
 
-npm rebuild better-sqlite3
-npm run electron:build
+npm rebuild better-sqlite3 -> kalau npm run dev error jalankan ini
+npm run electron:build -> kalau pas build error -> hapus node_modules -> npm install -> coba lagi

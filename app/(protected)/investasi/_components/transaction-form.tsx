@@ -16,7 +16,7 @@ interface Props {
 }
 
 export function TransactionForm({ wallets, goals, action, cancelHref }: Props) {
-  const [type, setType] = useState<"BUY" | "SELL">("BUY")
+  const [type, setType] = useState<"BUY" | "SELL" | "DIVIDEND">("BUY")
 
   const today = new Date().toISOString().split("T")[0]
 
@@ -49,46 +49,63 @@ export function TransactionForm({ wallets, goals, action, cancelHref }: Props) {
           >
             SELL — Jual
           </button>
+          <button
+            type="button"
+            onClick={() => setType("DIVIDEND")}
+            className={`flex-1 rounded-md border px-3 py-2 text-sm font-medium transition-colors ${
+              type === "DIVIDEND"
+                ? "bg-teal-600 text-white border-teal-600"
+                : "border-input hover:bg-muted"
+            }`}
+          >
+            Dividen
+          </button>
         </div>
       </div>
 
-      <div className="flex flex-col gap-1">
-        <label className="text-sm font-medium">
-          Kantong Investasi{type === "BUY" ? " *" : " (opsional)"}
-        </label>
-        {type === "BUY" && goals.length === 0 ? (
-          <div className="rounded-md border border-amber-300 bg-amber-50 px-3 py-2.5 text-sm text-amber-700 dark:bg-amber-950/30 dark:text-amber-400 dark:border-amber-800">
-            Belum ada kantong.{" "}
-            <Link href="/investasi?new=1" className="font-medium underline underline-offset-2">
-              Buat kantong dulu
-            </Link>{" "}
-            sebelum mencatat transaksi BUY.
-          </div>
-        ) : (
-          <select name="goal_id" className={selectClass} required={type === "BUY"}>
-            {type === "BUY" ? (
-              <option value="">— Pilih kantong —</option>
-            ) : (
-              <option value="">— Tanpa kantong —</option>
-            )}
-            {goals.map((g) => (
-              <option key={g.id} value={g.id}>{g.name}</option>
-            ))}
-          </select>
-        )}
-      </div>
+      {type !== "DIVIDEND" && (
+        <div className="flex flex-col gap-1">
+          <label className="text-sm font-medium">
+            Kantong Investasi{type === "BUY" ? " *" : " (opsional)"}
+          </label>
+          {type === "BUY" && goals.length === 0 ? (
+            <div className="rounded-md border border-amber-300 bg-amber-50 px-3 py-2.5 text-sm text-amber-700 dark:bg-amber-950/30 dark:text-amber-400 dark:border-amber-800">
+              Belum ada kantong.{" "}
+              <Link href="/investasi?new=1" className="font-medium underline underline-offset-2">
+                Buat kantong dulu
+              </Link>{" "}
+              sebelum mencatat transaksi BUY.
+            </div>
+          ) : (
+            <select name="goal_id" className={selectClass} required={type === "BUY"}>
+              {type === "BUY" ? (
+                <option value="">— Pilih kantong —</option>
+              ) : (
+                <option value="">— Tanpa kantong —</option>
+              )}
+              {goals.map((g) => (
+                <option key={g.id} value={g.id}>{g.name}</option>
+              ))}
+            </select>
+          )}
+        </div>
+      )}
 
       <div className="grid grid-cols-2 gap-3">
-        <div className="flex flex-col gap-1">
-          <label className="text-sm font-medium">Quantity (opsional)</label>
-          <Input
-            name="quantity"
-            type="text"
-            placeholder="contoh: 10 lot, 5 gram"
-          />
-        </div>
-        <div className="flex flex-col gap-1">
-          <label className="text-sm font-medium">Harga Transaksi (Rp)</label>
+        {type !== "DIVIDEND" && (
+          <div className="flex flex-col gap-1">
+            <label className="text-sm font-medium">Quantity (opsional)</label>
+            <Input
+              name="quantity"
+              type="text"
+              placeholder="contoh: 10 lot, 5 gram"
+            />
+          </div>
+        )}
+        <div className={`flex flex-col gap-1 ${type === "DIVIDEND" ? "col-span-2" : ""}`}>
+          <label className="text-sm font-medium">
+            {type === "DIVIDEND" ? "Jumlah Dividen (Rp)" : "Harga Transaksi (Rp)"}
+          </label>
           <Input
             name="total_amount"
             type="number"
@@ -117,9 +134,11 @@ export function TransactionForm({ wallets, goals, action, cancelHref }: Props) {
         </div>
       )}
 
-      {type === "SELL" && (
+      {(type === "SELL" || type === "DIVIDEND") && (
         <div className="flex flex-col gap-1">
-          <label className="text-sm font-medium">Dompet Tujuan (uang masuk ke)</label>
+          <label className="text-sm font-medium">
+            {type === "DIVIDEND" ? "Dompet Tujuan (dividen masuk ke)" : "Dompet Tujuan (uang masuk ke)"}
+          </label>
           <select name="to_wallet_id" className={selectClass} required>
             <option value="">— Pilih dompet —</option>
             {wallets.map((w) => (
@@ -152,12 +171,12 @@ export function TransactionForm({ wallets, goals, action, cancelHref }: Props) {
           type="submit"
           size="sm"
           className={
-            type === "BUY"
-              ? "bg-emerald-600 hover:bg-emerald-700 text-white"
-              : "bg-red-600 hover:bg-red-700 text-white"
+            type === "BUY"      ? "bg-emerald-600 hover:bg-emerald-700 text-white" :
+            type === "SELL"     ? "bg-red-600 hover:bg-red-700 text-white" :
+                                  "bg-teal-600 hover:bg-teal-700 text-white"
           }
         >
-          Catat {type}
+          {type === "DIVIDEND" ? "Catat Dividen" : `Catat ${type}`}
         </Button>
         <Button asChild variant="outline" size="sm">
           <Link href={cancelHref}>Batal</Link>

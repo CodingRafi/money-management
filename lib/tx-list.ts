@@ -81,7 +81,7 @@ export function getCashflowTxList(
 
 export type InvestmentTxItem = {
   id: string
-  txType: "BUY" | "SELL"
+  txType: "BUY" | "SELL" | "DIVIDEND"
   investmentName: string
   goalName: string | null
   amount: number
@@ -110,7 +110,7 @@ export function getInvestmentTxList(
   ).all(...p) as { id: string; date: string; type: string; investment_name: string; goal_name: string | null; total_amount: number }[]
 
   const all: InvestmentTxItem[] = rows.map(r => ({
-    id: r.id, txType: r.type as "BUY" | "SELL",
+    id: r.id, txType: r.type as "BUY" | "SELL" | "DIVIDEND",
     investmentName: r.investment_name, goalName: r.goal_name,
     amount: r.total_amount, date: r.date,
   }))

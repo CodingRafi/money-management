@@ -45,10 +45,10 @@ type TxRow = {
 }
 
 const STATUS_CLASS: Record<string, string> = {
-  PROFIT:     "bg-emerald-100 text-emerald-700 dark:bg-emerald-950/30 dark:text-emerald-400",
-  LOSS:       "bg-red-100 text-red-700 dark:bg-red-950/30 dark:text-red-400",
-  HOLDING:    "bg-blue-100 text-blue-700 dark:bg-blue-950/30 dark:text-blue-400",
-  BREAK_EVEN: "bg-yellow-100 text-yellow-700 dark:bg-yellow-950/30 dark:text-yellow-400",
+  PROFIT:     "bg-emerald-500 text-white",
+  LOSS:       "bg-red-500 text-white",
+  HOLDING:    "bg-blue-500 text-white",
+  BREAK_EVEN: "bg-yellow-400 text-yellow-900",
 }
 
 export default async function AsetDetailPage({
@@ -101,7 +101,9 @@ export default async function AsetDetailPage({
   const pl      = calcProfitLoss(plTxs)
   const qtyHeld = txs.reduce((s, t) => {
     const q = t.quantity
-    return t.type === "BUY" ? s + q : s - q
+    if (t.type === "BUY")  return s + q
+    if (t.type === "SELL") return s - q
+    return s // DIVIDEND tidak mempengaruhi quantity
   }, 0)
 
   const cancelHref = `/investasi/aset/${investmentId}`
@@ -178,10 +180,23 @@ export default async function AsetDetailPage({
 
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
         <Card><CardContent className="p-4"><p className="text-xs text-muted-foreground mb-1">Total Modal</p><p className="font-bold text-blue-600 tabular-nums">{formatRupiah(pl.totalModal)}</p></CardContent></Card>
-        <Card><CardContent className="p-4"><p className="text-xs text-muted-foreground mb-1">Total Hasil</p><p className="font-bold text-emerald-600 tabular-nums">{formatRupiah(pl.totalHasil)}</p></CardContent></Card>
+        <Card><CardContent className="p-4"><p className="text-xs text-muted-foreground mb-1">Total Hasil Jual</p><p className="font-bold text-emerald-600 tabular-nums">{formatRupiah(pl.totalHasil)}</p></CardContent></Card>
         <Card><CardContent className="p-4"><p className="text-xs text-muted-foreground mb-1">P/L Direalisasi</p><p className={`font-bold tabular-nums ${pl.profitLoss >= 0 ? "text-emerald-600" : "text-red-600"}`}>{pl.profitLoss >= 0 ? "+" : ""}{formatRupiah(pl.profitLoss)}</p></CardContent></Card>
         <Card><CardContent className="p-4"><p className="text-xs text-muted-foreground mb-1">Status</p><span className={`inline-block rounded px-2 py-0.5 text-xs font-bold ${STATUS_CLASS[pl.status]}`}>{pl.status}</span></CardContent></Card>
       </div>
+
+      {pl.totalDividen > 0 && (
+        <div className="grid grid-cols-2 gap-3">
+          <Card className="overflow-hidden">
+            <div className="h-1 bg-teal-500" />
+            <CardContent className="p-4"><p className="text-xs text-muted-foreground mb-1">Total Dividen</p><p className="font-bold text-teal-600 tabular-nums text-lg">{formatRupiah(pl.totalDividen)}</p></CardContent>
+          </Card>
+          <Card className="overflow-hidden">
+            <div className="h-1 bg-teal-500" />
+            <CardContent className="p-4"><p className="text-xs text-muted-foreground mb-1">Total Return (P/L + Dividen)</p><p className={`font-bold tabular-nums text-lg ${pl.totalReturn >= 0 ? "text-teal-600" : "text-red-600"}`}>{pl.totalReturn >= 0 ? "+" : ""}{formatRupiah(pl.totalReturn)}</p></CardContent>
+          </Card>
+        </div>
+      )}
 
       {qtyHeld > 0 && (
         <Card><CardContent className="p-4"><p className="text-xs text-muted-foreground mb-1">Quantity Dipegang</p><p className="font-bold tabular-nums">{formatQty(qtyHeld)}</p></CardContent></Card>
@@ -237,9 +252,13 @@ export default async function AsetDetailPage({
                     {txs.map((tx) => (
                       <tr key={tx.id} className="border-b hover:bg-muted/30 transition-colors">
                         <td className="px-4 py-3 tabular-nums text-muted-foreground whitespace-nowrap">{formatDate(tx.date)}</td>
-                        <td className="px-4 py-3"><Badge variant={tx.type === "BUY" ? "default" : "destructive"} className="text-xs">{tx.type}</Badge></td>
-                        <td className="px-4 py-3 text-right tabular-nums">{formatQty(tx.quantity)}</td>
-                        <td className={`px-4 py-3 text-right tabular-nums font-medium ${tx.type === "BUY" ? "text-blue-600" : "text-emerald-600"}`}>{formatRupiah(tx.total_amount)}</td>
+                        <td className="px-4 py-3">
+                          {tx.type === "BUY"      && <Badge variant="default"     className="text-xs">BUY</Badge>}
+                          {tx.type === "SELL"     && <Badge variant="destructive"  className="text-xs">SELL</Badge>}
+                          {tx.type === "DIVIDEND" && <Badge variant="outline" className="text-xs bg-teal-500 text-white border-transparent">DIVIDEND</Badge>}
+                        </td>
+                        <td className="px-4 py-3 text-right tabular-nums">{tx.type === "DIVIDEND" ? "—" : formatQty(tx.quantity)}</td>
+                        <td className={`px-4 py-3 text-right tabular-nums font-medium ${tx.type === "BUY" ? "text-blue-600" : tx.type === "SELL" ? "text-emerald-600" : "text-teal-600"}`}>{formatRupiah(tx.total_amount)}</td>
                         <td className="px-4 py-3 text-muted-foreground text-xs">{tx.type === "BUY" ? (tx.from_wallet_name ?? "—") : (tx.to_wallet_name ?? "—")}</td>
                         <td className="px-4 py-3 text-muted-foreground text-xs">{tx.goal_name ?? "—"}</td>
                         <td className="px-3 py-3 text-right">

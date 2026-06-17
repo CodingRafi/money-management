@@ -126,12 +126,13 @@ function execAddInvestmentTransaction(investmentId: string, userId: string, form
   const notes        = (formData.get("notes") as string)?.trim() || null
   const isInitial    = formData.get("is_initial") === "true" ? 1 : 0
 
-  if (!["BUY", "SELL"].includes(type))           throw new Error("Tipe tidak valid")
-  if (isNaN(totalAmount) || totalAmount <= 0)    throw new Error("Harga transaksi tidak valid")
-  if (!date)                                     throw new Error("Tanggal wajib diisi")
-  if (type === "BUY"  && !fromWalletId)          throw new Error("Dompet asal wajib diisi untuk BUY")
-  if (type === "SELL" && !toWalletId)            throw new Error("Dompet tujuan wajib diisi untuk SELL")
-  if (type === "BUY"  && !goalId)                throw new Error("Kantong wajib dipilih untuk transaksi BUY")
+  if (!["BUY", "SELL", "DIVIDEND"].includes(type)) throw new Error("Tipe tidak valid")
+  if (isNaN(totalAmount) || totalAmount <= 0)       throw new Error("Harga transaksi tidak valid")
+  if (!date)                                        throw new Error("Tanggal wajib diisi")
+  if (type === "BUY"      && !fromWalletId)         throw new Error("Dompet asal wajib diisi untuk BUY")
+  if (type === "SELL"     && !toWalletId)           throw new Error("Dompet tujuan wajib diisi untuk SELL")
+  if (type === "DIVIDEND" && !toWalletId)           throw new Error("Dompet tujuan wajib diisi untuk DIVIDEND")
+  if (type === "BUY"      && !goalId)               throw new Error("Kantong wajib dipilih untuk transaksi BUY")
 
   if (goalId) {
     const goal = db.prepare("SELECT id FROM investment_goals WHERE id=? AND user_id=? AND is_active=1").get(goalId, userId)
@@ -149,7 +150,7 @@ function execAddInvestmentTransaction(investmentId: string, userId: string, form
       }
       if (!isInitial) db.prepare("UPDATE wallets SET balance = balance - ? WHERE id = ?").run(totalAmount, fromWalletId)
     }
-    if (type === "SELL" && toWalletId) {
+    if ((type === "SELL" || type === "DIVIDEND") && toWalletId) {
       const w = db.prepare("SELECT user_id FROM wallets WHERE id=? AND is_active=1").get(toWalletId) as { user_id: string } | undefined
       if (!w || w.user_id !== userId) throw new Error("Dompet tujuan tidak ditemukan")
       if (!isInitial) db.prepare("UPDATE wallets SET balance = balance + ? WHERE id = ?").run(totalAmount, toWalletId)
@@ -171,8 +172,8 @@ function execDeleteInvestmentTransaction(id: string, userId: string) {
     if (!row) throw new Error("Transaksi tidak ditemukan")
 
     if (!row.is_initial) {
-      if (row.type === "BUY"  && row.from_wallet_id) db.prepare("UPDATE wallets SET balance = balance + ? WHERE id = ?").run(row.total_amount, row.from_wallet_id)
-      if (row.type === "SELL" && row.to_wallet_id)   db.prepare("UPDATE wallets SET balance = balance - ? WHERE id = ?").run(row.total_amount, row.to_wallet_id)
+      if (row.type === "BUY"                             && row.from_wallet_id) db.prepare("UPDATE wallets SET balance = balance + ? WHERE id = ?").run(row.total_amount, row.from_wallet_id)
+      if ((row.type === "SELL" || row.type === "DIVIDEND") && row.to_wallet_id)  db.prepare("UPDATE wallets SET balance = balance - ? WHERE id = ?").run(row.total_amount, row.to_wallet_id)
     }
     db.prepare("DELETE FROM investment_transactions WHERE id=?").run(id)
   })()
