@@ -85,10 +85,7 @@ export default async function YearDetailPage({
   const showNew    = sp.new === "1" && isActive
   const editId     = typeof sp.edit === "string" && isActive ? sp.edit as string : null
   const showReport = sp.report === "1" && tab === "pengeluaran"
-  const stat       = sp.stat === "income_growth" ? "income_growth"
-                   : sp.stat === "expense_ratio"  ? "expense_ratio"
-                   : sp.stat === "wealth_growth"  ? "wealth_growth"
-                   : null
+  const stat       = sp.stat === "wealth_growth" ? "wealth_growth" : null
 
   // Best-year helper
   const bestYearCTE = (table: string) => `
@@ -154,6 +151,7 @@ export default async function YearDetailPage({
   const expenseMo: Record<string, number> = {}
   for (const r of incomeMoRows)  incomeMo[String(r.month)]  = r.total
   for (const r of expenseMoRows) expenseMo[String(r.month)] = r.total
+  const avgMonthlyIncome = incomeMoRows.length > 0 ? totalIncome / incomeMoRows.length : null
 
   // expense breakdown by category & month
   const expByCatMonthRows = db.prepare<[string, number]>(
@@ -273,10 +271,13 @@ export default async function YearDetailPage({
     if (current === 0) continue
     let prev: number
     if (m === 1) {
-      if (!hasPrevYear) continue
-      prev = prevIncomeMo["12"] ?? 0
+      // hanya masukkan Januari jika Desember tahun lalu benar-benar ada datanya
+      if (!hasPrevYear || !("12" in prevIncomeMo)) continue
+      prev = prevIncomeMo["12"]!
     } else {
-      prev = incomeMo[String(m - 1)] ?? 0
+      // hanya masukkan bulan m jika bulan sebelumnya memang ada datanya (bukan gap)
+      if (!(String(m - 1) in incomeMo)) continue
+      prev = incomeMo[String(m - 1)]!
     }
     growthData.push({ label: MONTHS[m - 1].substring(0, 3), value: current - prev })
   }
@@ -371,43 +372,47 @@ export default async function YearDetailPage({
       {view === "report" && (
         <div className="space-y-5">
           <div className="grid grid-cols-2 gap-4">
-            <Link href={detail === "pendapatan" ? `${base}?view=report` : `${base}?view=report&detail=pendapatan`} className="block">
-              <Card className={`transition-all hover:shadow-md cursor-pointer ${detail === "pendapatan" ? "ring-2 ring-emerald-500" : ""}`}>
-                <CardContent className="p-5">
-                  <p className="text-xs text-muted-foreground mb-1">Total Pendapatan</p>
-                  <p className="text-lg font-bold text-emerald-600">{formatRupiah(totalIncome)}</p>
-                  <p className="text-xs text-muted-foreground mt-1">{detail === "pendapatan" ? "▲ Tutup detail" : "▼ Lihat detail"}</p>
+            <Link href={detail === "pendapatan" ? `${base}?view=report` : `${base}?view=report&detail=pendapatan`} className="block h-full">
+              <Card className={`transition-all hover:shadow-md cursor-pointer h-full ${detail === "pendapatan" ? "ring-2 ring-emerald-500" : ""}`}>
+                <CardContent className="p-5 flex flex-col justify-between h-full">
+                  <div>
+                    <p className="text-xs text-muted-foreground mb-2">Total Pendapatan</p>
+                    <div className="flex items-end gap-6">
+                      <div>
+                        <p className="text-[10px] text-muted-foreground mb-0.5">Nominal</p>
+                        <p className="text-lg font-bold text-emerald-600">{formatRupiah(totalIncome)}</p>
+                      </div>
+                      <div>
+                        <p className="text-[10px] text-muted-foreground mb-0.5">Rata-rata/Bulan</p>
+                        <p className="text-lg font-bold text-emerald-600">
+                          {avgMonthlyIncome === null ? "—" : formatRupiah(avgMonthlyIncome)}
+                        </p>
+                      </div>
+                    </div>
+                  </div>
+                  <p className="text-xs text-muted-foreground mt-2">{detail === "pendapatan" ? "▲ Tutup detail" : "▼ Lihat detail"}</p>
                 </CardContent>
               </Card>
             </Link>
-            <Link href={detail === "pengeluaran" ? `${base}?view=report` : `${base}?view=report&detail=pengeluaran`} className="block">
-              <Card className={`transition-all hover:shadow-md cursor-pointer ${detail === "pengeluaran" ? "ring-2 ring-rose-500" : ""}`}>
-                <CardContent className="p-5">
-                  <p className="text-xs text-muted-foreground mb-1">Total Pengeluaran</p>
-                  <p className="text-lg font-bold text-red-600">{formatRupiah(totalExpense)}</p>
-                  <p className="text-xs text-muted-foreground mt-1">{detail === "pengeluaran" ? "▲ Tutup detail" : "▼ Lihat detail"}</p>
-                </CardContent>
-              </Card>
-            </Link>
-            <Link href={stat === "income_growth" ? `${base}?view=report` : `${base}?view=report&stat=income_growth`} className="block">
-              <Card className={`transition-all hover:shadow-md cursor-pointer ${stat === "income_growth" ? "ring-2 ring-violet-500" : ""}`}>
-                <CardContent className="p-5">
-                  <p className="text-xs text-muted-foreground mb-1">AVG Kenaikan Pendapatan</p>
-                  <p className={`text-lg font-bold tabular-nums ${avgIncomeGrowth === null ? "text-muted-foreground" : avgIncomeGrowth >= 0 ? "text-emerald-600" : "text-red-600"}`}>
-                    {avgIncomeGrowth === null ? "—" : `${avgIncomeGrowth > 0 ? "+" : ""}${formatRupiah(avgIncomeGrowth)}`}
-                  </p>
-                  <p className="text-xs text-muted-foreground mt-1">{stat === "income_growth" ? "▲ Tutup chart" : "▼ Lihat chart"}</p>
-                </CardContent>
-              </Card>
-            </Link>
-            <Link href={stat === "expense_ratio" ? `${base}?view=report` : `${base}?view=report&stat=expense_ratio`} className="block">
-              <Card className={`transition-all hover:shadow-md cursor-pointer ${stat === "expense_ratio" ? "ring-2 ring-amber-500" : ""}`}>
-                <CardContent className="p-5">
-                  <p className="text-xs text-muted-foreground mb-1">AVG % Pengeluaran</p>
-                  <p className={`text-lg font-bold tabular-nums ${avgExpenseRatio === null ? "text-muted-foreground" : avgExpenseRatio > 100 ? "text-red-600" : avgExpenseRatio > 80 ? "text-amber-600" : "text-emerald-600"}`}>
-                    {avgExpenseRatio === null ? "—" : `${avgExpenseRatio.toFixed(1)}%`}
-                  </p>
-                  <p className="text-xs text-muted-foreground mt-1">{stat === "expense_ratio" ? "▲ Tutup chart" : "▼ Lihat chart"}</p>
+            <Link href={detail === "pengeluaran" ? `${base}?view=report` : `${base}?view=report&detail=pengeluaran`} className="block h-full">
+              <Card className={`transition-all hover:shadow-md cursor-pointer h-full ${detail === "pengeluaran" ? "ring-2 ring-rose-500" : ""}`}>
+                <CardContent className="p-5 flex flex-col justify-between h-full">
+                  <div>
+                    <p className="text-xs text-muted-foreground mb-2">Total Pengeluaran</p>
+                    <div className="flex items-end gap-6">
+                      <div>
+                        <p className="text-[10px] text-muted-foreground mb-0.5">Nominal</p>
+                        <p className="text-lg font-bold text-red-600">{formatRupiah(totalExpense)}</p>
+                      </div>
+                      <div>
+                        <p className="text-[10px] text-muted-foreground mb-0.5">AVG % dari Pendapatan</p>
+                        <p className={`text-lg font-bold tabular-nums ${avgExpenseRatio === null ? "text-muted-foreground" : avgExpenseRatio > 100 ? "text-red-600" : avgExpenseRatio > 80 ? "text-amber-600" : "text-emerald-600"}`}>
+                          {avgExpenseRatio === null ? "—" : `${avgExpenseRatio.toFixed(1)}%`}
+                        </p>
+                      </div>
+                    </div>
+                  </div>
+                  <p className="text-xs text-muted-foreground mt-2">{detail === "pengeluaran" ? "▲ Tutup detail" : "▼ Lihat detail"}</p>
                 </CardContent>
               </Card>
             </Link>
@@ -435,9 +440,7 @@ export default async function YearDetailPage({
             </Link>
           </div>
 
-          {stat === "income_growth"  && <StatChart type="income_growth"  data={growthData} />}
-          {stat === "expense_ratio"  && <StatChart type="expense_ratio"  data={ratioData} />}
-          {stat === "wealth_growth"  && <StatChart type="wealth_growth"  data={wealthData} />}
+          {stat === "wealth_growth" && <StatChart type="wealth_growth" data={wealthData} />}
 
           {!hasData && (
             <p className="text-sm text-muted-foreground text-center py-6">

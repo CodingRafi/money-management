@@ -68,7 +68,7 @@ export default async function CashflowListPage({
   return (
     <div className="space-y-5">
       <div className="flex items-center gap-3">
-        <Link href="/rekap" className="text-muted-foreground hover:text-foreground transition-colors">
+        <Link href="/dashboard" className="text-muted-foreground hover:text-foreground transition-colors">
           <ArrowLeft className="h-5 w-5" />
         </Link>
         <div>

@@ -56,7 +56,7 @@ export default async function LoanPaymentPage({
   return (
     <div className="space-y-5">
       <div className="flex items-center gap-3">
-        <Link href="/pinjaman" className="text-muted-foreground hover:text-foreground transition-colors">
+        <Link href="/dashboard" className="text-muted-foreground hover:text-foreground transition-colors">
           <ArrowLeft className="h-5 w-5" />
         </Link>
         <div>

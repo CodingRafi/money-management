@@ -85,6 +85,14 @@ export default async function InvestasiPage({
        AND strftime('%Y', i.closed_at) = strftime('%Y', 'now')`
   ).get(userId) as { total_modal: number; total_hasil: number; jumlah_aset: number }
 
+  const dividenTahunIni = db.prepare<[string]>(
+    `SELECT COALESCE(SUM(it.total_amount), 0) AS total_dividen
+     FROM investment_transactions it
+     JOIN investments i ON i.id = it.investment_id
+     WHERE i.user_id = ? AND it.type = 'DIVIDEND'
+       AND strftime('%Y', it.date) = strftime('%Y', 'now')`
+  ).get(userId) as { total_dividen: number }
+
   const categories = db.prepare<[], CategoryRow>(
     "SELECT id, name FROM investment_categories ORDER BY sort_order, name"
   ).all() as CategoryRow[]
@@ -94,10 +102,11 @@ export default async function InvestasiPage({
   const totalHasil    = investSummary?.total_hasil ?? 0
   const modalAktif    = totalModal - totalHasil
 
-  const realizedModal  = realizedTahunIni?.total_modal  ?? 0
-  const realizedHasil  = realizedTahunIni?.total_hasil  ?? 0
-  const realizedPL     = realizedHasil - realizedModal
-  const realizedCount  = realizedTahunIni?.jumlah_aset  ?? 0
+  const realizedModal     = realizedTahunIni?.total_modal  ?? 0
+  const realizedHasil     = realizedTahunIni?.total_hasil  ?? 0
+  const realizedCount     = realizedTahunIni?.jumlah_aset  ?? 0
+  const totalDividenTahun = dividenTahunIni?.total_dividen ?? 0
+  const realizedPL        = (realizedHasil - realizedModal) + totalDividenTahun
 
   const liquidModalAktif    = activeAssets.reduce((s, a) => a.is_liquid  ? s + a.total_modal - a.total_hasil : s, 0)
   const nonLiquidModalAktif = activeAssets.reduce((s, a) => !a.is_liquid ? s + a.total_modal - a.total_hasil : s, 0)
@@ -129,16 +138,25 @@ export default async function InvestasiPage({
         <Card className="sm:col-span-1">
           <CardContent className="p-4">
             <p className="text-xs text-muted-foreground mb-1">Realized P/L Tahun Ini</p>
-            {realizedCount === 0 ? (
-              <p className="text-sm text-muted-foreground mt-2">Belum ada aset yang ditutup tahun ini</p>
+            {realizedCount === 0 && totalDividenTahun === 0 ? (
+              <p className="text-sm text-muted-foreground mt-2">Belum ada P/L atau dividen tahun ini</p>
             ) : (
               <>
                 <p className={`text-xl font-bold tabular-nums mt-1 ${realizedPL > 0 ? "text-emerald-600" : realizedPL < 0 ? "text-red-600" : "text-foreground"}`}>
                   {realizedPL >= 0 ? "+" : ""}{formatRupiah(realizedPL)}
                 </p>
-                <p className="text-xs text-muted-foreground mt-1">
-                  dari {realizedCount} aset ditutup · modal {formatRupiah(realizedModal)}
-                </p>
+                <div className="mt-1 space-y-0.5">
+                  {realizedCount > 0 && (
+                    <p className="text-xs text-muted-foreground">
+                      Capital: {formatRupiah(realizedHasil - realizedModal)} · {realizedCount} aset ditutup
+                    </p>
+                  )}
+                  {totalDividenTahun > 0 && (
+                    <p className="text-xs text-teal-600 font-medium">
+                      Dividen: +{formatRupiah(totalDividenTahun)}
+                    </p>
+                  )}
+                </div>
               </>
             )}
           </CardContent>

@@ -46,10 +46,12 @@ export default async function DashboardPage({
   const sp  = await searchParams
   const now = new Date()
 
-  const rawMonth = typeof sp.month === "string" ? parseInt(sp.month) : NaN
-  const rawYear  = typeof sp.year  === "string" ? parseInt(sp.year)  : NaN
-  const month = isNaN(rawMonth) || rawMonth < 1 || rawMonth > 12 ? now.getMonth() + 1 : rawMonth
-  const year  = isNaN(rawYear)  || rawYear < 2000 || rawYear > 2100 ? now.getFullYear()  : rawYear
+  const rawMonth     = typeof sp.month     === "string" ? parseInt(sp.month)     : NaN
+  const rawYear      = typeof sp.year      === "string" ? parseInt(sp.year)      : NaN
+  const rawChartYear = typeof sp.chartYear === "string" ? parseInt(sp.chartYear) : NaN
+  const month     = isNaN(rawMonth)     || rawMonth < 1    || rawMonth > 12   ? now.getMonth() + 1  : rawMonth
+  const year      = isNaN(rawYear)      || rawYear < 2000  || rawYear > 2100  ? now.getFullYear()   : rawYear
+  const chartYear = isNaN(rawChartYear) || rawChartYear < 2000 || rawChartYear > 2100 ? now.getFullYear() : rawChartYear
 
   const isCurrentMonth = month === now.getMonth() + 1 && year === now.getFullYear()
 
@@ -61,20 +63,34 @@ export default async function DashboardPage({
         <p className="text-sm text-muted-foreground">Ringkasan keuangan kamu</p>
       </div>
 
-      {/* Wealth section — selalu data terkini, tidak ikut filter bulan */}
+      {/* Wealth section — chartYear mengontrol Cashflow Bulanan */}
       <Suspense fallback={<NetWorthSkeleton />}>
-        <NetWorthSection userId={userId} year={now.getFullYear()} />
+        <NetWorthSection userId={userId} year={chartYear} />
       </Suspense>
+
+      {/* ── Dompet, Investasi, Pinjaman — tidak ikut filter bulan ── */}
+      <Suspense fallback={<WalletSkeleton />}>
+        <WalletSection userId={userId} />
+      </Suspense>
+
+      <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+        <Suspense fallback={<InvestmentSkeleton />}>
+          <InvestmentSection userId={userId} />
+        </Suspense>
+        <Suspense fallback={<LoanSkeleton />}>
+          <LoanSection userId={userId} />
+        </Suspense>
+      </div>
 
       {/* ── Cashflow & Budget — pakai filter bulan ── */}
       <div className="space-y-4">
-        <div className="flex items-center justify-between">
+        <div className="sticky top-14 z-10 -mx-4 px-4 py-2 bg-background/95 backdrop-blur border-b flex items-center justify-between">
           <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
             Cashflow &amp; Budget
           </p>
           <div className="flex items-center gap-0.5">
             <Button variant="ghost" size="icon" className="h-7 w-7" asChild>
-              <Link href={prevMonthHref(month, year)}><ChevronLeft className="h-3.5 w-3.5" /></Link>
+              <Link href={prevMonthHref(month, year)} scroll={false}><ChevronLeft className="h-3.5 w-3.5" /></Link>
             </Button>
             <span className="min-w-[110px] text-center text-sm font-medium">
               {MONTHS[month - 1]} {year}
@@ -83,7 +99,7 @@ export default async function DashboardPage({
               {isCurrentMonth ? (
                 <span><ChevronRight className="h-3.5 w-3.5" /></span>
               ) : (
-                <Link href={nextMonthHref(month, year)}><ChevronRight className="h-3.5 w-3.5" /></Link>
+                <Link href={nextMonthHref(month, year)} scroll={false}><ChevronRight className="h-3.5 w-3.5" /></Link>
               )}
             </Button>
           </div>
@@ -93,22 +109,8 @@ export default async function DashboardPage({
           <CashflowSection userId={userId} month={month} year={year} />
         </Suspense>
 
-        <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
-          <Suspense fallback={<BudgetSkeleton />}>
-            <BudgetSection userId={userId} month={month} year={year} />
-          </Suspense>
-          <Suspense fallback={<WalletSkeleton />}>
-            <WalletSection userId={userId} />
-          </Suspense>
-        </div>
-      </div>
-
-      <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
-        <Suspense fallback={<InvestmentSkeleton />}>
-          <InvestmentSection userId={userId} />
-        </Suspense>
-        <Suspense fallback={<LoanSkeleton />}>
-          <LoanSection userId={userId} />
+        <Suspense fallback={<BudgetSkeleton />}>
+          <BudgetSection userId={userId} month={month} year={year} />
         </Suspense>
       </div>
 

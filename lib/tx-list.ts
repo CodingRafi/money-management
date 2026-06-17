@@ -29,7 +29,7 @@ export function getCashflowTxList(
   const all: CashflowTxItem[] = []
 
   if (type === "all" || type === "INCOME") {
-    const c = ["i.user_id = ?", "i.is_initial = 0"]
+    const c = ["i.user_id = ?"]
     const p: (string | null)[] = [userId]
     if (from) { c.push("i.date >= ?"); p.push(from) }
     if (to)   { c.push("i.date <= ?"); p.push(to) }
@@ -43,7 +43,7 @@ export function getCashflowTxList(
   }
 
   if (type === "all" || type === "EXPENSE") {
-    const c = ["e.user_id = ?", "e.is_initial = 0"]
+    const c = ["e.user_id = ?"]
     const p: (string | null)[] = [userId]
     if (from) { c.push("e.date >= ?"); p.push(from) }
     if (to)   { c.push("e.date <= ?"); p.push(to) }
@@ -57,7 +57,7 @@ export function getCashflowTxList(
   }
 
   if (type === "all" || type === "TRANSFER") {
-    const c = ["t.user_id = ?", "t.is_initial = 0"]
+    const c = ["t.user_id = ?"]
     const p: (string | null)[] = [userId]
     if (from) { c.push("t.date >= ?"); p.push(from) }
     if (to)   { c.push("t.date <= ?"); p.push(to) }
@@ -93,7 +93,7 @@ export function getInvestmentTxList(
   { from, to, type = "all", search, page = 1, limit = 10 }: ListOpts = {}
 ): { items: InvestmentTxItem[]; total: number } {
   const like = search ? `%${search}%` : null
-  const c = ["i.user_id = ?", "it.is_initial = 0"]
+  const c = ["i.user_id = ?"]
   const p: (string | null)[] = [userId]
   if (from)          { c.push("it.date >= ?"); p.push(from) }
   if (to)            { c.push("it.date <= ?"); p.push(to) }
@@ -136,7 +136,7 @@ export function getLoanPaymentList(
   { from, to, type = "all", search, page = 1, limit = 10 }: ListOpts = {}
 ): { items: LoanPaymentItem[]; total: number } {
   const like = search ? `%${search}%` : null
-  const c = ["l.user_id = ?", "lp.is_initial = 0"]
+  const c = ["l.user_id = ?"]
   const p: (string | null)[] = [userId]
   if (from)          { c.push("lp.date >= ?"); p.push(from) }
   if (to)            { c.push("lp.date <= ?"); p.push(to) }

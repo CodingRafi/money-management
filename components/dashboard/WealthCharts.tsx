@@ -5,6 +5,10 @@ import {
   BarChart, Bar, XAxis, CartesianGrid,
 } from "recharts"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
+import { ChevronLeft, ChevronRight } from "lucide-react"
+import { Button } from "@/components/ui/button"
+import Link from "next/link"
+import { useSearchParams } from "next/navigation"
 import type { WealthOverviewData } from "@/lib/dashboard"
 
 function formatRp(n: number) {
@@ -39,13 +43,16 @@ function LiquidTooltip({ active, payload }: { active?: boolean; payload?: Toolti
 
 function BarTooltip({ active, payload, label }: { active?: boolean; payload?: TooltipPayloadItem[]; label?: string }) {
   if (!active || !payload?.length) return null
-  const income  = payload.find(p => p.name === "Pemasukan")?.value  ?? 0
-  const expense = payload.find(p => p.name === "Pengeluaran")?.value ?? 0
-  const net     = income - expense
+  const income  = payload.find(p => p.name === "Pemasukan")?.value      ?? 0
+  const invest  = payload.find(p => p.name === "Hasil Investasi")?.value ?? 0
+  const expense = payload.find(p => p.name === "Pengeluaran")?.value     ?? 0
+  const total   = income + invest
+  const sisa    = total - expense
+  const bars    = payload.filter(p => p.name !== "Total Efektif")
   return (
-    <div className="rounded-lg border bg-background px-3 py-2 text-xs shadow-lg space-y-1 min-w-[160px]">
+    <div className="rounded-lg border bg-background px-3 py-2 text-xs shadow-lg space-y-1 min-w-[190px]">
       <p className="font-semibold mb-1">{label}</p>
-      {payload.map((p) => (
+      {bars.map((p) => (
         <div key={p.name} className="flex items-center justify-between gap-3">
           <div className="flex items-center gap-1.5">
             <span className="h-2 w-2 rounded-full shrink-0" style={{ backgroundColor: p.fill ?? p.color }} />
@@ -54,19 +61,39 @@ function BarTooltip({ active, payload, label }: { active?: boolean; payload?: To
           <span className="font-semibold tabular-nums">{formatRp(p.value)}</span>
         </div>
       ))}
-      {income > 0 || expense > 0 ? (
+      {(income > 0 || invest !== 0) && (
+        <div className="flex items-center justify-between gap-3 text-violet-600">
+          <div className="flex items-center gap-1.5">
+            <span className="h-2 w-2 rounded-full shrink-0 bg-violet-500" />
+            <span>Total Efektif</span>
+          </div>
+          <span className="font-semibold tabular-nums">{formatRp(total)}</span>
+        </div>
+      )}
+      {(income > 0 || expense > 0 || invest !== 0) && (
         <div className="border-t pt-1 flex justify-between">
-          <span className="text-muted-foreground">Selisih</span>
-          <span className={`font-semibold tabular-nums ${net >= 0 ? "text-emerald-600" : "text-red-500"}`}>
-            {net >= 0 ? "+" : ""}{formatRp(net)}
+          <span className="text-muted-foreground">Sisa</span>
+          <span className={`font-semibold tabular-nums ${sisa >= 0 ? "text-emerald-600" : "text-red-500"}`}>
+            {sisa >= 0 ? "+" : ""}{formatRp(sisa)}
           </span>
         </div>
-      ) : null}
+      )}
     </div>
   )
 }
 
 export function WealthCharts({ data, year }: { data: WealthOverviewData; year: number }) {
+  const searchParams = useSearchParams()
+
+  function chartYearHref(y: number) {
+    const params = new URLSearchParams(searchParams.toString())
+    params.set("chartYear", String(y))
+    return `?${params.toString()}`
+  }
+
+  const now = new Date()
+  const isCurrentChartYear = year === now.getFullYear()
+
   const totalWealth  = data.totalLiquid + data.totalNonLiquid
 
   const liquidityData = [
@@ -74,13 +101,15 @@ export function WealthCharts({ data, year }: { data: WealthOverviewData; year: n
     { name: "Non-Liquid",  value: data.totalNonLiquid, color: "#f59e0b" },
   ].filter(d => d.value > 0)
 
-  const hasMonthlyData = data.monthlyGrowth.some(m => m.income > 0 || m.expense > 0)
+  const hasMonthlyData = data.monthlyGrowth.some(m => m.income > 0 || m.expense > 0 || m.investGain !== 0)
   const hasYearlyData  = data.yearlyGrowth.length > 0
 
   const monthlyChartData = data.monthlyGrowth.map(m => ({
-    label:       m.label,
-    Pemasukan:   m.income,
-    Pengeluaran: m.expense,
+    label:             m.label,
+    Pemasukan:         m.income,
+    "Hasil Investasi": m.investGain,
+    Pengeluaran:       m.expense,
+    "Total Efektif":   m.income + m.investGain,
   }))
 
   const yearlyChartData = data.yearlyGrowth.map(r => ({
@@ -151,22 +180,39 @@ export function WealthCharts({ data, year }: { data: WealthOverviewData; year: n
         {/* Monthly Cashflow Bar */}
         <Card>
           <CardHeader className="pb-2">
-            <CardTitle className="text-sm font-semibold">Cashflow Bulanan {year}</CardTitle>
+            <div className="flex items-center justify-between">
+              <CardTitle className="text-sm font-semibold">Cashflow Bulanan</CardTitle>
+              <div className="flex items-center gap-0.5">
+                <Button variant="ghost" size="icon" className="h-6 w-6" asChild>
+                  <Link href={chartYearHref(year - 1)} scroll={false}><ChevronLeft className="h-3 w-3" /></Link>
+                </Button>
+                <span className="min-w-[40px] text-center text-sm font-semibold tabular-nums">{year}</span>
+                <Button variant="ghost" size="icon" className="h-6 w-6" disabled={isCurrentChartYear} asChild={!isCurrentChartYear}>
+                  {isCurrentChartYear
+                    ? <span><ChevronRight className="h-3 w-3" /></span>
+                    : <Link href={chartYearHref(year + 1)} scroll={false}><ChevronRight className="h-3 w-3" /></Link>
+                  }
+                </Button>
+              </div>
+            </div>
           </CardHeader>
           <CardContent className="pt-0">
             {hasMonthlyData ? (
               <>
                 <ResponsiveContainer width="100%" height={178}>
-                  <BarChart data={monthlyChartData} margin={{ top: 4, right: 4, left: 0, bottom: 0 }} barCategoryGap="30%">
+                  <BarChart data={monthlyChartData} margin={{ top: 4, right: 4, left: 0, bottom: 0 }} barCategoryGap="25%">
                     <CartesianGrid strokeDasharray="3 3" stroke="rgba(0,0,0,0.06)" vertical={false} />
                     <XAxis dataKey="label" tick={{ fontSize: 9 }} axisLine={false} tickLine={false} />
                     <Tooltip content={<BarTooltip />} cursor={{ fill: "rgba(0,0,0,0.04)" }} />
-                    <Bar dataKey="Pemasukan"   fill="#10b981" radius={[2,2,0,0]} maxBarSize={12} />
-                    <Bar dataKey="Pengeluaran" fill="#ef4444" radius={[2,2,0,0]} maxBarSize={12} />
+                    <Bar dataKey="Pemasukan"         fill="#10b981" radius={[0,0,0,0]} maxBarSize={14} stackId="efektif" />
+                    <Bar dataKey="Hasil Investasi"   fill="#0ea5e9" radius={[2,2,0,0]} maxBarSize={14} stackId="efektif" />
+                    <Bar dataKey="Pengeluaran"       fill="#ef4444" radius={[2,2,0,0]} maxBarSize={14} />
                   </BarChart>
                 </ResponsiveContainer>
-                <div className="flex items-center gap-4 mt-1 text-xs text-muted-foreground">
+                <div className="flex flex-wrap items-center gap-x-4 gap-y-1 mt-1 text-xs text-muted-foreground">
                   <span className="flex items-center gap-1.5"><span className="h-2 w-2 rounded-sm bg-emerald-500" />Pemasukan</span>
+                  <span className="flex items-center gap-1.5"><span className="h-2 w-2 rounded-sm bg-sky-500" />Hasil Investasi</span>
+                  <span className="flex items-center gap-1.5"><span className="h-2 w-2 rounded-sm bg-violet-500" />Total Efektif (stack)</span>
                   <span className="flex items-center gap-1.5"><span className="h-2 w-2 rounded-sm bg-red-500" />Pengeluaran</span>
                 </div>
               </>

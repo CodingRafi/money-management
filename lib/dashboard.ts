@@ -18,11 +18,11 @@ export type WealthOverviewData = {
   piutangSisa: number
   piutangMacetSisa: number
   hutangSisa: number
-  monthlyGrowth: { month: number; label: string; income: number; expense: number }[]
+  monthlyGrowth: { month: number; label: string; income: number; expense: number; investGain: number }[]
   yearlyGrowth:  { year: number; income: number; expense: number }[]
   emergencyFundMonths: number
 }
-export type CashflowData    = { totalIncome: number; totalExpense: number; remaining: number; expenseRatio: number; savingRatio: number; incomeCount: number; expenseCount: number }
+export type CashflowData    = { totalIncome: number; totalExpense: number; investGain: number; totalEfektif: number; remaining: number; expenseRatio: number; savingRatio: number; incomeCount: number; expenseCount: number }
 export type BudgetItem      = { categoryId: string; categoryName: string; target: number; realisasi: number; status: "AMAN" | "MENDEKATI" | "OVER" }
 export type BudgetData      = { overBudgetCount: number; items: BudgetItem[] }
 export type WalletItem      = { id: string; name: string; balance: number; color: string | null; isLiquid: boolean }
@@ -92,29 +92,60 @@ export function getWealthOverview(userId: string, year: number): WealthOverviewD
       COALESCE(SUM(CASE WHEN src = 'i' THEN amount ELSE 0 END), 0) AS income,
       COALESCE(SUM(CASE WHEN src = 'e' THEN amount ELSE 0 END), 0) AS expense
     FROM (
-      SELECT month, 'i' AS src, amount FROM incomes  WHERE user_id = ? AND year = ? AND is_initial = 0
+      SELECT month, 'i' AS src, amount FROM incomes  WHERE user_id = ? AND year = ?
       UNION ALL
-      SELECT month, 'e',        amount FROM expenses WHERE user_id = ? AND year = ? AND is_initial = 0
+      SELECT month, 'e',        amount FROM expenses WHERE user_id = ? AND year = ?
     ) t
     GROUP BY month ORDER BY month
   `).all(userId, year, userId, year) as { month: number; income: number; expense: number }[]
+
+  // Capital: (SELL - BUY) untuk investasi yang ditutup di bulan tersebut
+  const monthlyCapitalRows = db.prepare(`
+    SELECT CAST(strftime('%m', i.closed_at) AS INTEGER) AS month,
+      COALESCE(SUM(CASE WHEN it.type='SELL' THEN it.total_amount ELSE 0 END), 0) -
+      COALESCE(SUM(CASE WHEN it.type='BUY'  THEN it.total_amount ELSE 0 END), 0) AS capital_gain
+    FROM investment_transactions it
+    JOIN investments i ON i.id = it.investment_id
+    WHERE i.user_id = ? AND i.is_closed = 1
+      AND CAST(strftime('%Y', i.closed_at) AS INTEGER) = ?
+    GROUP BY month
+  `).all(userId, year) as { month: number; capital_gain: number }[]
+
+  // Dividen: diterima di bulan tersebut
+  const monthlyDividenRows = db.prepare(`
+    SELECT CAST(strftime('%m', it.date) AS INTEGER) AS month,
+      COALESCE(SUM(it.total_amount), 0) AS dividen
+    FROM investment_transactions it
+    JOIN investments i ON i.id = it.investment_id
+    WHERE i.user_id = ? AND it.type = 'DIVIDEND'
+      AND CAST(strftime('%Y', it.date) AS INTEGER) = ?
+    GROUP BY month
+  `).all(userId, year) as { month: number; dividen: number }[]
 
   const yearlyRows = db.prepare(`
     SELECT year,
       COALESCE(SUM(CASE WHEN src = 'i' THEN amount ELSE 0 END), 0) AS income,
       COALESCE(SUM(CASE WHEN src = 'e' THEN amount ELSE 0 END), 0) AS expense
     FROM (
-      SELECT year, 'i' AS src, amount FROM incomes  WHERE user_id = ? AND is_initial = 0
+      SELECT year, 'i' AS src, amount FROM incomes  WHERE user_id = ?
       UNION ALL
-      SELECT year, 'e',        amount FROM expenses WHERE user_id = ? AND is_initial = 0
+      SELECT year, 'e',        amount FROM expenses WHERE user_id = ?
     ) t
     GROUP BY year ORDER BY year
   `).all(userId, userId) as { year: number; income: number; expense: number }[]
 
   const MONTH_LABELS = ["Jan","Feb","Mar","Apr","Mei","Jun","Jul","Agu","Sep","Okt","Nov","Des"]
   const monthlyGrowth = Array.from({ length: 12 }, (_, i) => {
-    const row = monthlyRows.find(r => r.month === i + 1)
-    return { month: i + 1, label: MONTH_LABELS[i], income: row?.income ?? 0, expense: row?.expense ?? 0 }
+    const m    = i + 1
+    const row  = monthlyRows.find(r => r.month === m)
+    const cap  = monthlyCapitalRows.find(r => r.month === m)
+    const div  = monthlyDividenRows.find(r => r.month === m)
+    return {
+      month: m, label: MONTH_LABELS[i],
+      income:     row?.income       ?? 0,
+      expense:    row?.expense      ?? 0,
+      investGain: (cap?.capital_gain ?? 0) + (div?.dividen ?? 0),
+    }
   })
 
   const now = new Date()
@@ -122,7 +153,7 @@ export function getWealthOverview(userId: string, year: number): WealthOverviewD
   const expRow = db.prepare(`
     SELECT COALESCE(SUM(amount), 0) AS total
     FROM expenses
-    WHERE user_id = ? AND is_initial = 0
+    WHERE user_id = ?
       AND (year * 12 + month) >= ? AND (year * 12 + month) <= ?
   `).get(userId, nowYM - 3, nowYM - 1) as { total: number }
   const avgMonthlyExpense = expRow.total / 3
@@ -183,21 +214,47 @@ export function getCashflow(userId: string, month: number, year: number): Cashfl
       COUNT(CASE WHEN src='i' THEN 1 END) AS income_count,
       COUNT(CASE WHEN src='e' THEN 1 END) AS expense_count
     FROM (
-      SELECT 'i' AS src, amount FROM incomes  WHERE user_id=? AND month=? AND year=? AND is_initial=0
+      SELECT 'i' AS src, amount FROM incomes  WHERE user_id=? AND month=? AND year=?
       UNION ALL
-      SELECT 'e', amount         FROM expenses WHERE user_id=? AND month=? AND year=? AND is_initial=0
+      SELECT 'e', amount         FROM expenses WHERE user_id=? AND month=? AND year=?
     ) t
   `).get(userId, month, year, userId, month, year) as { total_income: number; total_expense: number; income_count: number; expense_count: number }
 
+  // Capital: (SELL - BUY) investasi yang ditutup di bulan ini
+  const capitalRow = db.prepare(`
+    SELECT
+      COALESCE(SUM(CASE WHEN it.type='SELL' THEN it.total_amount ELSE 0 END), 0) -
+      COALESCE(SUM(CASE WHEN it.type='BUY'  THEN it.total_amount ELSE 0 END), 0) AS capital_gain
+    FROM investment_transactions it
+    JOIN investments i ON i.id = it.investment_id
+    WHERE i.user_id = ? AND i.is_closed = 1
+      AND CAST(strftime('%m', i.closed_at) AS INTEGER) = ?
+      AND CAST(strftime('%Y', i.closed_at) AS INTEGER) = ?
+  `).get(userId, month, year) as { capital_gain: number }
+
+  // Dividen: diterima bulan ini
+  const dividenRow = db.prepare(`
+    SELECT COALESCE(SUM(it.total_amount), 0) AS dividen
+    FROM investment_transactions it
+    JOIN investments i ON i.id = it.investment_id
+    WHERE i.user_id = ? AND it.type = 'DIVIDEND'
+      AND CAST(strftime('%m', it.date) AS INTEGER) = ?
+      AND CAST(strftime('%Y', it.date) AS INTEGER) = ?
+  `).get(userId, month, year) as { dividen: number }
+
   const totalIncome  = row.total_income
   const totalExpense = row.total_expense
-  const remaining    = totalIncome - totalExpense
+  const investGain   = (capitalRow.capital_gain) + (dividenRow.dividen)
+  const totalEfektif = totalIncome + investGain
+  const remaining    = totalEfektif - totalExpense
   return {
     totalIncome,
     totalExpense,
+    investGain,
+    totalEfektif,
     remaining,
-    expenseRatio: totalIncome > 0 ? (totalExpense / totalIncome) * 100 : 0,
-    savingRatio:  totalIncome > 0 ? (remaining    / totalIncome) * 100 : 0,
+    expenseRatio: totalEfektif > 0 ? (totalExpense / totalEfektif) * 100 : 0,
+    savingRatio:  totalEfektif > 0 ? (remaining    / totalEfektif) * 100 : 0,
     incomeCount:  row.income_count,
     expenseCount: row.expense_count,
   }
@@ -205,35 +262,50 @@ export function getCashflow(userId: string, month: number, year: number): Cashfl
 
 export function getBudget(userId: string, month: number, year: number): BudgetData {
   const incRow = db.prepare(
-    "SELECT COALESCE(SUM(amount), 0) AS total FROM incomes WHERE user_id=? AND month=? AND year=? AND is_initial=0"
+    "SELECT COALESCE(SUM(amount), 0) AS total FROM incomes WHERE user_id=? AND month=? AND year=?"
   ).get(userId, month, year) as { total: number }
   const totalIncome = incRow.total
 
-  const budgetRows = db.prepare(`
-    WITH expense_by_cat AS (
-      SELECT category_id, COALESCE(SUM(amount), 0) AS actual
-      FROM expenses WHERE user_id=? AND month=? AND year=? AND is_initial=0
-      GROUP BY category_id
-    )
-    SELECT ec.id AS category_id, ec.name AS category_name, b.percentage AS target,
-           COALESCE(ebc.actual, 0) AS actual_amount
+  // Ambil semua budget tahun ini (bukan per bulan), pakai persentase bulan ini kalau ada,
+  // kalau tidak ada fallback ke persentase dari bulan manapun dalam tahun yang sama
+  const allBudgetRows = db.prepare(`
+    SELECT b.category_id, b.month, b.percentage, ec.name AS category_name
     FROM budgets b
     JOIN expense_categories ec ON ec.id = b.category_id
-    LEFT JOIN expense_by_cat ebc ON ebc.category_id = b.category_id
-    WHERE b.user_id=? AND b.month=? AND b.year=?
-  `).all(userId, month, year, userId, month, year) as { category_id: string; category_name: string; target: number; actual_amount: number }[]
+    WHERE b.user_id=? AND b.year=?
+  `).all(userId, year) as { category_id: string; month: number; percentage: number; category_name: string }[]
 
-  const items: BudgetItem[] = budgetRows.map((row) => {
-    const target       = row.target
+  // Expense aktual bulan ini per kategori
+  const expenseRows = db.prepare(`
+    SELECT category_id, COALESCE(SUM(amount), 0) AS actual
+    FROM expenses WHERE user_id=? AND month=? AND year=?
+    GROUP BY category_id
+  `).all(userId, month, year) as { category_id: string; actual: number }[]
+  const expenseMap = new Map(expenseRows.map(e => [e.category_id, e.actual]))
+
+  // Grup per kategori: pakai pct bulan ini, fallback ke max pct tahun ini
+  const catMap = new Map<string, { name: string; monthPct: number | null; maxPct: number }>()
+  for (const row of allBudgetRows) {
+    if (!catMap.has(row.category_id)) {
+      catMap.set(row.category_id, { name: row.category_name, monthPct: null, maxPct: 0 })
+    }
+    const cat = catMap.get(row.category_id)!
+    if (row.month === month) cat.monthPct = row.percentage
+    if (row.percentage > cat.maxPct) cat.maxPct = row.percentage
+  }
+
+  const items: BudgetItem[] = Array.from(catMap.entries()).map(([id, cat]) => {
+    const target       = cat.monthPct ?? cat.maxPct
     const targetAmount = totalIncome * (target / 100)
-    const realisasi    = targetAmount > 0 ? (row.actual_amount / targetAmount) * 100 : 0
+    const actual       = expenseMap.get(id) ?? 0
+    const realisasi    = targetAmount > 0 ? (actual / targetAmount) * 100 : 0
     const status: BudgetItem["status"] = realisasi > 100 ? "OVER" : realisasi >= 80 ? "MENDEKATI" : "AMAN"
-    return { categoryId: row.category_id, categoryName: row.category_name, target, realisasi, status }
+    return { categoryId: id, categoryName: cat.name, target, realisasi, status }
   })
 
   return {
     overBudgetCount: items.filter((i) => i.status === "OVER").length,
-    items: [...items].sort((a, b) => b.realisasi - a.realisasi).slice(0, 5),
+    items: [...items].sort((a, b) => b.realisasi - a.realisasi),
   }
 }
 
@@ -366,14 +438,14 @@ export function getRecentCashflowTx(userId: string, days = 30, limit = 10): Rece
   const incomes = db.prepare(`
     SELECT i.id, i.date, i.name, c.name AS cat, i.amount
     FROM incomes i LEFT JOIN income_categories c ON c.id = i.category_id
-    WHERE i.user_id = ? AND i.is_initial = 0 AND i.date >= ?
+    WHERE i.user_id = ? AND i.date >= ?
     ORDER BY i.date DESC, i.created_at DESC LIMIT ?
   `).all(userId, cutoff, limit) as { id: string; date: string; name: string; cat: string | null; amount: number }[]
 
   const expenses = db.prepare(`
     SELECT e.id, e.date, e.name, c.name AS cat, e.amount
     FROM expenses e LEFT JOIN expense_categories c ON c.id = e.category_id
-    WHERE e.user_id = ? AND e.is_initial = 0 AND e.date >= ?
+    WHERE e.user_id = ? AND e.date >= ?
     ORDER BY e.date DESC, e.created_at DESC LIMIT ?
   `).all(userId, cutoff, limit) as { id: string; date: string; name: string; cat: string | null; amount: number }[]
 
@@ -382,7 +454,7 @@ export function getRecentCashflowTx(userId: string, days = 30, limit = 10): Rece
     FROM transfers t
     JOIN wallets fw ON fw.id = t.from_wallet_id
     JOIN wallets tw ON tw.id = t.to_wallet_id
-    WHERE t.user_id = ? AND t.is_initial = 0 AND t.date >= ?
+    WHERE t.user_id = ? AND t.date >= ?
     ORDER BY t.date DESC, t.created_at DESC LIMIT ?
   `).all(userId, cutoff, limit) as { id: string; date: string; amount: number; from_name: string; to_name: string }[]
 
@@ -401,7 +473,7 @@ export function getRecentInvestmentTx(userId: string, days = 30, limit = 10): Re
     FROM investment_transactions it
     JOIN investments i ON i.id = it.investment_id
     LEFT JOIN investment_goals g ON g.id = it.goal_id
-    WHERE i.user_id = ? AND it.is_initial = 0 AND it.date >= ?
+    WHERE i.user_id = ? AND it.date >= ?
     ORDER BY it.date DESC, it.created_at DESC LIMIT ?
   `).all(userId, cutoff, limit) as { id: string; date: string; type: string; investment_name: string; goal_name: string | null; total_amount: number }[]
 
@@ -421,7 +493,7 @@ export function getRecentLoanTx(userId: string, days = 30, limit = 10): RecentLo
     SELECT lp.id, lp.date, lp.total_paid, lp.notes, l.name AS loan_name, l.type AS loan_type
     FROM loan_payments lp
     JOIN loans l ON l.id = lp.loan_id
-    WHERE l.user_id = ? AND lp.is_initial = 0 AND lp.date >= ?
+    WHERE l.user_id = ? AND lp.date >= ?
     ORDER BY lp.date DESC, lp.created_at DESC LIMIT ?
   `).all(userId, cutoff, limit) as { id: string; date: string; total_paid: number; notes: string | null; loan_name: string; loan_type: string }[]
 
@@ -442,7 +514,7 @@ export function getRecentTransactions(userId: string, limit = 10): RecentTransac
     SELECT i.id, i.date, i.name, c.name AS category_name, i.amount
     FROM incomes i
     LEFT JOIN income_categories c ON c.id = i.category_id
-    WHERE i.user_id = ? AND i.is_initial = 0
+    WHERE i.user_id = ?
     ORDER BY i.date DESC, i.created_at DESC LIMIT ?
   `).all(userId, limit) as { id: string; date: string; name: string; category_name: string | null; amount: number }[]
 
@@ -450,7 +522,7 @@ export function getRecentTransactions(userId: string, limit = 10): RecentTransac
     SELECT e.id, e.date, e.name, c.name AS category_name, e.amount
     FROM expenses e
     LEFT JOIN expense_categories c ON c.id = e.category_id
-    WHERE e.user_id = ? AND e.is_initial = 0
+    WHERE e.user_id = ?
     ORDER BY e.date DESC, e.created_at DESC LIMIT ?
   `).all(userId, limit) as { id: string; date: string; name: string; category_name: string | null; amount: number }[]
 
@@ -459,7 +531,7 @@ export function getRecentTransactions(userId: string, limit = 10): RecentTransac
     FROM transfers t
     JOIN wallets fw ON fw.id = t.from_wallet_id
     JOIN wallets tw ON tw.id = t.to_wallet_id
-    WHERE t.user_id = ? AND t.is_initial = 0
+    WHERE t.user_id = ?
     ORDER BY t.date DESC, t.created_at DESC LIMIT ?
   `).all(userId, limit) as { id: string; date: string; amount: number; from_wallet_name: string; to_wallet_name: string }[]
 
@@ -468,7 +540,7 @@ export function getRecentTransactions(userId: string, limit = 10): RecentTransac
     FROM investment_transactions it
     JOIN investments i ON i.id = it.investment_id
     LEFT JOIN investment_goals g ON g.id = it.goal_id
-    WHERE i.user_id = ? AND it.is_initial = 0
+    WHERE i.user_id = ?
     ORDER BY it.date DESC, it.created_at DESC LIMIT ?
   `).all(userId, limit) as { id: string; date: string; type: string; investment_name: string; goal_name: string | null; total_amount: number }[]
 

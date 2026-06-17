@@ -5,9 +5,15 @@ import Link from "next/link"
 import { ChevronRight } from "lucide-react"
 
 const STATUS_BAR: Record<string, string> = {
-  AMAN: "bg-primary",
+  AMAN:      "bg-primary",
   MENDEKATI: "bg-yellow-500",
-  OVER: "bg-destructive",
+  OVER:      "bg-destructive",
+}
+
+const STATUS_BADGE: Record<string, string> = {
+  AMAN:      "bg-primary/10 text-primary",
+  MENDEKATI: "bg-yellow-500/10 text-yellow-600",
+  OVER:      "bg-destructive/10 text-destructive",
 }
 
 export async function BudgetSection({
@@ -22,34 +28,44 @@ export async function BudgetSection({
   const data = await getBudget(userId, month, year)
 
   return (
-    <Card className="flex flex-col">
+    <Card>
       <CardHeader className="pb-3">
         <div className="flex items-center justify-between">
           <CardTitle className="text-sm font-semibold">Budget</CardTitle>
-          {data.overBudgetCount > 0 && (
-            <Badge variant="destructive" className="text-xs">
-              {data.overBudgetCount} over budget
-            </Badge>
-          )}
+          <div className="flex items-center gap-2">
+            {data.overBudgetCount > 0 && (
+              <Badge variant="destructive" className="text-xs">
+                {data.overBudgetCount} over budget
+              </Badge>
+            )}
+            <Link
+              href="/rekap"
+              className="flex items-center gap-0.5 text-xs text-muted-foreground hover:text-foreground transition-colors"
+            >
+              Lihat semua <ChevronRight className="h-3 w-3" />
+            </Link>
+          </div>
         </div>
       </CardHeader>
-      <CardContent className="flex-1 pt-0">
+      <CardContent className="pt-0">
         {data.items.length === 0 ? (
           <p className="text-sm text-muted-foreground">
             Atur target budget di pengaturan kategori
           </p>
         ) : (
-          <ul className="space-y-3">
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
             {data.items.map(item => (
-              <li key={item.categoryId}>
-                <div className="flex justify-between mb-1">
-                  <span className="text-xs font-medium truncate max-w-[60%]">
-                    {item.categoryName}
-                  </span>
-                  <span className="text-xs text-muted-foreground">
-                    {item.realisasi.toFixed(0)}%
-                    <span className="text-muted-foreground/60"> / {item.target}%</span>
-                  </span>
+              <div key={item.categoryId}>
+                <div className="flex items-center justify-between mb-1.5 gap-2">
+                  <span className="text-xs font-medium truncate">{item.categoryName}</span>
+                  <div className="flex items-center gap-1.5 shrink-0">
+                    <span className="text-xs tabular-nums text-muted-foreground">
+                      {item.realisasi.toFixed(0)}%<span className="text-muted-foreground/50"> / {item.target}%</span>
+                    </span>
+                    <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded ${STATUS_BADGE[item.status]}`}>
+                      {item.status}
+                    </span>
+                  </div>
                 </div>
                 <div className="h-1.5 w-full bg-muted rounded-full overflow-hidden">
                   <div
@@ -57,19 +73,11 @@ export async function BudgetSection({
                     style={{ width: `${Math.min(item.realisasi, 100)}%` }}
                   />
                 </div>
-              </li>
+              </div>
             ))}
-          </ul>
+          </div>
         )}
       </CardContent>
-      <div className="px-6 pb-4 pt-2">
-        <Link
-          href="/rekap"
-          className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground transition-colors"
-        >
-          Lihat semua <ChevronRight className="h-3 w-3" />
-        </Link>
-      </div>
     </Card>
   )
 }
@@ -80,16 +88,18 @@ export function BudgetSkeleton() {
       <CardHeader className="pb-3">
         <div className="h-4 w-16 bg-muted rounded animate-pulse" />
       </CardHeader>
-      <CardContent className="pt-0 space-y-3">
-        {[0, 1, 2, 3].map(i => (
-          <div key={i} className="animate-pulse space-y-1.5">
-            <div className="flex justify-between">
-              <div className="h-3 w-24 bg-muted rounded" />
-              <div className="h-3 w-12 bg-muted rounded" />
+      <CardContent className="pt-0">
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+          {[0, 1, 2, 3, 4, 5].map(i => (
+            <div key={i} className="animate-pulse space-y-1.5">
+              <div className="flex justify-between">
+                <div className="h-3 w-24 bg-muted rounded" />
+                <div className="h-3 w-16 bg-muted rounded" />
+              </div>
+              <div className="h-1.5 w-full bg-muted rounded-full" />
             </div>
-            <div className="h-1.5 w-full bg-muted rounded-full" />
-          </div>
-        ))}
+          ))}
+        </div>
       </CardContent>
     </Card>
   )

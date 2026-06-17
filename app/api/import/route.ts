@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server"
-import { db } from "@/lib/db"
+import { db, runMigrations } from "@/lib/db"
 import { validateSession } from "@/lib/auth-simple"
 import { cookies } from "next/headers"
 
@@ -33,6 +33,29 @@ export async function POST(req: NextRequest) {
     db.exec("PRAGMA foreign_keys = OFF")
 
     db.transaction(() => {
+      // Delete child tables first (no user_id — joined via parent)
+      db.exec("DELETE FROM loan_payments")
+      db.exec("DELETE FROM investment_transactions")
+      // Delete all user-owned tables
+      db.exec("DELETE FROM loans_given")
+      db.exec("DELETE FROM loans_taken")
+      db.exec("DELETE FROM loans")
+      db.exec("DELETE FROM investment_goals")
+      db.exec("DELETE FROM investments")
+      db.exec("DELETE FROM transfers")
+      db.exec("DELETE FROM expenses")
+      db.exec("DELETE FROM incomes")
+      db.exec("DELETE FROM budgets")
+      db.exec("DELETE FROM type_allocations")
+      db.exec("DELETE FROM expense_categories")
+      db.exec("DELETE FROM expense_types")
+      db.exec("DELETE FROM income_categories")
+      db.exec("DELETE FROM wallets")
+      // Master tables
+      db.exec("DELETE FROM wallet_categories")
+      db.exec("DELETE FROM investment_categories")
+
+      // Insert from SQL dump
       for (const line of sqlText.split("\n")) {
         const stmt = line.trim()
         if (!stmt || stmt.startsWith("--") || stmt.toUpperCase().startsWith("PRAGMA")) continue
@@ -47,6 +70,8 @@ export async function POST(req: NextRequest) {
     })()
 
     db.exec("PRAGMA foreign_keys = ON")
+
+    runMigrations()
 
     return NextResponse.json({ success: true, message: "Data berhasil diimport" })
   } catch (err) {
