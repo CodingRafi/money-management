@@ -307,6 +307,9 @@ export function runMigrations() {
   try {
     db.exec(`ALTER TABLE investments ADD COLUMN closed_at TEXT`)
   } catch { /* column already exists */ }
+
+  // Remove INVESTASI from master income defaults — it should not be a global default
+  db.prepare(`DELETE FROM income_categories WHERE name = 'INVESTASI' AND user_id IS NULL AND year IS NULL`).run()
 }
 
 runMigrations()
@@ -343,15 +346,14 @@ if (!hasWalletCats) {
   stmt.run(uuid(), "KRIPTO",     0, 6)
 }
 
-// Default income categories (master, no user)
+// Default income categories (master, no user) — INVESTASI intentionally excluded
 const hasDefaultIncome = db.prepare("SELECT 1 FROM income_categories WHERE is_default = 1 AND user_id IS NULL LIMIT 1").get()
 if (!hasDefaultIncome) {
   const stmt = db.prepare("INSERT INTO income_categories (id, name, is_default, sort_order) VALUES (?, ?, 1, ?)")
   stmt.run(uuid(), "TETAP",       1)
   stmt.run(uuid(), "BONUS TETAP", 2)
   stmt.run(uuid(), "FREELANCE",   3)
-  stmt.run(uuid(), "INVESTASI",   4)
-  stmt.run(uuid(), "LAINNYA",     5)
+  stmt.run(uuid(), "LAINNYA",     4)
 }
 
 // Default expense types (TETAP, FLEKSIBEL only — MENABUNG removed)

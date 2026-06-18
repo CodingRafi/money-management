@@ -48,7 +48,7 @@ function BarTooltip({ active, payload, label }: { active?: boolean; payload?: To
   const expense = payload.find(p => p.name === "Pengeluaran")?.value     ?? 0
   const total   = income + invest
   const sisa    = total - expense
-  const bars    = payload.filter(p => p.name !== "Total Efektif")
+  const bars    = payload.filter(p => p.name !== "Total Efektif" && p.name !== "Selisih")
   return (
     <div className="rounded-lg border bg-background px-3 py-2 text-xs shadow-lg space-y-1 min-w-[190px]">
       <p className="font-semibold mb-1">{label}</p>
@@ -116,7 +116,7 @@ export function WealthCharts({ data, year }: { data: WealthOverviewData; year: n
     label:       String(r.year),
     Pemasukan:   r.income,
     Pengeluaran: r.expense,
-    net:         r.income - r.expense,
+    Selisih:     r.income - r.expense,
   }))
 
   return (
@@ -239,6 +239,7 @@ export function WealthCharts({ data, year }: { data: WealthOverviewData; year: n
                   <Tooltip content={<BarTooltip />} cursor={{ fill: "rgba(0,0,0,0.04)" }} />
                   <Bar dataKey="Pemasukan"   fill="#3b82f6" radius={[3,3,0,0]} maxBarSize={28} />
                   <Bar dataKey="Pengeluaran" fill="#f97316" radius={[3,3,0,0]} maxBarSize={28} />
+                  <Bar dataKey="Selisih"     fill="#10b981" radius={[3,3,0,0]} maxBarSize={28} />
                 </BarChart>
               </ResponsiveContainer>
 
@@ -249,8 +250,8 @@ export function WealthCharts({ data, year }: { data: WealthOverviewData; year: n
                     <span className="font-medium text-muted-foreground w-12">{r.label}</span>
                     <span className="text-blue-600 tabular-nums flex-1 text-right">{formatRp(r.Pemasukan)}</span>
                     <span className="text-orange-500 tabular-nums w-36 text-right">{formatRp(r.Pengeluaran)}</span>
-                    <span className={`font-semibold tabular-nums w-36 text-right ${r.net >= 0 ? "text-emerald-600" : "text-red-500"}`}>
-                      {r.net >= 0 ? "+" : ""}{formatRp(r.net)}
+                    <span className={`font-semibold tabular-nums w-36 text-right ${r.Selisih >= 0 ? "text-emerald-600" : "text-red-500"}`}>
+                      {r.Selisih >= 0 ? "+" : ""}{formatRp(r.Selisih)}
                     </span>
                   </div>
                 ))}

@@ -32,6 +32,8 @@ export function IncomeForm({
     ? now.toISOString().split("T")[0]
     : `${year}-${String(month).padStart(2, "0")}-01`)
 
+  const defaultCategoryId = defaultValues?.categoryId ?? categories.find((c) => c.name === "INVESTASI")?.id ?? ""
+
   return (
     <form action={action} className="space-y-3">
       <input type="hidden" name="year" value={year} />
@@ -56,7 +58,7 @@ export function IncomeForm({
       <div className="grid grid-cols-2 gap-3">
         <div className="flex flex-col gap-1">
           <label className="text-sm font-medium">Kategori</label>
-          <select name="category_id" defaultValue={defaultValues?.categoryId ?? ""} className={selectClass}>
+          <select name="category_id" defaultValue={defaultCategoryId} className={selectClass}>
             <option value="">— Pilih kategori —</option>
             {categories.map((c) => (
               <option key={c.id} value={c.id}>{c.name}</option>

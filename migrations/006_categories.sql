@@ -51,8 +51,7 @@ FROM (VALUES
   ('TETAP',       1),
   ('BONUS TETAP', 2),
   ('FREELANCE',   3),
-  ('INVESTASI',   4),
-  ('LAINNYA',     5)
+  ('LAINNYA',     4)
 ) AS v(name, n)
 WHERE NOT EXISTS (
   SELECT 1 FROM income_categories WHERE is_default = true AND user_id IS NULL

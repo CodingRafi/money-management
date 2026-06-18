@@ -38,12 +38,6 @@ export async function BudgetSection({
                 {data.overBudgetCount} over budget
               </Badge>
             )}
-            <Link
-              href="/rekap"
-              className="flex items-center gap-0.5 text-xs text-muted-foreground hover:text-foreground transition-colors"
-            >
-              Lihat semua <ChevronRight className="h-3 w-3" />
-            </Link>
           </div>
         </div>
       </CardHeader>

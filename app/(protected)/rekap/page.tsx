@@ -3,6 +3,7 @@ import { LOCAL_USER_ID } from "@/lib/auth-simple"
 import { Plus } from "lucide-react"
 import Link from "next/link"
 import { RekapTabs, type YearChartEntry } from "./_components/rekap-tabs"
+import { YearNavigator } from "./_components/year-navigator"
 
 type YearRow = {
   year: number
@@ -99,6 +100,11 @@ export default async function RekapPage() {
               Cashflow {currentYear}
             </Link>
           )}
+
+          <div className="pt-1">
+            <p className="text-xs text-muted-foreground mb-2">Tambah tahun</p>
+            <YearNavigator />
+          </div>
         </div>
       </RekapTabs>
     </div>
