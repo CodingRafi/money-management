@@ -113,10 +113,11 @@ export function WealthCharts({ data, year }: { data: WealthOverviewData; year: n
   }))
 
   const yearlyChartData = data.yearlyGrowth.map(r => ({
-    label:       String(r.year),
-    Pemasukan:   r.income,
-    Pengeluaran: r.expense,
-    Selisih:     r.income - r.expense,
+    label:             String(r.year),
+    Pemasukan:         r.income,
+    "Hasil Investasi": r.investGain,
+    Pengeluaran:       r.expense,
+    Selisih:           r.income + r.investGain - r.expense,
   }))
 
   return (
@@ -205,13 +206,13 @@ export function WealthCharts({ data, year }: { data: WealthOverviewData; year: n
                     <XAxis dataKey="label" tick={{ fontSize: 9 }} axisLine={false} tickLine={false} />
                     <Tooltip content={<BarTooltip />} cursor={{ fill: "rgba(0,0,0,0.04)" }} />
                     <Bar dataKey="Pemasukan"         fill="#10b981" radius={[0,0,0,0]} maxBarSize={14} stackId="efektif" />
-                    <Bar dataKey="Hasil Investasi"   fill="#0ea5e9" radius={[2,2,0,0]} maxBarSize={14} stackId="efektif" />
+                    <Bar dataKey="Hasil Investasi"   fill="#eab308" radius={[2,2,0,0]} maxBarSize={14} stackId="efektif" />
                     <Bar dataKey="Pengeluaran"       fill="#ef4444" radius={[2,2,0,0]} maxBarSize={14} />
                   </BarChart>
                 </ResponsiveContainer>
                 <div className="flex flex-wrap items-center gap-x-4 gap-y-1 mt-1 text-xs text-muted-foreground">
                   <span className="flex items-center gap-1.5"><span className="h-2 w-2 rounded-sm bg-emerald-500" />Pemasukan</span>
-                  <span className="flex items-center gap-1.5"><span className="h-2 w-2 rounded-sm bg-sky-500" />Hasil Investasi</span>
+                  <span className="flex items-center gap-1.5"><span className="h-2 w-2 rounded-sm bg-yellow-500" />Hasil Investasi</span>
                   <span className="flex items-center gap-1.5"><span className="h-2 w-2 rounded-sm bg-violet-500" />Total Efektif (stack)</span>
                   <span className="flex items-center gap-1.5"><span className="h-2 w-2 rounded-sm bg-red-500" />Pengeluaran</span>
                 </div>
@@ -227,7 +228,7 @@ export function WealthCharts({ data, year }: { data: WealthOverviewData; year: n
       <Card>
         <CardHeader className="pb-2">
           <CardTitle className="text-sm font-semibold">Pertumbuhan Kekayaan per Tahun</CardTitle>
-          <p className="text-xs text-muted-foreground">Pemasukan vs pengeluaran — selisih = kekayaan baru ditambahkan</p>
+          <p className="text-xs text-muted-foreground">Pemasukan + hasil investasi vs pengeluaran — selisih = kekayaan baru ditambahkan</p>
         </CardHeader>
         <CardContent className="pt-0">
           {hasYearlyData ? (
@@ -237,27 +238,32 @@ export function WealthCharts({ data, year }: { data: WealthOverviewData; year: n
                   <CartesianGrid strokeDasharray="3 3" stroke="rgba(0,0,0,0.06)" vertical={false} />
                   <XAxis dataKey="label" tick={{ fontSize: 11 }} axisLine={false} tickLine={false} />
                   <Tooltip content={<BarTooltip />} cursor={{ fill: "rgba(0,0,0,0.04)" }} />
-                  <Bar dataKey="Pemasukan"   fill="#3b82f6" radius={[3,3,0,0]} maxBarSize={28} />
-                  <Bar dataKey="Pengeluaran" fill="#f97316" radius={[3,3,0,0]} maxBarSize={28} />
-                  <Bar dataKey="Selisih"     fill="#10b981" radius={[3,3,0,0]} maxBarSize={28} />
+                  <Bar dataKey="Pemasukan"         fill="#3b82f6" radius={[0,0,0,0]} maxBarSize={28} stackId="efektif" />
+                  <Bar dataKey="Hasil Investasi"   fill="#eab308" radius={[3,3,0,0]} maxBarSize={28} stackId="efektif" />
+                  <Bar dataKey="Pengeluaran"       fill="#f97316" radius={[3,3,0,0]} maxBarSize={28} />
+                  <Bar dataKey="Selisih"           fill="#10b981" radius={[3,3,0,0]} maxBarSize={28} />
                 </BarChart>
               </ResponsiveContainer>
 
               {/* Yearly summary table */}
               <div className="mt-4 space-y-2">
                 {yearlyChartData.map(r => (
-                  <div key={r.label} className="flex items-center justify-between text-xs">
-                    <span className="font-medium text-muted-foreground w-12">{r.label}</span>
+                  <div key={r.label} className="flex items-center justify-between text-xs gap-2">
+                    <span className="font-medium text-muted-foreground w-12 shrink-0">{r.label}</span>
                     <span className="text-blue-600 tabular-nums flex-1 text-right">{formatRp(r.Pemasukan)}</span>
-                    <span className="text-orange-500 tabular-nums w-36 text-right">{formatRp(r.Pengeluaran)}</span>
-                    <span className={`font-semibold tabular-nums w-36 text-right ${r.Selisih >= 0 ? "text-emerald-600" : "text-red-500"}`}>
+                    {r["Hasil Investasi"] !== 0 && (
+                      <span className="text-yellow-600 tabular-nums w-28 text-right">{r["Hasil Investasi"] >= 0 ? "+" : ""}{formatRp(r["Hasil Investasi"])}</span>
+                    )}
+                    <span className="text-orange-500 tabular-nums w-28 text-right">{formatRp(r.Pengeluaran)}</span>
+                    <span className={`font-semibold tabular-nums w-28 text-right ${r.Selisih >= 0 ? "text-emerald-600" : "text-red-500"}`}>
                       {r.Selisih >= 0 ? "+" : ""}{formatRp(r.Selisih)}
                     </span>
                   </div>
                 ))}
               </div>
-              <div className="flex items-center gap-4 mt-3 text-xs text-muted-foreground">
+              <div className="flex flex-wrap items-center gap-x-4 gap-y-1 mt-3 text-xs text-muted-foreground">
                 <span className="flex items-center gap-1.5"><span className="h-2 w-2 rounded-sm bg-blue-500" />Pemasukan</span>
+                <span className="flex items-center gap-1.5"><span className="h-2 w-2 rounded-sm bg-yellow-500" />Hasil Investasi</span>
                 <span className="flex items-center gap-1.5"><span className="h-2 w-2 rounded-sm bg-orange-500" />Pengeluaran</span>
                 <span className="flex items-center gap-1.5"><span className="h-2 w-2 rounded-sm bg-emerald-500" />Selisih (tabungan)</span>
               </div>

@@ -1,6 +1,6 @@
 "use client"
 
-import { useState } from "react"
+import { useActionState, useState } from "react"
 import { Input } from "@/components/ui/input"
 import { Button } from "@/components/ui/button"
 import Link from "next/link"
@@ -11,17 +11,18 @@ const selectClass =
 interface Props {
   wallets: { id: string; name: string }[]
   goals: { id: string; name: string; color: string | null }[]
-  action: (formData: FormData) => Promise<void>
+  action: (prevState: { error?: string } | null, formData: FormData) => Promise<{ error?: string } | null>
   cancelHref: string
 }
 
 export function TransactionForm({ wallets, goals, action, cancelHref }: Props) {
   const [type, setType] = useState<"BUY" | "SELL" | "DIVIDEND">("BUY")
+  const [state, formAction, pending] = useActionState(action, null)
 
   const today = new Date().toISOString().split("T")[0]
 
   return (
-    <form action={action} className="space-y-3">
+    <form action={formAction} className="space-y-3">
       <input type="hidden" name="type" value={type} />
 
       <div className="flex flex-col gap-1">
@@ -166,17 +167,24 @@ export function TransactionForm({ wallets, goals, action, cancelHref }: Props) {
         </label>
       </div>
 
+      {state?.error && (
+        <div className="rounded-md border border-red-300 bg-red-50 px-3 py-2.5 text-sm text-red-700 dark:bg-red-950/30 dark:text-red-400 dark:border-red-800">
+          {state.error}
+        </div>
+      )}
+
       <div className="flex gap-2">
         <Button
           type="submit"
           size="sm"
+          disabled={pending}
           className={
             type === "BUY"      ? "bg-emerald-600 hover:bg-emerald-700 text-white" :
             type === "SELL"     ? "bg-red-600 hover:bg-red-700 text-white" :
                                   "bg-teal-600 hover:bg-teal-700 text-white"
           }
         >
-          {type === "DIVIDEND" ? "Catat Dividen" : `Catat ${type}`}
+          {pending ? "Menyimpan..." : type === "DIVIDEND" ? "Catat Dividen" : `Catat ${type}`}
         </Button>
         <Button asChild variant="outline" size="sm">
           <Link href={cancelHref}>Batal</Link>

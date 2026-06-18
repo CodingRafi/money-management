@@ -188,9 +188,17 @@ export async function addInvestmentTransaction(investmentId: string, year: strin
   redirect(`/rekap/${year}/investasi/${investmentId}`)
 }
 
-export async function addInvestmentTransactionDirect(investmentId: string, formData: FormData) {
+export async function addInvestmentTransactionDirect(
+  investmentId: string,
+  _prevState: { error?: string } | null,
+  formData: FormData,
+): Promise<{ error?: string } | null> {
   const userId = await requireUserIdAction()
-  execAddInvestmentTransaction(investmentId, userId, formData)
+  try {
+    execAddInvestmentTransaction(investmentId, userId, formData)
+  } catch (e) {
+    return { error: (e as Error).message }
+  }
   revalidatePath("/dompet")
   revalidatePath("/investasi")
   revalidatePath("/dashboard")

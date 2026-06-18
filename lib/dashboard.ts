@@ -19,7 +19,7 @@ export type WealthOverviewData = {
   piutangMacetSisa: number
   hutangSisa: number
   monthlyGrowth: { month: number; label: string; income: number; expense: number; investGain: number }[]
-  yearlyGrowth:  { year: number; income: number; expense: number }[]
+  yearlyGrowth:  { year: number; income: number; expense: number; investGain: number }[]
   emergencyFundMonths: number
   avgMonthlyExpense: number
 }
@@ -133,6 +133,25 @@ export function getWealthOverview(userId: string, year: number): WealthOverviewD
     GROUP BY year ORDER BY year
   `).all(userId, userId) as { year: number; income: number; expense: number }[]
 
+  const yearlyCapitalRows = db.prepare(`
+    SELECT CAST(strftime('%Y', i.closed_at) AS INTEGER) AS year,
+      COALESCE(SUM(CASE WHEN it.type='SELL' THEN it.total_amount ELSE 0 END), 0) -
+      COALESCE(SUM(CASE WHEN it.type='BUY'  THEN it.total_amount ELSE 0 END), 0) AS capital_gain
+    FROM investment_transactions it
+    JOIN investments i ON i.id = it.investment_id
+    WHERE i.user_id = ? AND i.is_closed = 1
+    GROUP BY year
+  `).all(userId) as { year: number; capital_gain: number }[]
+
+  const yearlyDividenRows = db.prepare(`
+    SELECT CAST(strftime('%Y', it.date) AS INTEGER) AS year,
+      COALESCE(SUM(it.total_amount), 0) AS dividen
+    FROM investment_transactions it
+    JOIN investments i ON i.id = it.investment_id
+    WHERE i.user_id = ? AND it.type = 'DIVIDEND'
+    GROUP BY year
+  `).all(userId) as { year: number; dividen: number }[]
+
   const MONTH_LABELS = ["Jan","Feb","Mar","Apr","Mei","Jun","Jul","Agu","Sep","Okt","Nov","Des"]
   const monthlyGrowth = Array.from({ length: 12 }, (_, i) => {
     const m    = i + 1
@@ -177,7 +196,13 @@ export function getWealthOverview(userId: string, year: number): WealthOverviewD
     piutangMacetSisa:    piutangMacetRow.sisa,
     hutangSisa:          hutangRow.sisa,
     monthlyGrowth,
-    yearlyGrowth:      yearlyRows,
+    yearlyGrowth: yearlyRows.map(r => ({
+      year:       r.year,
+      income:     r.income,
+      expense:    r.expense,
+      investGain: (yearlyCapitalRows.find(c => c.year === r.year)?.capital_gain ?? 0)
+                + (yearlyDividenRows.find(d => d.year === r.year)?.dividen       ?? 0),
+    })),
     emergencyFundMonths: avgMonthlyExpense > 0 ? totalLiquid / avgMonthlyExpense : 0,
     avgMonthlyExpense,
   }
