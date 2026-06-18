@@ -251,9 +251,7 @@ export function WealthCharts({ data, year }: { data: WealthOverviewData; year: n
                   <div key={r.label} className="flex items-center justify-between text-xs gap-2">
                     <span className="font-medium text-muted-foreground w-12 shrink-0">{r.label}</span>
                     <span className="text-blue-600 tabular-nums flex-1 text-right">{formatRp(r.Pemasukan)}</span>
-                    {r["Hasil Investasi"] !== 0 && (
-                      <span className="text-yellow-600 tabular-nums w-28 text-right">{r["Hasil Investasi"] >= 0 ? "+" : ""}{formatRp(r["Hasil Investasi"])}</span>
-                    )}
+                    <span className="text-yellow-600 tabular-nums w-28 text-right">{r["Hasil Investasi"] >= 0 ? "+" : ""}{formatRp(r["Hasil Investasi"])}</span>
                     <span className="text-orange-500 tabular-nums w-28 text-right">{formatRp(r.Pengeluaran)}</span>
                     <span className={`font-semibold tabular-nums w-28 text-right ${r.Selisih >= 0 ? "text-emerald-600" : "text-red-500"}`}>
                       {r.Selisih >= 0 ? "+" : ""}{formatRp(r.Selisih)}
