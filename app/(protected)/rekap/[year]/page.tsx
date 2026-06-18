@@ -85,7 +85,7 @@ export default async function YearDetailPage({
   const showNew    = sp.new === "1" && isActive
   const editId     = typeof sp.edit === "string" && isActive ? sp.edit as string : null
   const showReport = sp.report === "1" && tab === "pengeluaran"
-  const stat       = sp.stat === "wealth_growth" ? "wealth_growth" : null
+  const stat       = sp.stat === "wealth_growth" ? "wealth_growth" : sp.stat === "saving_rate" ? "saving_rate" : null
 
   // Best-year helper
   const bestYearCTE = (table: string) => `
@@ -303,6 +303,9 @@ export default async function YearDetailPage({
   const avgWealthNominal = wealthData.length > 0 ? wealthData.reduce((s, d) => s + d.nominal, 0) / wealthData.length : null
   const avgWealthPct     = wealthData.length > 0 ? wealthData.reduce((s, d) => s + d.pct,     0) / wealthData.length : null
 
+  const savingRateData = wealthData.map(d => ({ label: d.label, value: d.pct }))
+  const avgSavingRate  = savingRateData.length > 0 ? savingRateData.reduce((s, d) => s + d.value, 0) / savingRateData.length : null
+
   const MONTH_ABBRS_CHART = ["JAN", "FEB", "MAR", "APR", "MEI", "JUN", "JUL", "AGU", "SEP", "OKT", "NOV", "DES"]
 
   const incomeCatTotals = bdCategoryOrder.map((cat) => ({
@@ -416,31 +419,46 @@ export default async function YearDetailPage({
                 </CardContent>
               </Card>
             </Link>
-            <Link href={stat === "wealth_growth" ? `${base}?view=report` : `${base}?view=report&stat=wealth_growth`} className="block col-span-2">
-              <Card className={`transition-all hover:shadow-md cursor-pointer ${stat === "wealth_growth" ? "ring-2 ring-cyan-500" : ""}`}>
-                <CardContent className="p-5">
-                  <p className="text-xs text-muted-foreground mb-2">Kenaikan Kekayaan</p>
-                  <div className="flex items-end gap-6">
-                    <div>
-                      <p className="text-[10px] text-muted-foreground mb-0.5">AVG Nominal</p>
-                      <p className={`text-lg font-bold tabular-nums ${avgWealthNominal === null ? "text-muted-foreground" : avgWealthNominal >= 0 ? "text-emerald-600" : "text-red-600"}`}>
-                        {avgWealthNominal === null ? "—" : `${avgWealthNominal > 0 ? "+" : ""}${formatRupiah(avgWealthNominal)}`}
-                      </p>
-                    </div>
-                    <div>
-                      <p className="text-[10px] text-muted-foreground mb-0.5">AVG % dari Pendapatan</p>
-                      <p className={`text-lg font-bold tabular-nums ${avgWealthPct === null ? "text-muted-foreground" : avgWealthPct >= 0 ? "text-emerald-600" : "text-red-600"}`}>
-                        {avgWealthPct === null ? "—" : `${avgWealthPct > 0 ? "+" : ""}${avgWealthPct.toFixed(1)}%`}
-                      </p>
+            <Link href={stat === "wealth_growth" ? `${base}?view=report` : `${base}?view=report&stat=wealth_growth`} className="block">
+              <Card className={`transition-all hover:shadow-md cursor-pointer h-full ${stat === "wealth_growth" ? "ring-2 ring-cyan-500" : ""}`}>
+                <CardContent className="p-5 flex flex-col justify-between h-full">
+                  <div>
+                    <p className="text-xs text-muted-foreground mb-2">Kenaikan Kekayaan</p>
+                    <div className="flex items-end gap-4 flex-wrap">
+                      <div>
+                        <p className="text-[10px] text-muted-foreground mb-0.5">AVG Nominal</p>
+                        <p className={`text-lg font-bold tabular-nums ${avgWealthNominal === null ? "text-muted-foreground" : avgWealthNominal >= 0 ? "text-emerald-600" : "text-red-600"}`}>
+                          {avgWealthNominal === null ? "—" : `${avgWealthNominal > 0 ? "+" : ""}${formatRupiah(avgWealthNominal)}`}
+                        </p>
+                      </div>
                     </div>
                   </div>
                   <p className="text-xs text-muted-foreground mt-2">{stat === "wealth_growth" ? "▲ Tutup chart" : "▼ Lihat chart"}</p>
                 </CardContent>
               </Card>
             </Link>
+            <Link href={stat === "saving_rate" ? `${base}?view=report` : `${base}?view=report&stat=saving_rate`} className="block">
+              <Card className={`transition-all hover:shadow-md cursor-pointer h-full ${stat === "saving_rate" ? "ring-2 ring-blue-500" : ""}`}>
+                <CardContent className="p-5 flex flex-col justify-between h-full">
+                  <div>
+                    <p className="text-xs text-muted-foreground mb-2">Saving Rate</p>
+                    <div className="flex items-end gap-4 flex-wrap">
+                      <div>
+                        <p className="text-[10px] text-muted-foreground mb-0.5">AVG per Bulan</p>
+                        <p className={`text-lg font-bold tabular-nums ${avgSavingRate === null ? "text-muted-foreground" : avgSavingRate >= 0 ? "text-blue-600" : "text-red-600"}`}>
+                          {avgSavingRate === null ? "—" : `${avgSavingRate > 0 ? "+" : ""}${avgSavingRate.toFixed(1)}%`}
+                        </p>
+                      </div>
+                    </div>
+                  </div>
+                  <p className="text-xs text-muted-foreground mt-2">{stat === "saving_rate" ? "▲ Tutup chart" : "▼ Lihat chart"}</p>
+                </CardContent>
+              </Card>
+            </Link>
           </div>
 
           {stat === "wealth_growth" && <StatChart type="wealth_growth" data={wealthData} />}
+          {stat === "saving_rate"   && <StatChart type="saving_rate"   data={savingRateData} />}
 
           {!hasData && (
             <p className="text-sm text-muted-foreground text-center py-6">

@@ -396,6 +396,37 @@ export function getLoans(userId: string): LoanData {
   }
 }
 
+export type CategoryBreakdownItem = { name: string; total: number }
+export type CategoryBreakdownData = {
+  expenses: CategoryBreakdownItem[]
+  incomes:  CategoryBreakdownItem[]
+}
+
+export function getCategoryBreakdown(userId: string, month: number, year: number): CategoryBreakdownData {
+  const expRows = db.prepare(`
+    SELECT COALESCE(ec.name, 'Lainnya') AS name, COALESCE(SUM(e.amount), 0) AS total
+    FROM expenses e
+    LEFT JOIN expense_categories ec ON ec.id = e.category_id
+    WHERE e.user_id = ? AND e.month = ? AND e.year = ?
+    GROUP BY ec.name
+    ORDER BY total DESC
+  `).all(userId, month, year) as CategoryBreakdownItem[]
+
+  const incRows = db.prepare(`
+    SELECT COALESCE(ic.name, 'Lainnya') AS name, COALESCE(SUM(i.amount), 0) AS total
+    FROM incomes i
+    LEFT JOIN income_categories ic ON ic.id = i.category_id
+    WHERE i.user_id = ? AND i.month = ? AND i.year = ?
+    GROUP BY ic.name
+    ORDER BY total DESC
+  `).all(userId, month, year) as CategoryBreakdownItem[]
+
+  return {
+    expenses: expRows.filter(r => r.total > 0),
+    incomes:  incRows.filter(r => r.total > 0),
+  }
+}
+
 // ── Per-module recent transactions ──────────────────────────────────────────
 
 export type RecentCashflowTx = {

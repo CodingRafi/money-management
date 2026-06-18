@@ -13,6 +13,7 @@ import { WalletSection, WalletSkeleton } from "@/components/dashboard/WalletCard
 import { InvestmentSection, InvestmentSkeleton } from "@/components/dashboard/InvestmentCard"
 import { LoanSection, LoanSkeleton } from "@/components/dashboard/LoanCard"
 import { RecentTransactionsSection, RecentTransactionsSkeleton } from "@/components/dashboard/RecentTransactions"
+import { CategorySection, CategorySkeleton } from "@/components/dashboard/CategorySection"
 
 const MONTHS = [
   "Januari", "Februari", "Maret", "April", "Mei", "Juni",
@@ -107,6 +108,10 @@ export default async function DashboardPage({
 
         <Suspense fallback={<CashflowSkeleton />}>
           <CashflowSection userId={userId} month={month} year={year} />
+        </Suspense>
+
+        <Suspense fallback={<CategorySkeleton />}>
+          <CategorySection userId={userId} month={month} year={year} />
         </Suspense>
 
         <Suspense fallback={<BudgetSkeleton />}>

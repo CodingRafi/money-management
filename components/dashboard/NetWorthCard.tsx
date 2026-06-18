@@ -1,7 +1,44 @@
 import { Card, CardContent } from "@/components/ui/card"
 import { getWealthOverview } from "@/lib/dashboard"
-import { Shield } from "lucide-react"
 import { WealthCharts } from "./WealthCharts"
+
+function EmergencyGauge({ months }: { months: number }) {
+  const target = 6
+  const pct    = Math.min(months / target, 1)
+  const r = 32; const cx = 40; const cy = 40
+  const circ = 2 * Math.PI * r
+  const dash = pct * circ
+  const color  = months >= 6 ? "#10b981" : months >= 3 ? "#f59e0b" : "#ef4444"
+  const status = months >= 6 ? "AMAN" : months >= 3 ? "CUKUP" : "KURANG"
+  return (
+    <div className="flex items-center gap-4 border-t border-border mt-4 pt-3">
+      <div className="relative shrink-0">
+        <svg width="80" height="80" viewBox="0 0 80 80">
+          <circle cx={cx} cy={cy} r={r} fill="none" strokeWidth="7" stroke="#e5e7eb" />
+          <circle
+            cx={cx} cy={cy} r={r} fill="none" strokeWidth="7"
+            stroke={color}
+            strokeDasharray={`${dash} ${circ}`}
+            strokeLinecap="round"
+            transform={`rotate(-90 ${cx} ${cy})`}
+          />
+        </svg>
+        <div className="absolute inset-0 flex flex-col items-center justify-center">
+          <span className="text-base font-bold tabular-nums leading-none" style={{ color }}>{months.toFixed(1)}</span>
+          <span className="text-[9px] text-muted-foreground leading-none mt-0.5">bulan</span>
+        </div>
+      </div>
+      <div className="flex-1">
+        <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground mb-0.5">Dana Darurat (liquid)</p>
+        <p className="text-sm font-bold" style={{ color }}>{status}</p>
+        <p className="text-xs text-muted-foreground mt-0.5">Target {target} bulan · kini {months.toFixed(1)} bulan</p>
+        <div className="mt-1.5 h-1.5 w-full max-w-[120px] bg-muted rounded-full overflow-hidden">
+          <div className="h-full rounded-full transition-all" style={{ width: `${pct * 100}%`, backgroundColor: color }} />
+        </div>
+      </div>
+    </div>
+  )
+}
 
 function formatRp(n: number) {
   return new Intl.NumberFormat("id-ID", {
@@ -11,14 +48,6 @@ function formatRp(n: number) {
 
 export async function NetWorthSection({ userId, year }: { userId: string; year: number }) {
   const data = getWealthOverview(userId, year)
-
-  const emergencyStatus =
-    data.emergencyFundMonths >= 6 ? "AMAN"  :
-    data.emergencyFundMonths >= 3 ? "CUKUP" : "KURANG"
-
-  const emergencyColor =
-    emergencyStatus === "AMAN"  ? "text-emerald-600" :
-    emergencyStatus === "CUKUP" ? "text-amber-500"   : "text-red-500"
 
   const totalKekayaanDenganPiutang = data.totalKekayaan + data.piutangSisa
   const totalKekayaanRealistis     = data.totalKekayaan + data.piutangSisa - data.piutangMacetSisa
@@ -69,17 +98,8 @@ export async function NetWorthSection({ userId, year }: { userId: string; year: 
           </div>
 
 
-          {/* Dana darurat indicator */}
           {data.emergencyFundMonths > 0 && (
-            <div className="border-t border-border mt-4 pt-3 flex items-center justify-between">
-              <div className="flex items-center gap-1.5">
-                <Shield className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
-                <span className="text-xs text-muted-foreground">Dana Darurat (liquid)</span>
-              </div>
-              <span className={`text-xs font-semibold ${emergencyColor}`}>
-                {data.emergencyFundMonths.toFixed(1)} bulan · {emergencyStatus}
-              </span>
-            </div>
+            <EmergencyGauge months={data.emergencyFundMonths} />
           )}
         </CardContent>
       </Card>
