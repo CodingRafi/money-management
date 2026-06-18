@@ -32,6 +32,43 @@ export async function setBudget(formData: FormData) {
   revalidatePath("/rekap", "layout")
 }
 
+export async function setCategoryNominal(formData: FormData) {
+  const userId    = await requireUserIdAction()
+  const categoryId = formData.get("category_id") as string
+  const year      = parseInt(formData.get("year") as string)
+  const nominal   = parseFloat(formData.get("nominal") as string)
+
+  if (!categoryId || isNaN(year) || isNaN(nominal)) throw new Error("Invalid input")
+  if (nominal < 0) throw new Error("Nominal must be >= 0")
+
+  const cat = db.prepare("SELECT 1 FROM expense_categories WHERE id = ? AND user_id = ?").get(categoryId, userId)
+  if (!cat) throw new Error("Category not found")
+
+  db.prepare(`
+    INSERT INTO category_nominal_budgets (id, user_id, category_id, year, nominal)
+    VALUES (?, ?, ?, ?, ?)
+    ON CONFLICT (user_id, category_id, year) DO UPDATE SET nominal = excluded.nominal
+  `).run(uuid(), userId, categoryId, year, nominal)
+
+  revalidatePath("/rekap", "layout")
+}
+
+export async function setMaxExpensePct(formData: FormData) {
+  const userId = await requireUserIdAction()
+  const year   = parseInt(formData.get("year") as string)
+  const pct    = parseFloat(formData.get("max_expense_pct") as string)
+  if (isNaN(year) || isNaN(pct)) throw new Error("Invalid input")
+  if (pct < 0 || pct > 100) throw new Error("Percentage must be between 0 and 100")
+
+  db.prepare(`
+    INSERT INTO year_budget_settings (id, user_id, year, max_expense_pct)
+    VALUES (?, ?, ?, ?)
+    ON CONFLICT (user_id, year) DO UPDATE SET max_expense_pct = excluded.max_expense_pct
+  `).run(uuid(), userId, year, pct)
+
+  revalidatePath("/rekap", "layout")
+}
+
 export async function setTypeAllocations(formData: FormData) {
   const userId  = await requireUserIdAction()
   const year    = parseInt(formData.get("year") as string) || new Date().getFullYear()

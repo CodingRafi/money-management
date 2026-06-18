@@ -8,7 +8,6 @@ import { getUsername } from "@/lib/auth-simple"
 import { LOCAL_USER_ID } from "@/lib/auth-simple"
 import { NetWorthSection, NetWorthSkeleton } from "@/components/dashboard/NetWorthCard"
 import { CashflowSection, CashflowSkeleton } from "@/components/dashboard/CashflowCards"
-import { BudgetSection, BudgetSkeleton } from "@/components/dashboard/BudgetCard"
 import { WalletSection, WalletSkeleton } from "@/components/dashboard/WalletCard"
 import { InvestmentSection, InvestmentSkeleton } from "@/components/dashboard/InvestmentCard"
 import { LoanSection, LoanSkeleton } from "@/components/dashboard/LoanCard"
@@ -83,11 +82,11 @@ export default async function DashboardPage({
         </Suspense>
       </div>
 
-      {/* ── Cashflow & Budget — pakai filter bulan ── */}
+      {/* ── Cashflow — pakai filter bulan ── */}
       <div className="space-y-4">
         <div className="sticky top-14 z-10 -mx-4 px-4 py-2 bg-background/95 backdrop-blur border-b flex items-center justify-between">
           <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-            Cashflow &amp; Budget
+            Cashflow
           </p>
           <div className="flex items-center gap-0.5">
             <Button variant="ghost" size="icon" className="h-7 w-7" asChild>
@@ -114,9 +113,6 @@ export default async function DashboardPage({
           <CategorySection userId={userId} month={month} year={year} />
         </Suspense>
 
-        <Suspense fallback={<BudgetSkeleton />}>
-          <BudgetSection userId={userId} month={month} year={year} />
-        </Suspense>
       </div>
 
       <Suspense fallback={<RecentTransactionsSkeleton />}>

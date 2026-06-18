@@ -2,7 +2,7 @@ import { Card, CardContent } from "@/components/ui/card"
 import { getWealthOverview } from "@/lib/dashboard"
 import { WealthCharts } from "./WealthCharts"
 
-function EmergencyGauge({ months }: { months: number }) {
+function EmergencyGauge({ months, avgExpense }: { months: number; avgExpense: number }) {
   const target = 6
   const pct    = Math.min(months / target, 1)
   const r = 32; const cx = 40; const cy = 40
@@ -30,7 +30,9 @@ function EmergencyGauge({ months }: { months: number }) {
       </div>
       <div className="flex-1">
         <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground mb-0.5">Dana Darurat (liquid)</p>
-        <p className="text-sm font-bold" style={{ color }}>{status}</p>
+        <p className="text-sm font-bold" style={{ color }}>{status}
+          <span className="text-xs font-normal text-muted-foreground ml-1">(avg pengeluaran: {formatRp(avgExpense)})</span>
+        </p>
         <p className="text-xs text-muted-foreground mt-0.5">Target {target} bulan · kini {months.toFixed(1)} bulan</p>
         <div className="mt-1.5 h-1.5 w-full max-w-[120px] bg-muted rounded-full overflow-hidden">
           <div className="h-full rounded-full transition-all" style={{ width: `${pct * 100}%`, backgroundColor: color }} />
@@ -99,7 +101,7 @@ export async function NetWorthSection({ userId, year }: { userId: string; year: 
 
 
           {data.emergencyFundMonths > 0 && (
-            <EmergencyGauge months={data.emergencyFundMonths} />
+            <EmergencyGauge months={data.emergencyFundMonths} avgExpense={data.avgMonthlyExpense} />
           )}
         </CardContent>
       </Card>

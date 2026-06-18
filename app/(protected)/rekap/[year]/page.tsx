@@ -54,7 +54,7 @@ type ExpenseRow     = { id: string; date: string; name: string; wallet_id: strin
 type TransferRow    = { id: string; date: string; amount: number; notes: string | null; from_wallet_name: string; from_wallet_color: string | null; to_wallet_name: string; to_wallet_color: string | null }
 type LiquidWallet   = { id: string; name: string; color: string | null }
 type IncomeCatRow   = { id: string; name: string }
-type ExpenseCatRow  = { id: string; name: string; type_name: string; default_percentage: number }
+type ExpenseCatRow  = { id: string; name: string; type_id: string; type_name: string; default_percentage: number }
 
 export default async function YearDetailPage({
   params,
@@ -106,7 +106,7 @@ export default async function YearDetailPage({
 
   const expenseCats = db.prepare<unknown[], ExpenseCatRow>(
     `${bestYearCTE("expense_categories")}
-     SELECT ec.id, ec.name, et.name AS type_name, ec.default_percentage
+     SELECT ec.id, ec.name, ec.type_id, et.name AS type_name, ec.default_percentage
      FROM expense_categories ec
      JOIN expense_types et ON et.id = ec.type_id, best_year
      WHERE ec.user_id = ? AND ec.is_hidden = 0 AND ec.year = best_year.y
@@ -151,7 +151,8 @@ export default async function YearDetailPage({
   const expenseMo: Record<string, number> = {}
   for (const r of incomeMoRows)  incomeMo[String(r.month)]  = r.total
   for (const r of expenseMoRows) expenseMo[String(r.month)] = r.total
-  const avgMonthlyIncome = incomeMoRows.length > 0 ? totalIncome / incomeMoRows.length : null
+  const avgMonthlyIncome   = incomeMoRows.length  > 0 ? totalIncome  / incomeMoRows.length  : null
+  const avgMonthlyExpense  = expenseMoRows.length > 0 ? totalExpense / expenseMoRows.length : null
 
   // expense breakdown by category & month
   const expByCatMonthRows = db.prepare<[string, number]>(
@@ -196,11 +197,31 @@ export default async function YearDetailPage({
   }
 
   // ── Budget % per category per month ───────────────────────────────────────────
-  let budgetRows: { cat_id: string; month: number; pct: number }[] = []
+  let budgetRows:      { cat_id: string; month: number; pct: number }[] = []
+  let typeAllocRows:   { id: string; name: string; allocation: number }[] = []
+  let nominalRows:     { category_id: string; nominal: number }[] = []
+  let maxExpensePct    = 100
   if (view === "report" && detail === "pengeluaran") {
     budgetRows = db.prepare<[string, number]>(
       "SELECT category_id AS cat_id, month, percentage AS pct FROM budgets WHERE user_id = ? AND year = ?"
     ).all(userId, year) as { cat_id: string; month: number; pct: number }[]
+
+    const yearBudgetRow = db.prepare<[string, number]>(
+      "SELECT max_expense_pct FROM year_budget_settings WHERE user_id=? AND year=?"
+    ).get(userId, year) as { max_expense_pct: number } | undefined
+    maxExpensePct = yearBudgetRow?.max_expense_pct ?? 100
+
+    typeAllocRows = db.prepare<[string, number, string, number]>(
+      `SELECT et.id, et.name, COALESCE(ta.percentage, 0) AS allocation
+       FROM expense_types et
+       LEFT JOIN type_allocations ta ON ta.type_id = et.id AND ta.user_id = ? AND ta.year = ?
+       WHERE et.user_id = ? AND et.year = ?
+       ORDER BY et.sort_order`
+    ).all(userId, year, userId, year) as { id: string; name: string; allocation: number }[]
+
+    nominalRows = db.prepare<[string, number]>(
+      "SELECT category_id, nominal FROM category_nominal_budgets WHERE user_id=? AND year=?"
+    ).all(userId, year) as { category_id: string; nominal: number }[]
   }
 
   // ── Transfers ─────────────────────────────────────────────────────────────────
@@ -240,18 +261,6 @@ export default async function YearDetailPage({
   const bdMonthTotals = bdMonths.map((m) => bdCategoryOrder.reduce((s, cat) => s + (bdCatMonthMap.get(cat)?.get(m) ?? 0), 0))
   const bdGrandTotal  = bdMonthTotals.reduce((s, t) => s + t, 0)
 
-  type FreshExpCat = { id: string; name: string; type_name: string; default_percentage: number; months: Record<string, number> }
-  type ExpenseGroup = { typeName: string; cats: FreshExpCat[] }
-  const expGroups: ExpenseGroup[] = []
-  for (const cat of expenseCats) {
-    const last     = expGroups[expGroups.length - 1]
-    const enriched: FreshExpCat = { ...cat, months: expBdSpendMap.get(cat.id) ?? {} }
-    if (!last || last.typeName !== cat.type_name) expGroups.push({ typeName: cat.type_name, cats: [enriched] })
-    else last.cats.push(enriched)
-  }
-  const allExpCats    = expGroups.flatMap((g) => g.cats)
-  const expMonthSpent = bdMonths.map((m) => allExpCats.reduce((s, c) => s + (c.months[String(m)] ?? 0), 0))
-
   const budgetMap = new Map<string, Map<number, number>>()
   for (const row of budgetRows) {
     if (!budgetMap.has(row.cat_id)) budgetMap.set(row.cat_id, new Map())
@@ -259,6 +268,21 @@ export default async function YearDetailPage({
   }
   const catRepPct   = (id: string) => Math.max(0, ...Array.from(budgetMap.get(id)?.values() ?? [0]))
   const getMonthPct = (id: string, m: number) => budgetMap.get(id)?.get(m) ?? catRepPct(id)
+
+  const nominalMap    = new Map(nominalRows.map((r) => [r.category_id, r.nominal]))
+  const typeAllocMap  = new Map(typeAllocRows.map((r) => [r.id, r.allocation]))
+
+  type FreshExpCat = { id: string; name: string; type_id: string; type_name: string; default_percentage: number; months: Record<string, number>; nominal: number | null }
+  type ExpenseGroup = { typeName: string; typeId: string; cats: FreshExpCat[] }
+  const expGroups: ExpenseGroup[] = []
+  for (const cat of expenseCats) {
+    const last     = expGroups[expGroups.length - 1]
+    const enriched: FreshExpCat = { ...cat, months: expBdSpendMap.get(cat.id) ?? {}, nominal: nominalMap.get(cat.id) ?? null }
+    if (!last || last.typeName !== cat.type_name) expGroups.push({ typeName: cat.type_name, typeId: cat.type_id, cats: [enriched] })
+    else last.cats.push(enriched)
+  }
+  const allExpCats    = expGroups.flatMap((g) => g.cats)
+  const expMonthSpent = bdMonths.map((m) => allExpCats.reduce((s, c) => s + (c.months[String(m)] ?? 0), 0))
 
   const needsMap   = new Map(needsChartRows.map((r) => [r.label, r.total]))
   const needsChart = (["PRIMER", "SEKUNDER", "TERSIER"] as const).map((k) => ({ label: k, total: needsMap.get(k) ?? 0 }))
@@ -402,10 +426,16 @@ export default async function YearDetailPage({
                 <CardContent className="p-5 flex flex-col justify-between h-full">
                   <div>
                     <p className="text-xs text-muted-foreground mb-2">Total Pengeluaran</p>
-                    <div className="flex items-end gap-6">
+                    <div className="flex items-end gap-6 flex-wrap">
                       <div>
                         <p className="text-[10px] text-muted-foreground mb-0.5">Nominal</p>
                         <p className="text-lg font-bold text-red-600">{formatRupiah(totalExpense)}</p>
+                      </div>
+                      <div>
+                        <p className="text-[10px] text-muted-foreground mb-0.5">Rata-rata/Bulan</p>
+                        <p className="text-lg font-bold text-red-600">
+                          {avgMonthlyExpense === null ? "—" : formatRupiah(avgMonthlyExpense)}
+                        </p>
                       </div>
                       <div>
                         <p className="text-[10px] text-muted-foreground mb-0.5">AVG % dari Pendapatan</p>
@@ -424,7 +454,13 @@ export default async function YearDetailPage({
                 <CardContent className="p-5 flex flex-col justify-between h-full">
                   <div>
                     <p className="text-xs text-muted-foreground mb-2">Kenaikan Kekayaan</p>
-                    <div className="flex items-end gap-4 flex-wrap">
+                    <div className="flex items-end gap-6 flex-wrap">
+                      <div>
+                        <p className="text-[10px] text-muted-foreground mb-0.5">Total Tahun Ini</p>
+                        <p className={`text-lg font-bold tabular-nums ${!hasData ? "text-muted-foreground" : totalIncome - totalExpense >= 0 ? "text-emerald-600" : "text-red-600"}`}>
+                          {!hasData ? "—" : `${totalIncome - totalExpense > 0 ? "+" : ""}${formatRupiah(totalIncome - totalExpense)}`}
+                        </p>
+                      </div>
                       <div>
                         <p className="text-[10px] text-muted-foreground mb-0.5">AVG Nominal</p>
                         <p className={`text-lg font-bold tabular-nums ${avgWealthNominal === null ? "text-muted-foreground" : avgWealthNominal >= 0 ? "text-emerald-600" : "text-red-600"}`}>
@@ -476,8 +512,8 @@ export default async function YearDetailPage({
                         <thead>
                           <tr className="bg-rose-600 text-white">
                             <th rowSpan={2} className="w-[100px] px-3 py-2.5 text-center font-semibold sticky left-0 bg-rose-600 z-20 border-r border-rose-500">TYPE</th>
-                            <th rowSpan={2} className="w-[150px] px-3 py-2.5 text-left font-semibold sticky left-[80px] bg-rose-600 z-20 border-r border-rose-500">NAMA</th>
-                            <th rowSpan={2} className="min-w-[72px] max-w-[72px] px-3 py-2.5 text-right font-semibold sticky left-[230px] bg-rose-600 z-20 border-r border-rose-500">%</th>
+                            <th rowSpan={2} className="w-[150px] px-3 py-2.5 text-left font-semibold sticky left-14 bg-rose-600 z-20 border-r border-rose-500">NAMA</th>
+                            <th rowSpan={2} className="min-w-[90px] max-w-[90px] px-3 py-2.5 text-right font-semibold sticky left-52 bg-rose-600 z-20 border-r border-rose-500">% / NOMINAL</th>
                             {MONTHS.map((m) => (
                               <th key={m} colSpan={4} className="px-3 py-2.5 text-center font-semibold border-l border-rose-500">{m.toUpperCase()}</th>
                             ))}
@@ -492,48 +528,97 @@ export default async function YearDetailPage({
                           </tr>
                         </thead>
                         <tbody>
-                          {expGroups.map(({ typeName, cats }) =>
-                            cats.map((cat, ci) => {
-                              const isLastInGroup = ci === cats.length - 1
-                              const repPct = catRepPct(cat.id)
-                              return (
-                                <tr key={cat.id} className={`${isLastInGroup ? "border-b-2 border-border" : "border-b border-border/40"} ${ci % 2 === 0 ? "bg-muted/30" : ""}`}>
-                                  <td className={`w-[100px] px-3 py-2.5 text-center font-semibold sticky left-0 z-10 border-r border-border bg-background ${ci === 0 ? "align-top pt-3" : ""}`}>{ci === 0 ? typeName : ""}</td>
-                                  <td className="w-[150px] px-3 py-2.5 font-medium sticky left-[80px] z-10 border-r border-border bg-background">{cat.name}</td>
-                                  <td className="min-w-[72px] max-w-[72px] px-3 py-2.5 text-right tabular-nums sticky left-[230px] z-10 bg-background border-r border-border text-muted-foreground">
-                                    {repPct > 0 ? `${repPct.toFixed(2)}%` : "—"}
-                                  </td>
-                                  {bdMonths.map((m) => {
-                                    const monthPct    = getMonthPct(cat.id, m)
-                                    const monthIncome = incomeMo[String(m)] ?? 0
-                                    const maxBudget   = monthIncome * (monthPct / 100)
-                                    const spent       = cat.months[String(m)] ?? 0
-                                    const sisa        = maxBudget - spent
-                                    const status      = expenseStatus(monthPct, maxBudget, spent)
-                                    const statusCls   = status === "DANGER" ? "bg-red-500 text-white" : status === "WARNING" ? "bg-amber-400 text-white" : "bg-emerald-500 text-white"
-                                    return [
-                                      <td key={`${m}-max`}  className="px-2 py-2.5 text-right tabular-nums text-muted-foreground border-l border-border">{monthPct > 0 ? formatRupiah(maxBudget) : "—"}</td>,
-                                      <td key={`${m}-out`}  className="px-2 py-2.5 text-right tabular-nums">{formatRupiah(spent)}</td>,
-                                      <td key={`${m}-sisa`} className={`px-2 py-2.5 text-right tabular-nums ${sisa < 0 ? "text-red-600 font-medium" : ""}`}>{monthPct > 0 ? formatRupiah(sisa) : "—"}</td>,
-                                      <td key={`${m}-sts`}  className="px-2 py-2.5 text-center border-r border-border/30"><span className={`inline-block rounded px-1.5 py-0.5 text-[10px] font-bold ${statusCls}`}>{status}</span></td>,
-                                    ]
-                                  })}
-                                </tr>
-                              )
-                            })
-                          )}
+                          {expGroups.map(({ typeName, typeId, cats }) => {
+                            const typeAlloc    = typeAllocMap.get(typeId) ?? 0
+                            const fromIncome   = (typeAlloc * maxExpensePct) / 100
+                            return [
+                              /* ── Baris ringkasan tipe ── */
+                              <tr key={`type-${typeId}`} className="bg-rose-50 border-b-2 border-rose-200 text-rose-900">
+                                <td colSpan={2} className="px-3 py-2 font-bold text-sm sticky left-0 z-10 bg-rose-50 border-r border-rose-200">
+                                  {typeName}
+                                </td>
+                                <td className="px-3 py-2 text-right text-xs tabular-nums sticky left-52 z-10 bg-rose-50 border-r border-rose-200 text-rose-700">
+                                  {typeAlloc > 0 ? (
+                                    <span className="leading-tight">
+                                      <span className="block font-semibold">{typeAlloc.toFixed(0)}% pengeluaran</span>
+                                      <span className="text-rose-500">={fromIncome.toFixed(1)}% pendapatan</span>
+                                    </span>
+                                  ) : "—"}
+                                </td>
+                                {bdMonths.map((m) => {
+                                  const monthIncome  = incomeMo[String(m)] ?? 0
+                                  const typeMax      = monthIncome * (fromIncome / 100)
+                                  const typeSpent    = cats.reduce((s, c) => s + (c.months[String(m)] ?? 0), 0)
+                                  const typeSisa     = typeMax - typeSpent
+                                  const typeStatus   = expenseStatus(fromIncome, typeMax, typeSpent)
+                                  const statusCls    = typeStatus === "DANGER" ? "bg-red-500 text-white" : typeStatus === "WARNING" ? "bg-amber-400 text-white" : "bg-emerald-500 text-white"
+                                  return [
+                                    <td key={`${m}-max`}  className="px-2 py-2 text-right tabular-nums text-rose-700 font-semibold border-l border-rose-200">{typeAlloc > 0 && monthIncome > 0 ? formatRupiah(typeMax) : "—"}</td>,
+                                    <td key={`${m}-out`}  className="px-2 py-2 text-right tabular-nums font-semibold">{formatRupiah(typeSpent)}</td>,
+                                    <td key={`${m}-sisa`} className={`px-2 py-2 text-right tabular-nums font-semibold ${typeSisa < 0 ? "text-red-600" : ""}`}>{typeAlloc > 0 && monthIncome > 0 ? formatRupiah(typeSisa) : "—"}</td>,
+                                    <td key={`${m}-sts`}  className="px-2 py-2 text-center border-r border-rose-200/50">
+                                      {typeAlloc > 0 && monthIncome > 0 && <span className={`inline-block rounded px-1.5 py-0.5 text-[10px] font-bold ${statusCls}`}>{typeStatus}</span>}
+                                    </td>,
+                                  ]
+                                })}
+                              </tr>,
+                              /* ── Baris per kategori ── */
+                              ...cats.map((cat, ci) => {
+                                const isLastInGroup = ci === cats.length - 1
+                                const repPct        = catRepPct(cat.id)
+                                const hasNominal    = cat.nominal !== null && cat.nominal > 0
+                                return (
+                                  <tr key={cat.id} className={`${isLastInGroup ? "border-b-2 border-border" : "border-b border-border/40"} ${ci % 2 === 0 ? "bg-muted/20" : ""}`}>
+                                    <td className="w-[100px] px-3 py-2.5 sticky left-0 z-10 border-r border-border bg-background" />
+                                    <td className="w-[150px] px-3 py-2.5 font-medium sticky left-14 z-10 border-r border-border bg-background text-sm">{cat.name}</td>
+                                    <td className="min-w-[90px] max-w-[90px] px-3 py-2.5 text-right tabular-nums sticky left-52 z-10 bg-background border-r border-border text-muted-foreground text-xs">
+                                      {hasNominal
+                                        ? <span className="text-primary font-medium">{formatRupiah(cat.nominal!)}</span>
+                                        : repPct > 0 ? `${repPct.toFixed(2)}%` : "—"}
+                                    </td>
+                                    {bdMonths.map((m) => {
+                                      const monthIncome = incomeMo[String(m)] ?? 0
+                                      const maxBudget   = hasNominal
+                                        ? (cat.nominal ?? 0)
+                                        : monthIncome * (getMonthPct(cat.id, m) / 100)
+                                      const hasBudget   = hasNominal || getMonthPct(cat.id, m) > 0
+                                      const spent       = cat.months[String(m)] ?? 0
+                                      const sisa        = maxBudget - spent
+                                      const status      = expenseStatus(hasBudget ? 1 : 0, maxBudget, spent)
+                                      const statusCls   = status === "DANGER" ? "bg-red-500 text-white" : status === "WARNING" ? "bg-amber-400 text-white" : "bg-emerald-500 text-white"
+                                      return [
+                                        <td key={`${m}-max`}  className="px-2 py-2.5 text-right tabular-nums text-muted-foreground border-l border-border text-xs">{hasBudget ? formatRupiah(maxBudget) : "—"}</td>,
+                                        <td key={`${m}-out`}  className="px-2 py-2.5 text-right tabular-nums text-xs">{formatRupiah(spent)}</td>,
+                                        <td key={`${m}-sisa`} className={`px-2 py-2.5 text-right tabular-nums text-xs ${sisa < 0 ? "text-red-600 font-medium" : ""}`}>{hasBudget ? formatRupiah(sisa) : "—"}</td>,
+                                        <td key={`${m}-sts`}  className="px-2 py-2.5 text-center border-r border-border/30">
+                                          {hasBudget && <span className={`inline-block rounded px-1.5 py-0.5 text-[10px] font-bold ${statusCls}`}>{status}</span>}
+                                        </td>,
+                                      ]
+                                    })}
+                                  </tr>
+                                )
+                              }),
+                            ]
+                          })}
                         </tbody>
                         <tfoot>
-                          <tr className="bg-rose-700 text-white font-bold">
-                            <td className="w-[100px] sticky left-0 bg-rose-700 z-10" />
-                            <td className="w-[150px] sticky left-[100px] bg-rose-700 z-10" />
-                            <td className="min-w-[72px] max-w-[72px] px-3 py-2.5 text-right sticky left-[250px] bg-rose-700 z-10 border-r border-rose-600">TOTAL</td>
-                            {bdMonths.map((m) => [
-                              <td key={`${m}-max`}  className="px-2 py-2.5 border-l border-rose-500" />,
-                              <td key={`${m}-out`}  className="px-2 py-2.5 text-right tabular-nums">{formatRupiah(expMonthSpent[m - 1])}</td>,
-                              <td key={`${m}-sisa`} className="px-2 py-2.5" />,
-                              <td key={`${m}-sts`}  className="px-2 py-2.5" />,
-                            ])}
+                          <tr className="bg-rose-800 text-white font-bold text-xs">
+                            <td colSpan={2} className="px-3 py-2.5 sticky left-0 bg-rose-800 z-10 text-left">TOTAL PENGELUARAN</td>
+                            <td className="px-3 py-2.5 text-right sticky left-[230px] bg-rose-800 z-10 border-r border-rose-700 text-rose-300 text-[11px]">
+                              max {maxExpensePct.toFixed(0)}% pend.
+                            </td>
+                            {bdMonths.map((m) => {
+                              const monthIncome = incomeMo[String(m)] ?? 0
+                              const totalMax    = monthIncome * (maxExpensePct / 100)
+                              const totalSpent  = expMonthSpent[m - 1]
+                              const sisa        = totalMax - totalSpent
+                              return [
+                                <td key={`${m}-max`}  className="px-2 py-2.5 text-right tabular-nums border-l border-rose-700 text-rose-300">{monthIncome > 0 ? formatRupiah(totalMax) : "—"}</td>,
+                                <td key={`${m}-out`}  className="px-2 py-2.5 text-right tabular-nums">{formatRupiah(totalSpent)}</td>,
+                                <td key={`${m}-sisa`} className={`px-2 py-2.5 text-right tabular-nums ${sisa < 0 ? "text-red-300" : "text-emerald-300"}`}>{monthIncome > 0 ? formatRupiah(sisa) : "—"}</td>,
+                                <td key={`${m}-sts`}  className="px-2 py-2.5" />,
+                              ]
+                            })}
                           </tr>
                         </tfoot>
                       </table>

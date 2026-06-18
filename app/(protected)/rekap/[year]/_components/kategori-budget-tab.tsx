@@ -14,9 +14,13 @@ import {
   toggleUserExpenseCategoryVisibility,
   deleteUserExpenseCategory,
 } from "@/app/actions/categories"
-import { setBudget, setTypeAllocations } from "@/app/actions/budget"
+import { setBudget, setTypeAllocations, setMaxExpensePct, setCategoryNominal } from "@/app/actions/budget"
 
 const MONTHS_SHORT = ["Jan","Feb","Mar","Apr","Mei","Jun","Jul","Agu","Sep","Okt","Nov","Des"]
+
+function fmtRp(n: number) {
+  return "Rp " + n.toLocaleString("id-ID")
+}
 
 export type KatIncomeCat = {
   id: string; name: string; color: string | null; is_hidden: boolean
@@ -26,7 +30,7 @@ export type KatExpenseType = {
 }
 export type KatExpenseCat = {
   id: string; name: string; type_id: string; type_name: string
-  is_hidden: boolean; budget_pct: string | null
+  is_hidden: boolean; budget_pct: string | null; nominal_budget: number | null
 }
 
 type Props = {
@@ -38,6 +42,7 @@ type Props = {
   byType: Record<string, KatExpenseCat[]>
   allocTotal: number
   allocOk: boolean
+  maxExpensePct: number
   activeKTab: "income" | "expense"
   editKIncome: string | null
   editKExpense: string | null
@@ -48,7 +53,7 @@ type Props = {
 export function KategoriBudgetTab({
   year, month, base,
   incomeCategories, types, byType,
-  allocTotal, allocOk,
+  allocTotal, allocOk, maxExpensePct,
   activeKTab, editKIncome, editKExpense, allocError, isActive,
 }: Props) {
   const katBase        = base
@@ -176,6 +181,59 @@ export function KategoriBudgetTab({
       {/* ── PENGELUARAN & BUDGET ── */}
       {activeKTab === "expense" && (
         <div className="space-y-4">
+          {/* Batas max pengeluaran */}
+          <Card>
+            <CardHeader className="pb-3">
+              <CardTitle className="text-sm font-medium">Batas Pengeluaran Tahunan {year}</CardTitle>
+              <p className="text-xs text-muted-foreground">
+                Persentase maksimal pendapatan yang boleh digunakan untuk pengeluaran.
+              </p>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              {isActive && (
+                <form action={setMaxExpensePct} className="flex items-center gap-3">
+                  <input type="hidden" name="year" value={year} />
+                  <label className="text-sm font-medium whitespace-nowrap">Max pengeluaran</label>
+                  <Input
+                    name="max_expense_pct"
+                    type="number" step="1" min="0" max="100"
+                    defaultValue={maxExpensePct.toFixed(0)}
+                    className="h-8 w-20 text-right text-sm"
+                  />
+                  <span className="text-sm text-muted-foreground">%</span>
+                  <Button type="submit" size="sm" className="h-8">Simpan</Button>
+                </form>
+              )}
+              {/* Progress bar */}
+              <div className="space-y-1.5">
+                <div className="flex h-4 w-full overflow-hidden rounded-full bg-muted text-[10px] font-semibold">
+                  <div
+                    className="flex items-center justify-center bg-destructive/80 text-destructive-foreground transition-all"
+                    style={{ width: `${maxExpensePct}%` }}
+                  >
+                    {maxExpensePct >= 15 ? `${maxExpensePct.toFixed(0)}%` : ""}
+                  </div>
+                  <div
+                    className="flex items-center justify-center bg-primary/20 text-primary transition-all"
+                    style={{ width: `${100 - maxExpensePct}%` }}
+                  >
+                    {(100 - maxExpensePct) >= 15 ? `${(100 - maxExpensePct).toFixed(0)}%` : ""}
+                  </div>
+                </div>
+                <div className="flex justify-between text-xs text-muted-foreground">
+                  <span className="flex items-center gap-1.5">
+                    <span className="inline-block h-2 w-2 rounded-full bg-destructive/80" />
+                    Pengeluaran ({maxExpensePct.toFixed(0)}%)
+                  </span>
+                  <span className="flex items-center gap-1.5">
+                    <span className="inline-block h-2 w-2 rounded-full bg-primary/40" />
+                    Investasi / Tabungan ({(100 - maxExpensePct).toFixed(0)}%)
+                  </span>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+
           {types.length === 0 && (
             <Card>
               <CardContent className="py-10 text-center text-sm text-muted-foreground">
@@ -189,32 +247,39 @@ export function KategoriBudgetTab({
             <Card>
               <CardHeader className="pb-3">
                 <div className="flex items-center justify-between">
-                  <CardTitle className="text-sm font-medium">Alokasi dari Total Pendapatan</CardTitle>
+                  <CardTitle className="text-sm font-medium">Alokasi Tipe Pengeluaran</CardTitle>
                   <Badge variant={allocOk ? "default" : "destructive"} className="text-xs">
                     Total: {allocTotal.toFixed(0)}%
                   </Badge>
                 </div>
                 <p className="text-xs text-muted-foreground">
-                  Persentase pendapatan yang dialokasikan ke setiap tipe. Total harus 100%.
+                  % dari total pengeluaran ({maxExpensePct.toFixed(0)}% pendapatan). Total harus 100%.
                 </p>
               </CardHeader>
               <CardContent>
                 <form action={isActive ? setTypeAllocations : undefined} className="space-y-3">
                   <input type="hidden" name="year" value={year} />
                   <input type="hidden" name="back_url" value={backUrlExpense} />
-                  {types.map((type, i) => (
-                    <div key={type.id} className="flex items-center gap-3">
-                      <input type="hidden" name={`type_${i}`} value={type.id} />
-                      <span className="w-28 text-sm font-medium">{type.name}</span>
-                      <Input
-                        name={`pct_${i}`}
-                        type="number" step="0.01" min="0" max="100"
-                        defaultValue={parseFloat(type.allocation).toFixed(2)}
-                        className="h-8 w-24 text-right text-sm"
-                      />
-                      <span className="text-sm text-muted-foreground">%</span>
-                    </div>
-                  ))}
+                  {types.map((type, i) => {
+                    const typePct     = parseFloat(type.allocation)
+                    const fromIncome  = (typePct * maxExpensePct) / 100
+                    return (
+                      <div key={type.id} className="flex items-center gap-3">
+                        <input type="hidden" name={`type_${i}`} value={type.id} />
+                        <span className="w-28 text-sm font-medium">{type.name}</span>
+                        <Input
+                          name={`pct_${i}`}
+                          type="number" step="0.01" min="0" max="100"
+                          defaultValue={typePct.toFixed(2)}
+                          className="h-8 w-24 text-right text-sm"
+                        />
+                        <span className="text-sm text-muted-foreground">%</span>
+                        <span className="text-xs text-muted-foreground">
+                          = {fromIncome.toFixed(1)}% pendapatan
+                        </span>
+                      </div>
+                    )
+                  })}
                   {allocError && (
                     <p className="text-sm text-destructive">Total alokasi harus tepat 100%.</p>
                   )}
@@ -226,8 +291,11 @@ export function KategoriBudgetTab({
 
           {/* Kategori per tipe */}
           {types.map((type) => {
-            const cats = byType[type.id] ?? []
-            const isFleksibel = type.name === "FLEKSIBEL"
+            const cats         = byType[type.id] ?? []
+            const isFleksibel  = type.name === "FLEKSIBEL"
+            const typePct      = parseFloat(type.allocation)
+            const fromIncome   = (typePct * maxExpensePct) / 100
+            const totalNominal = cats.reduce((s, c) => s + (c.nominal_budget ?? 0), 0)
             return (
               <Card key={type.id}>
                 <CardHeader className="pb-3">
@@ -237,13 +305,18 @@ export function KategoriBudgetTab({
                     </CardTitle>
                     <div className="flex items-center gap-2">
                       <Badge variant="outline" className="text-xs">
-                        {parseFloat(type.allocation).toFixed(0)}% dari pendapatan
+                        {typePct.toFixed(0)}% pengeluaran = {fromIncome.toFixed(1)}% pendapatan
                       </Badge>
                       {!isFleksibel && (
                         <span className="text-xs text-muted-foreground">Budget {monthName}</span>
                       )}
                     </div>
                   </div>
+                  {totalNominal > 0 && (
+                    <p className="text-xs text-muted-foreground">
+                      Total nominal: <span className="font-medium text-foreground">{fmtRp(totalNominal)}/bln</span>
+                    </p>
+                  )}
                 </CardHeader>
                 <CardContent className="space-y-2">
                   {cats.length === 0 && (
@@ -266,15 +339,34 @@ export function KategoriBudgetTab({
                     ) : (
                       <div
                         key={cat.id}
-                        className={`flex items-center gap-2 rounded-lg border px-3 py-2.5 transition-opacity ${cat.is_hidden ? "opacity-50" : ""}`}
+                        className={`flex flex-wrap items-center gap-2 rounded-lg border px-3 py-2.5 transition-opacity ${cat.is_hidden ? "opacity-50" : ""}`}
                       >
                         <div className="flex flex-1 min-w-0 items-center gap-2">
                           <p className="truncate text-sm font-medium">{cat.name}</p>
                           {cat.is_hidden && <Badge variant="outline" className="text-xs shrink-0">Disembunyikan</Badge>}
                         </div>
 
+                        {/* Nominal input */}
+                        {isActive && (
+                          <form action={setCategoryNominal} className="flex items-center gap-1 shrink-0">
+                            <input type="hidden" name="category_id" value={cat.id} />
+                            <input type="hidden" name="year" value={year} />
+                            <span className="text-xs text-muted-foreground">Rp</span>
+                            <Input
+                              name="nominal"
+                              type="number" step="1000" min="0"
+                              defaultValue={cat.nominal_budget ?? 0}
+                              className="h-7 w-28 text-right text-sm"
+                            />
+                            <Button type="submit" size="sm" variant="outline" className="h-7 px-2 text-xs">
+                              Simpan
+                            </Button>
+                          </form>
+                        )}
+
+                        {/* Budget % input — hanya untuk non-FLEKSIBEL */}
                         {!isFleksibel && isActive && (
-                          <form action={setBudget} className="flex items-center gap-1.5 shrink-0">
+                          <form action={setBudget} className="flex items-center gap-1 shrink-0">
                             <input type="hidden" name="category_id" value={cat.id} />
                             <input type="hidden" name="month" value={month} />
                             <input type="hidden" name="year" value={year} />
@@ -284,7 +376,7 @@ export function KategoriBudgetTab({
                               defaultValue={cat.budget_pct ?? "0"}
                               className="h-7 w-20 text-right text-sm"
                             />
-                            <span className="text-sm text-muted-foreground">%</span>
+                            <span className="text-xs text-muted-foreground">%</span>
                             <Button type="submit" size="sm" variant="outline" className="h-7 px-2 text-xs">
                               Simpan
                             </Button>

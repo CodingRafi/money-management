@@ -21,10 +21,9 @@ export type WealthOverviewData = {
   monthlyGrowth: { month: number; label: string; income: number; expense: number; investGain: number }[]
   yearlyGrowth:  { year: number; income: number; expense: number }[]
   emergencyFundMonths: number
+  avgMonthlyExpense: number
 }
 export type CashflowData    = { totalIncome: number; totalExpense: number; investGain: number; totalEfektif: number; remaining: number; expenseRatio: number; savingRatio: number; incomeCount: number; expenseCount: number }
-export type BudgetItem      = { categoryId: string; categoryName: string; target: number; realisasi: number; status: "AMAN" | "MENDEKATI" | "OVER" }
-export type BudgetData      = { overBudgetCount: number; items: BudgetItem[] }
 export type WalletItem      = { id: string; name: string; balance: number; color: string | null; isLiquid: boolean }
 export type WalletData      = { activeCount: number; items: WalletItem[] }
 export type GoalItem        = { id: string; name: string; totalModal: number; targetAmount: number | null; progress: number | null; status: "ON_TRACK" | "BEHIND" | "COMPLETED" | "NO_TARGET" }
@@ -180,6 +179,7 @@ export function getWealthOverview(userId: string, year: number): WealthOverviewD
     monthlyGrowth,
     yearlyGrowth:      yearlyRows,
     emergencyFundMonths: avgMonthlyExpense > 0 ? totalLiquid / avgMonthlyExpense : 0,
+    avgMonthlyExpense,
   }
 }
 
@@ -257,55 +257,6 @@ export function getCashflow(userId: string, month: number, year: number): Cashfl
     savingRatio:  totalEfektif > 0 ? (remaining    / totalEfektif) * 100 : 0,
     incomeCount:  row.income_count,
     expenseCount: row.expense_count,
-  }
-}
-
-export function getBudget(userId: string, month: number, year: number): BudgetData {
-  const incRow = db.prepare(
-    "SELECT COALESCE(SUM(amount), 0) AS total FROM incomes WHERE user_id=? AND month=? AND year=?"
-  ).get(userId, month, year) as { total: number }
-  const totalIncome = incRow.total
-
-  // Ambil semua budget tahun ini (bukan per bulan), pakai persentase bulan ini kalau ada,
-  // kalau tidak ada fallback ke persentase dari bulan manapun dalam tahun yang sama
-  const allBudgetRows = db.prepare(`
-    SELECT b.category_id, b.month, b.percentage, ec.name AS category_name
-    FROM budgets b
-    JOIN expense_categories ec ON ec.id = b.category_id
-    WHERE b.user_id=? AND b.year=?
-  `).all(userId, year) as { category_id: string; month: number; percentage: number; category_name: string }[]
-
-  // Expense aktual bulan ini per kategori
-  const expenseRows = db.prepare(`
-    SELECT category_id, COALESCE(SUM(amount), 0) AS actual
-    FROM expenses WHERE user_id=? AND month=? AND year=?
-    GROUP BY category_id
-  `).all(userId, month, year) as { category_id: string; actual: number }[]
-  const expenseMap = new Map(expenseRows.map(e => [e.category_id, e.actual]))
-
-  // Grup per kategori: pakai pct bulan ini, fallback ke max pct tahun ini
-  const catMap = new Map<string, { name: string; monthPct: number | null; maxPct: number }>()
-  for (const row of allBudgetRows) {
-    if (!catMap.has(row.category_id)) {
-      catMap.set(row.category_id, { name: row.category_name, monthPct: null, maxPct: 0 })
-    }
-    const cat = catMap.get(row.category_id)!
-    if (row.month === month) cat.monthPct = row.percentage
-    if (row.percentage > cat.maxPct) cat.maxPct = row.percentage
-  }
-
-  const items: BudgetItem[] = Array.from(catMap.entries()).map(([id, cat]) => {
-    const target       = cat.monthPct ?? cat.maxPct
-    const targetAmount = totalIncome * (target / 100)
-    const actual       = expenseMap.get(id) ?? 0
-    const realisasi    = targetAmount > 0 ? (actual / targetAmount) * 100 : 0
-    const status: BudgetItem["status"] = realisasi > 100 ? "OVER" : realisasi >= 80 ? "MENDEKATI" : "AMAN"
-    return { categoryId: id, categoryName: cat.name, target, realisasi, status }
-  })
-
-  return {
-    overBudgetCount: items.filter((i) => i.status === "OVER").length,
-    items: [...items].sort((a, b) => b.realisasi - a.realisasi),
   }
 }
 

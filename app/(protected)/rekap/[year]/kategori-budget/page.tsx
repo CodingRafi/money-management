@@ -16,7 +16,8 @@ import {
 
 type IncomeRaw  = { id: string; name: string; color: string | null; is_hidden: number }
 type TypeRaw    = { id: string; name: string; allocation: number | null }
-type ExpCatRaw  = { id: string; name: string; type_id: string; type_name: string; is_hidden: number; budget_pct: number | null }
+type ExpCatRaw  = { id: string; name: string; type_id: string; type_name: string; is_hidden: number; budget_pct: number | null; nominal_budget: number | null }
+type YearBudgetRaw = { max_expense_pct: number | null }
 
 export default async function KategoriBudgetPage({
   params,
@@ -42,6 +43,11 @@ export default async function KategoriBudgetPage({
   const rawMonth     = typeof sp.bulan === "string" ? parseInt(sp.bulan) : new Date().getMonth() + 1
   const month        = Math.max(1, Math.min(12, isNaN(rawMonth) ? 1 : rawMonth))
 
+  const yearBudgetRow = db.prepare<[string, number], YearBudgetRaw>(
+    "SELECT max_expense_pct FROM year_budget_settings WHERE user_id=? AND year=?"
+  ).get(userId, year) as YearBudgetRaw | undefined
+  const maxExpensePct = yearBudgetRow?.max_expense_pct ?? 100
+
   const katIncomeRows = (db.prepare<[string, number], IncomeRaw>(
     "SELECT id, name, color, is_hidden FROM income_categories WHERE user_id=? AND year=? ORDER BY sort_order, name"
   ).all(userId, year) as IncomeRaw[]).map<KatIncomeCat>((r) => ({ ...r, is_hidden: !!r.is_hidden }))
@@ -54,18 +60,21 @@ export default async function KategoriBudgetPage({
      ORDER BY et.sort_order, et.name`
   ).all(userId, year, userId, year) as TypeRaw[]).map<KatExpenseType>((r) => ({ id: r.id, name: r.name, allocation: String(r.allocation ?? 0) }))
 
-  const katExpCatRows = (db.prepare<[string, number, number, string, number], ExpCatRaw>(
+  const katExpCatRows = (db.prepare<[string, number, number, string, number, string, number], ExpCatRaw>(
     `SELECT ec.id, ec.name, ec.type_id, et.name AS type_name, ec.is_hidden,
-            b.percentage AS budget_pct
+            b.percentage AS budget_pct,
+            nb.nominal AS nominal_budget
      FROM expense_categories ec
      JOIN expense_types et ON et.id = ec.type_id
      LEFT JOIN budgets b ON b.category_id = ec.id AND b.user_id = ? AND b.month = ? AND b.year = ?
+     LEFT JOIN category_nominal_budgets nb ON nb.category_id = ec.id AND nb.user_id = ? AND nb.year = ?
      WHERE ec.user_id = ? AND ec.year = ?
      ORDER BY ec.sort_order, ec.name`
-  ).all(userId, month, year, userId, year) as ExpCatRaw[]).map<KatExpenseCat>((r) => ({
+  ).all(userId, month, year, userId, year, userId, year) as ExpCatRaw[]).map<KatExpenseCat>((r) => ({
     id: r.id, name: r.name, type_id: r.type_id, type_name: r.type_name,
     is_hidden: !!r.is_hidden,
     budget_pct: r.budget_pct != null ? String(r.budget_pct) : null,
+    nominal_budget: r.nominal_budget ?? null,
   }))
 
   const katByType = katExpCatRows.reduce<Record<string, KatExpenseCat[]>>((acc, cat) => {
@@ -74,7 +83,7 @@ export default async function KategoriBudgetPage({
     return acc
   }, {})
   const katAllocTotal = katTypeRows.reduce((s, t) => s + parseFloat(t.allocation), 0)
-  const katAllocOk    = Math.abs(katAllocTotal - 100) <= 0.01
+  const katAllocOk    = Math.abs(katAllocTotal - 100) <= 0.01 || katTypeRows.length === 0
 
   const base = `/rekap/${year}/kategori-budget`
 
@@ -99,6 +108,7 @@ export default async function KategoriBudgetPage({
         byType={katByType}
         allocTotal={katAllocTotal}
         allocOk={katAllocOk}
+        maxExpensePct={maxExpensePct}
         activeKTab={ktab}
         editKIncome={editKIncome}
         editKExpense={editKExpense}

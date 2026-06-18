@@ -86,6 +86,25 @@ db.exec(`
     UNIQUE(user_id, type_id, year)
   );
 
+  CREATE TABLE IF NOT EXISTS year_budget_settings (
+    id               TEXT PRIMARY KEY,
+    user_id          TEXT NOT NULL REFERENCES "user"(id) ON DELETE CASCADE,
+    year             INTEGER NOT NULL,
+    max_expense_pct  REAL NOT NULL DEFAULT 100,
+    created_at       TEXT NOT NULL DEFAULT (datetime('now')),
+    UNIQUE(user_id, year)
+  );
+
+  CREATE TABLE IF NOT EXISTS category_nominal_budgets (
+    id          TEXT PRIMARY KEY,
+    user_id     TEXT NOT NULL REFERENCES "user"(id) ON DELETE CASCADE,
+    category_id TEXT NOT NULL REFERENCES expense_categories(id) ON DELETE CASCADE,
+    year        INTEGER NOT NULL,
+    nominal     REAL NOT NULL DEFAULT 0,
+    created_at  TEXT NOT NULL DEFAULT (datetime('now')),
+    UNIQUE(user_id, category_id, year)
+  );
+
   CREATE TABLE IF NOT EXISTS wallet_categories (
     id         TEXT PRIMARY KEY,
     name       TEXT NOT NULL,
