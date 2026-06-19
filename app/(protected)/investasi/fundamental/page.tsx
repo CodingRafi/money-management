@@ -28,17 +28,23 @@ function scoreBg(s: number) {
 }
 
 const SECTOR_LABEL: Record<string, string> = {
-  BANK:           "Bank",
-  TECH_GENERAL:   "Tech Umum",
-  TECH_SAAS:      "SaaS",
-  TECH_ECOMMERCE: "E-Commerce",
+  BANK:             "Bank",
+  TECH_GENERAL:     "Tech Umum",
+  TECH_SAAS:        "SaaS",
+  TECH_ECOMMERCE:   "E-Commerce",
+  ENERGY_MIGAS:     "Migas",
+  ENERGY_BATUBARA:  "Batu Bara",
+  ENERGY_EBT:       "EBT",
 }
 
 const SECTOR_HREF: Record<string, string> = {
-  BANK:           "/investasi/fundamental/bank",
-  TECH_GENERAL:   "/investasi/fundamental/tech/general",
-  TECH_SAAS:      "/investasi/fundamental/tech/saas",
-  TECH_ECOMMERCE: "/investasi/fundamental/tech/ecommerce",
+  BANK:             "/investasi/fundamental/bank",
+  TECH_GENERAL:     "/investasi/fundamental/tech/general",
+  TECH_SAAS:        "/investasi/fundamental/tech/saas",
+  TECH_ECOMMERCE:   "/investasi/fundamental/tech/ecommerce",
+  ENERGY_MIGAS:     "/investasi/fundamental/energy/migas",
+  ENERGY_BATUBARA:  "/investasi/fundamental/energy/batubara",
+  ENERGY_EBT:       "/investasi/fundamental/energy/ebt",
 }
 
 export default function FundamentalPage() {
