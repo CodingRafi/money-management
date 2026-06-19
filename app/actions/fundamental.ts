@@ -1,0 +1,45 @@
+"use server"
+
+import { db } from "@/lib/db"
+import { requireUserIdAction } from "@/lib/session"
+import type { BankAnalysisResult } from "@/lib/fundamental/types"
+import type { TechAnalysisResult } from "@/lib/fundamental/tech-types"
+import crypto from "crypto"
+import { revalidatePath } from "next/cache"
+
+function uuid() { return crypto.randomUUID() }
+
+// ── Bank ──────────────────────────────────────────────────────────────────────
+
+export async function saveAnalysis(result: BankAnalysisResult): Promise<string> {
+  const userId = await requireUserIdAction()
+  const id     = uuid()
+  db.prepare(
+    `INSERT INTO fundamental_analyses (id, user_id, sector, stock_code, period, input_data, result_data)
+     VALUES (?, ?, 'BANK', ?, ?, ?, ?)`
+  ).run(id, userId, result.input.stockCode.toUpperCase(), result.input.period, JSON.stringify(result.input), JSON.stringify(result))
+  revalidatePath("/investasi/fundamental")
+  return id
+}
+
+// ── Tech ──────────────────────────────────────────────────────────────────────
+
+export async function saveTechAnalysis(result: TechAnalysisResult): Promise<string> {
+  const userId = await requireUserIdAction()
+  const id     = uuid()
+  const sector = `TECH_${result.subsector.toUpperCase()}`
+  db.prepare(
+    `INSERT INTO fundamental_analyses (id, user_id, sector, stock_code, period, input_data, result_data)
+     VALUES (?, ?, ?, ?, ?, ?, ?)`
+  ).run(id, userId, sector, result.input.stockCode.toUpperCase(), result.input.period, JSON.stringify(result.input), JSON.stringify(result))
+  revalidatePath("/investasi/fundamental")
+  return id
+}
+
+// ── Shared delete ─────────────────────────────────────────────────────────────
+
+export async function deleteAnalysis(id: string): Promise<void> {
+  const userId = await requireUserIdAction()
+  db.prepare("DELETE FROM fundamental_analyses WHERE id = ? AND user_id = ?").run(id, userId)
+  revalidatePath("/investasi/fundamental")
+}

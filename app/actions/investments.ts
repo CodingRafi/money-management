@@ -17,11 +17,12 @@ export async function createInvestment(year: string, formData: FormData) {
   const categoryId = formData.get("category_id") as string
   const walletId   = (formData.get("wallet_id") as string) || null
   const isLiquid   = formData.get("is_liquid") === "true" ? 1 : 0
+  const unit       = (formData.get("unit") as string) || null
   const notes      = (formData.get("notes") as string)?.trim() || null
   if (!name || !categoryId) throw new Error("Data tidak valid")
   db.prepare(
-    "INSERT INTO investments (id, user_id, category_id, name, wallet_id, is_liquid, notes) VALUES (?, ?, ?, ?, ?, ?, ?)"
-  ).run(uuid(), userId, categoryId, name, walletId, isLiquid, notes)
+    "INSERT INTO investments (id, user_id, category_id, name, wallet_id, is_liquid, unit, notes) VALUES (?, ?, ?, ?, ?, ?, ?, ?)"
+  ).run(uuid(), userId, categoryId, name, walletId, isLiquid, unit, notes)
   redirect(`/rekap/${year}?tab=investasi`)
 }
 
@@ -31,12 +32,13 @@ export async function createInvestmentDirect(formData: FormData) {
   const categoryId = formData.get("category_id") as string
   const walletId   = (formData.get("wallet_id") as string) || null
   const isLiquid   = formData.get("is_liquid") === "true" ? 1 : 0
+  const unit       = (formData.get("unit") as string) || null
   const notes      = (formData.get("notes") as string)?.trim() || null
   if (!name || !categoryId) throw new Error("Data tidak valid")
   const id = uuid()
   db.prepare(
-    "INSERT INTO investments (id, user_id, category_id, name, wallet_id, is_liquid, notes) VALUES (?, ?, ?, ?, ?, ?, ?)"
-  ).run(id, userId, categoryId, name, walletId, isLiquid, notes)
+    "INSERT INTO investments (id, user_id, category_id, name, wallet_id, is_liquid, unit, notes) VALUES (?, ?, ?, ?, ?, ?, ?, ?)"
+  ).run(id, userId, categoryId, name, walletId, isLiquid, unit, notes)
   redirect(`/investasi/aset/${id}`)
 }
 
@@ -108,10 +110,12 @@ export async function reopenInvestmentDirect(id: string) {
 
 // ── Transaction helpers ───────────────────────────────────────────────────────
 
+const INTEGER_UNITS = new Set(["lot", "lembar"])
+
 function execAddInvestmentTransaction(investmentId: string, userId: string, formData: FormData) {
   const inv = db.prepare(
-    "SELECT id FROM investments WHERE id=? AND user_id=? AND is_active=1 AND is_closed=0"
-  ).get(investmentId, userId)
+    "SELECT id, unit FROM investments WHERE id=? AND user_id=? AND is_active=1 AND is_closed=0"
+  ).get(investmentId, userId) as { id: string; unit: string | null } | undefined
   if (!inv) throw new Error("Aset tidak ditemukan atau sudah ditutup")
 
   const type         = formData.get("type") as string
@@ -133,6 +137,8 @@ function execAddInvestmentTransaction(investmentId: string, userId: string, form
   if (type === "SELL"     && !toWalletId)           throw new Error("Dompet tujuan wajib diisi untuk SELL")
   if (type === "DIVIDEND" && !toWalletId)           throw new Error("Dompet tujuan wajib diisi untuk DIVIDEND")
   if (type === "BUY"      && !goalId)               throw new Error("Kantong wajib dipilih untuk transaksi BUY")
+  if (inv.unit && INTEGER_UNITS.has(inv.unit) && type !== "DIVIDEND" && numericQty !== Math.floor(numericQty))
+    throw new Error(`Jumlah ${inv.unit} harus bilangan bulat`)
 
   if (goalId) {
     const goal = db.prepare("SELECT id FROM investment_goals WHERE id=? AND user_id=? AND is_active=1").get(goalId, userId)

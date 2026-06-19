@@ -3,7 +3,7 @@ import { LOCAL_USER_ID } from "@/lib/auth-simple"
 import { Card, CardContent, CardHeader } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
-import { Plus, Pencil, X, Target, TrendingUp, ChevronRight, BarChart2 } from "lucide-react"
+import { Plus, Pencil, X, Target, TrendingUp, ChevronRight, BarChart2, FlaskConical } from "lucide-react"
 import Link from "next/link"
 import { GoalForm } from "./_components/goal-form"
 import { AssetForm } from "./_components/asset-form"
@@ -122,9 +122,14 @@ export default async function InvestasiPage({
           <h1 className="text-2xl font-bold">Investasi</h1>
           <p className="text-sm text-muted-foreground">Pantau semua aset dan kantong investasimu</p>
         </div>
-        <Button asChild variant="outline" size="sm">
-          <Link href="/investasi/rekap"><BarChart2 className="h-4 w-4 mr-1.5" />Lihat Rekap</Link>
-        </Button>
+        <div className="flex items-center gap-2">
+          <Button asChild variant="outline" size="sm">
+            <Link href="/investasi/fundamental"><FlaskConical className="h-4 w-4 mr-1.5" />Fundamental</Link>
+          </Button>
+          <Button asChild variant="outline" size="sm">
+            <Link href="/investasi/rekap"><BarChart2 className="h-4 w-4 mr-1.5" />Rekap</Link>
+          </Button>
+        </div>
       </div>
 
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">

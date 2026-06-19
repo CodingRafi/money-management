@@ -1,0 +1,251 @@
+"use client"
+
+import { BankAnalysisResult, RatioResult } from "@/lib/fundamental/types"
+import { Card, CardContent } from "@/components/ui/card"
+import { Button } from "@/components/ui/button"
+import { Save, Loader2 } from "lucide-react"
+
+interface Props {
+  result: BankAnalysisResult
+  onSave?: () => void
+  saving?: boolean
+}
+
+function scoreColor(s: number) {
+  if (s >= 80) return "text-emerald-600"
+  if (s >= 65) return "text-blue-600"
+  if (s >= 50) return "text-yellow-600"
+  if (s >= 35) return "text-orange-600"
+  return "text-red-600"
+}
+
+function scoreBg(s: number) {
+  if (s >= 80) return "bg-emerald-500"
+  if (s >= 65) return "bg-blue-500"
+  if (s >= 50) return "bg-yellow-500"
+  if (s >= 35) return "bg-orange-500"
+  return "bg-red-500"
+}
+
+function labelBg(label: string) {
+  const m: Record<string, string> = {
+    "Sangat Sehat": "bg-emerald-100 text-emerald-800",
+    "Sehat":        "bg-blue-100 text-blue-800",
+    "Cukup Sehat":  "bg-yellow-100 text-yellow-800",
+    "Kurang Sehat": "bg-orange-100 text-orange-800",
+    "Tidak Sehat":  "bg-red-100 text-red-800",
+  }
+  return m[label] ?? "bg-muted text-muted-foreground"
+}
+
+function pct(v: number, decimals = 2) {
+  return `${(v * 100).toFixed(decimals)}%`
+}
+
+function multi(v: number) {
+  return `${v.toFixed(2)}×`
+}
+
+function idr(v: number) {
+  return new Intl.NumberFormat("id-ID", { style: "currency", currency: "IDR", maximumFractionDigits: 0 }).format(v)
+}
+
+function ScoreBar({ score }: { score: number }) {
+  return (
+    <div className="h-1.5 rounded-full bg-muted overflow-hidden w-full">
+      <div className={`h-full rounded-full transition-all ${scoreBg(score)}`} style={{ width: `${score}%` }} />
+    </div>
+  )
+}
+
+function RatioRow({
+  label, result, format, direction, note,
+}: {
+  label: string
+  result: RatioResult
+  format: (v: number) => string
+  direction: "up" | "down" | "opt"
+  note?: string
+}) {
+  return (
+    <tr className="border-b last:border-0">
+      <td className="px-3 py-2 text-sm">
+        {label}
+        {note && <span className="ml-1 text-xs text-muted-foreground">({note})</span>}
+      </td>
+      <td className="px-3 py-2 text-sm text-right tabular-nums font-medium">{format(result.value)}</td>
+      <td className="px-3 py-2 w-32">
+        <div className="flex items-center gap-2">
+          <div className="flex-1 h-1.5 rounded-full bg-muted overflow-hidden">
+            <div className={`h-full rounded-full ${scoreBg(result.score)}`} style={{ width: `${result.score}%` }} />
+          </div>
+          <span className={`text-xs font-semibold tabular-nums w-8 text-right ${scoreColor(result.score)}`}>
+            {result.score.toFixed(0)}
+          </span>
+        </div>
+      </td>
+    </tr>
+  )
+}
+
+const CATEGORY_LABELS: Record<string, string> = {
+  assetQuality:  "Kualitas Aset",
+  profitability: "Profitabilitas",
+  capital:       "Permodalan",
+  liquidity:     "Likuiditas",
+  valuation:     "Valuasi",
+}
+
+export function BankResult({ result, onSave, saving }: Props) {
+  const { compositeScore, label, ratios, categoryScores, derivedValues } = result
+
+  const categories = [
+    { key: "assetQuality",  ...categoryScores.assetQuality },
+    { key: "profitability", ...categoryScores.profitability },
+    { key: "capital",       ...categoryScores.capital },
+    { key: "liquidity",     ...categoryScores.liquidity },
+    { key: "valuation",     ...categoryScores.valuation },
+  ] as const
+
+  return (
+    <div className="space-y-4">
+      {/* Skor Komposit */}
+      <Card className="overflow-hidden">
+        <div className={`h-2 ${scoreBg(compositeScore)}`} />
+        <CardContent className="p-5">
+          <div className="flex items-center justify-between gap-4 flex-wrap">
+            <div>
+              <p className="text-xs text-muted-foreground uppercase tracking-wide mb-1">Skor Komposit</p>
+              <div className="flex items-baseline gap-3">
+                <span className={`text-5xl font-black tabular-nums ${scoreColor(compositeScore)}`}>
+                  {compositeScore.toFixed(1)}
+                </span>
+                <span className={`text-sm font-semibold px-2 py-0.5 rounded-full ${labelBg(label)}`}>
+                  {label}
+                </span>
+              </div>
+            </div>
+            <div className="text-right">
+              <p className="text-sm font-semibold">{result.input.stockCode}</p>
+              <p className="text-xs text-muted-foreground">{result.input.period}</p>
+              {onSave && (
+                <Button onClick={onSave} disabled={saving} size="sm" className="mt-2">
+                  {saving ? <Loader2 className="h-3.5 w-3.5 mr-1 animate-spin" /> : <Save className="h-3.5 w-3.5 mr-1" />}
+                  Simpan Analisis
+                </Button>
+              )}
+            </div>
+          </div>
+        </CardContent>
+      </Card>
+
+      {/* Skor per Kategori */}
+      <div className="grid grid-cols-2 sm:grid-cols-5 gap-2">
+        {categories.map(({ key, score, weight }) => (
+          <Card key={key}>
+            <CardContent className="p-3">
+              <p className="text-[11px] text-muted-foreground mb-1">{CATEGORY_LABELS[key]}</p>
+              <p className={`text-xl font-bold tabular-nums ${scoreColor(score)}`}>{score.toFixed(1)}</p>
+              <ScoreBar score={score} />
+              <p className="text-[10px] text-muted-foreground mt-1">{(weight * 100).toFixed(0)}% bobot</p>
+            </CardContent>
+          </Card>
+        ))}
+      </div>
+
+      {/* Derived values */}
+      <Card>
+        <CardContent className="p-4">
+          <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-3">Nilai Turunan & Valuasi</p>
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
+            <div>
+              <p className="text-xs text-muted-foreground">EPS</p>
+              <p className="font-semibold tabular-nums">{idr(derivedValues.eps)}/saham</p>
+            </div>
+            <div>
+              <p className="text-xs text-muted-foreground">BVPS</p>
+              <p className="font-semibold tabular-nums">{idr(derivedValues.bvps)}/saham</p>
+            </div>
+            <div>
+              <p className="text-xs text-muted-foreground">Justified PBV</p>
+              <p className="font-semibold tabular-nums">
+                {derivedValues.justifiedPbv > 0 ? multi(derivedValues.justifiedPbv) : "N/A"}
+              </p>
+            </div>
+            <div>
+              <p className="text-xs text-muted-foreground">Margin of Safety</p>
+              <p className={`font-semibold tabular-nums ${derivedValues.marginOfSafety > 0 ? "text-emerald-600" : "text-red-600"}`}>
+                {derivedValues.justifiedPbv > 0 ? pct(derivedValues.marginOfSafety) : "N/A"}
+              </p>
+            </div>
+          </div>
+        </CardContent>
+      </Card>
+
+      {/* Detail Rasio */}
+      <Card>
+        <CardContent className="p-0">
+          <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide px-4 py-3 border-b">
+            Detail Rasio
+          </p>
+          <div className="overflow-x-auto">
+            <table className="w-full">
+              <thead>
+                <tr className="bg-muted/40 text-xs text-muted-foreground border-b">
+                  <th className="px-3 py-2 text-left font-medium">Rasio</th>
+                  <th className="px-3 py-2 text-right font-medium">Nilai</th>
+                  <th className="px-3 py-2 text-left font-medium w-36">Skor</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-border/50">
+                <tr className="bg-muted/20">
+                  <td colSpan={3} className="px-3 py-1.5 text-[11px] font-semibold text-muted-foreground uppercase tracking-wide">
+                    Kualitas Aset (30%)
+                  </td>
+                </tr>
+                <RatioRow label="NPL Gross"        result={ratios.nplGross}      format={pct} direction="down" />
+                <RatioRow label="NPL Net"           result={ratios.nplNet}        format={pct} direction="down" />
+                <RatioRow label="Coverage Ratio"    result={ratios.coverageRatio} format={v => pct(v, 1)} direction="up" />
+
+                <tr className="bg-muted/20">
+                  <td colSpan={3} className="px-3 py-1.5 text-[11px] font-semibold text-muted-foreground uppercase tracking-wide">
+                    Profitabilitas (25%)
+                  </td>
+                </tr>
+                <RatioRow label="NIM"  result={ratios.nim}  format={pct} direction="up" />
+                <RatioRow label="ROA"  result={ratios.roa}  format={pct} direction="up" />
+                <RatioRow label="ROE"  result={ratios.roe}  format={pct} direction="up" />
+                <RatioRow label="BOPO" result={ratios.bopo} format={pct} direction="down" />
+
+                <tr className="bg-muted/20">
+                  <td colSpan={3} className="px-3 py-1.5 text-[11px] font-semibold text-muted-foreground uppercase tracking-wide">
+                    Permodalan (20%)
+                  </td>
+                </tr>
+                <RatioRow label="CAR" result={ratios.car} format={pct} direction="up" />
+
+                <tr className="bg-muted/20">
+                  <td colSpan={3} className="px-3 py-1.5 text-[11px] font-semibold text-muted-foreground uppercase tracking-wide">
+                    Likuiditas (15%)
+                  </td>
+                </tr>
+                <RatioRow label="LDR"        result={ratios.ldr}       format={pct} direction="opt" note="ideal 80-90%" />
+                <RatioRow label="CASA Ratio" result={ratios.casaRatio} format={pct} direction="up" />
+
+                <tr className="bg-muted/20">
+                  <td colSpan={3} className="px-3 py-1.5 text-[11px] font-semibold text-muted-foreground uppercase tracking-wide">
+                    Valuasi (10%)
+                  </td>
+                </tr>
+                <RatioRow label="PBV Aktual" result={ratios.pbv} format={multi} direction="down"
+                  note={`MoS ${derivedValues.justifiedPbv > 0 ? pct(derivedValues.marginOfSafety) : "N/A"}`} />
+                <RatioRow label="PER"        result={ratios.per} format={multi} direction="down"
+                  note="informatif" />
+              </tbody>
+            </table>
+          </div>
+        </CardContent>
+      </Card>
+    </div>
+  )
+}

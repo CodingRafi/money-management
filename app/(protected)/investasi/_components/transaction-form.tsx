@@ -4,6 +4,7 @@ import { useActionState, useState } from "react"
 import { Input } from "@/components/ui/input"
 import { Button } from "@/components/ui/button"
 import Link from "next/link"
+import { isIntegerUnit, showQuantityField } from "@/lib/investment"
 
 const selectClass =
   "h-9 w-full rounded-md border border-input bg-background px-3 text-sm focus:outline-none focus:ring-2 focus:ring-ring"
@@ -11,15 +12,19 @@ const selectClass =
 interface Props {
   wallets: { id: string; name: string }[]
   goals: { id: string; name: string; color: string | null }[]
+  unit: string | null
   action: (prevState: { error?: string } | null, formData: FormData) => Promise<{ error?: string } | null>
   cancelHref: string
 }
 
-export function TransactionForm({ wallets, goals, action, cancelHref }: Props) {
+export function TransactionForm({ wallets, goals, unit, action, cancelHref }: Props) {
   const [type, setType] = useState<"BUY" | "SELL" | "DIVIDEND">("BUY")
   const [state, formAction, pending] = useActionState(action, null)
 
-  const today = new Date().toISOString().split("T")[0]
+  const today    = new Date().toISOString().split("T")[0]
+  const showQty  = showQuantityField(unit) && type !== "DIVIDEND"
+  const isInt    = isIntegerUnit(unit)
+  const qtyReq   = isInt
 
   return (
     <form action={formAction} className="space-y-3">
@@ -32,9 +37,7 @@ export function TransactionForm({ wallets, goals, action, cancelHref }: Props) {
             type="button"
             onClick={() => setType("BUY")}
             className={`flex-1 rounded-md border px-3 py-2 text-sm font-medium transition-colors ${
-              type === "BUY"
-                ? "bg-emerald-600 text-white border-emerald-600"
-                : "border-input hover:bg-muted"
+              type === "BUY" ? "bg-emerald-600 text-white border-emerald-600" : "border-input hover:bg-muted"
             }`}
           >
             BUY — Beli
@@ -43,9 +46,7 @@ export function TransactionForm({ wallets, goals, action, cancelHref }: Props) {
             type="button"
             onClick={() => setType("SELL")}
             className={`flex-1 rounded-md border px-3 py-2 text-sm font-medium transition-colors ${
-              type === "SELL"
-                ? "bg-red-600 text-white border-red-600"
-                : "border-input hover:bg-muted"
+              type === "SELL" ? "bg-red-600 text-white border-red-600" : "border-input hover:bg-muted"
             }`}
           >
             SELL — Jual
@@ -54,9 +55,7 @@ export function TransactionForm({ wallets, goals, action, cancelHref }: Props) {
             type="button"
             onClick={() => setType("DIVIDEND")}
             className={`flex-1 rounded-md border px-3 py-2 text-sm font-medium transition-colors ${
-              type === "DIVIDEND"
-                ? "bg-teal-600 text-white border-teal-600"
-                : "border-input hover:bg-muted"
+              type === "DIVIDEND" ? "bg-teal-600 text-white border-teal-600" : "border-input hover:bg-muted"
             }`}
           >
             Dividen
@@ -93,17 +92,22 @@ export function TransactionForm({ wallets, goals, action, cancelHref }: Props) {
       )}
 
       <div className="grid grid-cols-2 gap-3">
-        {type !== "DIVIDEND" && (
+        {showQty && (
           <div className="flex flex-col gap-1">
-            <label className="text-sm font-medium">Quantity (opsional)</label>
+            <label className="text-sm font-medium">
+              Jumlah ({unit}){!qtyReq && " (opsional)"}
+            </label>
             <Input
               name="quantity"
-              type="text"
-              placeholder="contoh: 10 lot, 5 gram"
+              type="number"
+              step={isInt ? "1" : "any"}
+              min={isInt ? "1" : "0.00000001"}
+              placeholder={isInt ? "contoh: 10" : "contoh: 5.5"}
+              required={qtyReq}
             />
           </div>
         )}
-        <div className={`flex flex-col gap-1 ${type === "DIVIDEND" ? "col-span-2" : ""}`}>
+        <div className={`flex flex-col gap-1 ${!showQty ? "col-span-2" : ""}`}>
           <label className="text-sm font-medium">
             {type === "DIVIDEND" ? "Jumlah Dividen (Rp)" : "Harga Transaksi (Rp)"}
           </label>

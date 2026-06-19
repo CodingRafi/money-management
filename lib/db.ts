@@ -279,6 +279,27 @@ db.exec(`
     created_at     TEXT NOT NULL DEFAULT (datetime('now')),
     is_initial     INTEGER NOT NULL DEFAULT 0
   );
+
+  CREATE TABLE IF NOT EXISTS bank_fundamental_analyses (
+    id          TEXT PRIMARY KEY,
+    user_id     TEXT NOT NULL REFERENCES "user"(id) ON DELETE CASCADE,
+    stock_code  TEXT NOT NULL,
+    period      TEXT NOT NULL,
+    input_data  TEXT NOT NULL,
+    result_data TEXT NOT NULL,
+    created_at  TEXT NOT NULL DEFAULT (datetime('now'))
+  );
+
+  CREATE TABLE IF NOT EXISTS fundamental_analyses (
+    id          TEXT PRIMARY KEY,
+    user_id     TEXT NOT NULL REFERENCES "user"(id) ON DELETE CASCADE,
+    sector      TEXT NOT NULL,
+    stock_code  TEXT NOT NULL,
+    period      TEXT NOT NULL,
+    input_data  TEXT NOT NULL,
+    result_data TEXT NOT NULL,
+    created_at  TEXT NOT NULL DEFAULT (datetime('now'))
+  );
 `)
 
 // ── Migrations ───────────────────────────────────────────────────────────────
@@ -327,8 +348,41 @@ export function runMigrations() {
     db.exec(`ALTER TABLE investments ADD COLUMN closed_at TEXT`)
   } catch { /* column already exists */ }
 
+  try {
+    db.exec(`ALTER TABLE investments ADD COLUMN unit TEXT`)
+  } catch { /* column already exists */ }
+
+  // Backfill unit based on investment category for existing assets
+  db.exec(`
+    UPDATE investments SET unit = (
+      SELECT CASE ic.name
+        WHEN 'SAHAM'          THEN 'lot'
+        WHEN 'REKSA DANA'     THEN 'unit'
+        WHEN 'EMAS'           THEN 'gram'
+        WHEN 'KRIPTO'         THEN 'koin'
+        WHEN 'OBLIGASI / SBN' THEN 'lembar'
+        ELSE NULL
+      END
+      FROM investment_categories ic WHERE ic.id = investments.category_id
+    )
+    WHERE investments.unit IS NULL
+  `)
+
   // Remove INVESTASI from master income defaults — it should not be a global default
   db.prepare(`DELETE FROM income_categories WHERE name = 'INVESTASI' AND user_id IS NULL AND year IS NULL`).run()
+
+  // Migrate bank_fundamental_analyses → fundamental_analyses
+  try {
+    const rows = db.prepare("SELECT * FROM bank_fundamental_analyses").all() as {
+      id: string; user_id: string; stock_code: string; period: string; input_data: string; result_data: string; created_at: string
+    }[]
+    if (rows.length > 0) {
+      const ins = db.prepare(
+        "INSERT OR IGNORE INTO fundamental_analyses (id, user_id, sector, stock_code, period, input_data, result_data, created_at) VALUES (?, ?, 'BANK', ?, ?, ?, ?, ?)"
+      )
+      for (const r of rows) ins.run(r.id, r.user_id, r.stock_code, r.period, r.input_data, r.result_data, r.created_at)
+    }
+  } catch { /* bank_fundamental_analyses empty or migration already done */ }
 }
 
 runMigrations()

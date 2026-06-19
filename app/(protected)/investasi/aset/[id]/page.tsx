@@ -8,7 +8,7 @@ import { ArrowLeft, Plus, Trash2, Pencil, X, Lock, LockOpen, History } from "luc
 import Link from "next/link"
 import { AssetForm } from "../../_components/asset-form"
 import { TransactionForm } from "../../_components/transaction-form"
-import { calcProfitLoss } from "@/lib/investment"
+import { calcProfitLoss, showQuantityField } from "@/lib/investment"
 import {
   updateInvestmentDirect,
   deleteInvestmentDirect,
@@ -36,7 +36,7 @@ function formatDate(dateStr: string) {
 
 type AssetDetail = {
   id: string; name: string; notes: string | null; is_liquid: number; is_closed: number
-  category_name: string; wallet_id: string | null; wallet_name: string | null
+  category_name: string; wallet_id: string | null; wallet_name: string | null; unit: string | null
 }
 type TxRow = {
   id: string; type: string; quantity: number; price_per_unit: number; total_amount: number
@@ -66,7 +66,7 @@ export default async function AsetDetailPage({
   const isEdit  = sp.edit === "1"
 
   const asset = db.prepare<[string, string], AssetDetail>(
-    `SELECT i.id, i.name, i.notes, i.is_liquid, i.is_closed, ic.name AS category_name, i.wallet_id, w.name AS wallet_name
+    `SELECT i.id, i.name, i.notes, i.is_liquid, i.is_closed, ic.name AS category_name, i.wallet_id, w.name AS wallet_name, i.unit
      FROM investments i
      JOIN investment_categories ic ON ic.id = i.category_id
      LEFT JOIN wallets w ON w.id = i.wallet_id
@@ -97,14 +97,10 @@ export default async function AsetDetailPage({
   ).all(userId) as { id: string; name: string; color: string | null }[]
 
   // calcProfitLoss expects total_amount as number
-  const plTxs = txs.map((t) => ({ ...t, total_amount: String(t.total_amount), quantity: String(t.quantity), price_per_unit: String(t.price_per_unit) }))
+  const plTxs   = txs.map((t) => ({ ...t, total_amount: String(t.total_amount), quantity: String(t.quantity), price_per_unit: String(t.price_per_unit) }))
   const pl      = calcProfitLoss(plTxs)
-  const qtyHeld = txs.reduce((s, t) => {
-    const q = t.quantity
-    if (t.type === "BUY")  return s + q
-    if (t.type === "SELL") return s - q
-    return s // DIVIDEND tidak mempengaruhi quantity
-  }, 0)
+  const qtyHeld = pl.totalBuyQty - pl.totalSellQty
+  const unit    = asset.unit ?? null
 
   const cancelHref = `/investasi/aset/${investmentId}`
 
@@ -198,8 +194,29 @@ export default async function AsetDetailPage({
         </div>
       )}
 
-      {qtyHeld > 0 && (
-        <Card><CardContent className="p-4"><p className="text-xs text-muted-foreground mb-1">Quantity Dipegang</p><p className="font-bold tabular-nums">{formatQty(qtyHeld)}</p></CardContent></Card>
+      {unit && showQuantityField(unit) && qtyHeld > 0 && (
+        <Card>
+          <CardContent className="p-4">
+            <p className="text-xs text-muted-foreground mb-2 font-medium uppercase tracking-wide">Ringkasan DCA</p>
+            <div className="grid grid-cols-3 gap-4">
+              <div>
+                <p className="text-xs text-muted-foreground mb-0.5">Dipegang</p>
+                <p className="font-bold tabular-nums">{formatQty(qtyHeld)} <span className="text-xs font-normal text-muted-foreground">{unit}</span></p>
+              </div>
+              <div>
+                <p className="text-xs text-muted-foreground mb-0.5">Rata-rata Beli</p>
+                <p className="font-bold tabular-nums text-blue-600">
+                  {formatRupiah(pl.avgCostPerUnit)}
+                  <span className="text-xs font-normal text-muted-foreground">/{unit}</span>
+                </p>
+              </div>
+              <div>
+                <p className="text-xs text-muted-foreground mb-0.5">Frekuensi Beli</p>
+                <p className="font-bold tabular-nums">{pl.buyCount}× <span className="text-xs font-normal text-muted-foreground">BUY</span></p>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
       )}
 
       <div className="space-y-3">
@@ -223,7 +240,7 @@ export default async function AsetDetailPage({
                 <p className="text-sm font-medium">Tambah Transaksi</p>
                 <Button asChild variant="ghost" size="icon" className="h-7 w-7"><Link href={cancelHref}><X className="h-4 w-4" /></Link></Button>
               </div>
-              <TransactionForm wallets={wallets} goals={goals} action={addInvestmentTransactionDirect.bind(null, investmentId)} cancelHref={cancelHref} />
+              <TransactionForm wallets={wallets} goals={goals} unit={unit} action={addInvestmentTransactionDirect.bind(null, investmentId)} cancelHref={cancelHref} />
             </CardContent>
           </Card>
         )}
@@ -241,7 +258,7 @@ export default async function AsetDetailPage({
                     <tr className="border-b bg-muted/40 text-muted-foreground">
                       <th className="px-4 py-3 text-left font-medium">Tanggal</th>
                       <th className="px-4 py-3 text-left font-medium">Tipe</th>
-                      <th className="px-4 py-3 text-right font-medium">Qty</th>
+                      <th className="px-4 py-3 text-right font-medium">{unit ? `Qty (${unit})` : "Qty"}</th>
                       <th className="px-4 py-3 text-right font-medium">Total</th>
                       <th className="px-4 py-3 text-left font-medium">Dompet</th>
                       <th className="px-4 py-3 text-left font-medium">Kantong</th>
