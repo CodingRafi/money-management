@@ -300,7 +300,6 @@ export default async function InvestasiPage({
                   <CardContent className="p-0 divide-y">
                     {activeAssets.map((a) => {
                       const modalAktifAset = a.total_modal - a.total_hasil
-                      const pl             = a.total_hasil - a.total_modal
                       return (
                         <Link key={a.id} href={`/investasi/aset/${a.id}`}
                           className="flex items-center justify-between px-4 py-3 gap-3 hover:bg-muted/40 transition-colors">
@@ -312,7 +311,7 @@ export default async function InvestasiPage({
                             <div className="text-right">
                               <p className="text-sm font-semibold tabular-nums text-emerald-600">{formatRupiah(modalAktifAset)}</p>
                               {a.total_hasil > 0 && (
-                                <p className={`text-xs tabular-nums ${pl >= 0 ? "text-emerald-600" : "text-red-600"}`}>P/L: {pl >= 0 ? "+" : ""}{formatRupiah(pl)}</p>
+                                <p className="text-xs text-muted-foreground">Hasil: {formatRupiah(a.total_hasil)}</p>
                               )}
                             </div>
                             <ChevronRight className="h-4 w-4 text-muted-foreground" />

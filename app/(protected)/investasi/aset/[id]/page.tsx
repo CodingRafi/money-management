@@ -177,8 +177,8 @@ export default async function AsetDetailPage({
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
         <Card><CardContent className="p-4"><p className="text-xs text-muted-foreground mb-1">Total Modal</p><p className="font-bold text-blue-600 tabular-nums">{formatRupiah(pl.totalModal)}</p></CardContent></Card>
         <Card><CardContent className="p-4"><p className="text-xs text-muted-foreground mb-1">Total Hasil Jual</p><p className="font-bold text-emerald-600 tabular-nums">{formatRupiah(pl.totalHasil)}</p></CardContent></Card>
-        <Card><CardContent className="p-4"><p className="text-xs text-muted-foreground mb-1">P/L Direalisasi</p><p className={`font-bold tabular-nums ${pl.profitLoss >= 0 ? "text-emerald-600" : "text-red-600"}`}>{pl.profitLoss >= 0 ? "+" : ""}{formatRupiah(pl.profitLoss)}</p></CardContent></Card>
-        <Card><CardContent className="p-4"><p className="text-xs text-muted-foreground mb-1">Status</p><span className={`inline-block rounded px-2 py-0.5 text-xs font-bold ${STATUS_CLASS[pl.status]}`}>{pl.status}</span></CardContent></Card>
+        <Card><CardContent className="p-4"><p className="text-xs text-muted-foreground mb-1">P/L Direalisasi</p><p className={`font-bold tabular-nums ${isClosed ? (pl.profitLoss >= 0 ? "text-emerald-600" : "text-red-600") : "text-muted-foreground"}`}>{isClosed ? `${pl.profitLoss >= 0 ? "+" : ""}${formatRupiah(pl.profitLoss)}` : "—"}</p></CardContent></Card>
+        <Card><CardContent className="p-4"><p className="text-xs text-muted-foreground mb-1">Status</p><span className={`inline-block rounded px-2 py-0.5 text-xs font-bold ${isClosed ? (pl.profitLoss > 0 ? "bg-emerald-500 text-white" : pl.profitLoss < 0 ? "bg-red-500 text-white" : "bg-yellow-400 text-yellow-900") : STATUS_CLASS[pl.status]}`}>{isClosed ? (pl.profitLoss > 0 ? "PROFIT" : pl.profitLoss < 0 ? "LOSS" : "BREAK_EVEN") : pl.status}</span></CardContent></Card>
       </div>
 
       {pl.totalDividen > 0 && (
@@ -189,7 +189,7 @@ export default async function AsetDetailPage({
           </Card>
           <Card className="overflow-hidden">
             <div className="h-1 bg-teal-500" />
-            <CardContent className="p-4"><p className="text-xs text-muted-foreground mb-1">Total Return (P/L + Dividen)</p><p className={`font-bold tabular-nums text-lg ${pl.totalReturn >= 0 ? "text-teal-600" : "text-red-600"}`}>{pl.totalReturn >= 0 ? "+" : ""}{formatRupiah(pl.totalReturn)}</p></CardContent>
+            <CardContent className="p-4"><p className="text-xs text-muted-foreground mb-1">Total Return (P/L + Dividen)</p><p className={`font-bold tabular-nums text-lg ${isClosed ? (pl.totalReturn >= 0 ? "text-teal-600" : "text-red-600") : "text-muted-foreground"}`}>{isClosed ? `${pl.totalReturn >= 0 ? "+" : ""}${formatRupiah(pl.totalReturn)}` : "—"}</p></CardContent>
           </Card>
         </div>
       )}

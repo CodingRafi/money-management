@@ -6,13 +6,49 @@ import crypto from "crypto"
 const DATA_DIR = process.env.DATA_DIR ?? process.cwd()
 const DB_PATH = process.env.DB_PATH ?? path.join(DATA_DIR, "money-management.db")
 
-export const db = new Database(DB_PATH)
-db.pragma("journal_mode = WAL")
-db.pragma("foreign_keys = ON")
+// ── Lazy singleton ────────────────────────────────────────────────────────────
+
+let _db: Database.Database | null = null
+let _initialized = false
+
+function openDb(): Database.Database {
+  const db = new Database(DB_PATH)
+  db.pragma("journal_mode = WAL")
+  db.pragma("foreign_keys = ON")
+  db.pragma("mmap_size = 268435456") // 256MB memory-mapped I/O
+  db.pragma("cache_size = -64000")    // 64MB page cache
+  return db
+}
+
+function initDb(): Database.Database {
+  if (_db) return _db
+  _db = openDb()
+  _db.exec(SCHEMA)
+  runMigrationsImpl(_db)
+  seedData(_db)
+  _initialized = true
+  return _db
+}
+
+// Lazy proxy — db.prepare(), db.exec(), etc. all trigger initialization
+// This keeps all existing code working without changes.
+export const db = new Proxy({} as Database.Database, {
+  get(_target, prop) {
+    const database = initDb()
+    const value = (database as unknown as Record<string | symbol, unknown>)[prop]
+    if (typeof value === "function") return value.bind(database)
+    return value
+  },
+})
+
+// For explicit access
+export function getDb(): Database.Database {
+  return initDb()
+}
 
 // ── Schema ──────────────────────────────────────────────────────────────────
 
-db.exec(`
+const SCHEMA = `
   CREATE TABLE IF NOT EXISTS credentials (
     username      TEXT NOT NULL PRIMARY KEY,
     password_hash TEXT NOT NULL
@@ -300,26 +336,29 @@ db.exec(`
     result_data TEXT NOT NULL,
     created_at  TEXT NOT NULL DEFAULT (datetime('now'))
   );
-`)
+`
 
-// ── Migrations ───────────────────────────────────────────────────────────────
+// ── Migrations ────────────────────────────────────────────────────────────────
 
+// Exported wrapper for backward compat (used by app/api/import/route.ts)
 export function runMigrations() {
+  runMigrationsImpl(getDb())
+}
+
+function runMigrationsImpl(database: Database.Database) {
   try {
-    db.exec(`ALTER TABLE loans ADD COLUMN payment_likelihood TEXT CHECK (payment_likelihood IN ('LANCAR', 'MERAGUKAN', 'MACET'))`)
+    database.exec(`ALTER TABLE loans ADD COLUMN payment_likelihood TEXT CHECK (payment_likelihood IN ('LANCAR', 'MERAGUKAN', 'MACET'))`)
   } catch { /* column already exists */ }
 
   try {
-    db.exec(`ALTER TABLE investments ADD COLUMN is_closed INTEGER NOT NULL DEFAULT 0`)
+    database.exec(`ALTER TABLE investments ADD COLUMN is_closed INTEGER NOT NULL DEFAULT 0`)
   } catch { /* column already exists */ }
 
-  // Migrate investment_transactions: tambah DIVIDEND ke CHECK constraint
-  // SQLite tidak support ALTER COLUMN, jadi recreate table jika perlu
   try {
-    const row = db.prepare("SELECT sql FROM sqlite_master WHERE type='table' AND name='investment_transactions'").get() as { sql: string } | undefined
+    const row = database.prepare("SELECT sql FROM sqlite_master WHERE type='table' AND name='investment_transactions'").get() as { sql: string } | undefined
     if (row && !row.sql.includes('DIVIDEND')) {
-      db.transaction(() => {
-        db.exec(`
+      database.transaction(() => {
+        database.exec(`
           CREATE TABLE investment_transactions_new (
             id             TEXT PRIMARY KEY,
             investment_id  TEXT NOT NULL REFERENCES investments(id) ON DELETE CASCADE,
@@ -345,15 +384,14 @@ export function runMigrations() {
   } catch { /* already migrated */ }
 
   try {
-    db.exec(`ALTER TABLE investments ADD COLUMN closed_at TEXT`)
+    database.exec(`ALTER TABLE investments ADD COLUMN closed_at TEXT`)
   } catch { /* column already exists */ }
 
   try {
-    db.exec(`ALTER TABLE investments ADD COLUMN unit TEXT`)
+    database.exec(`ALTER TABLE investments ADD COLUMN unit TEXT`)
   } catch { /* column already exists */ }
 
-  // Backfill unit based on investment category for existing assets
-  db.exec(`
+  database.exec(`
     UPDATE investments SET unit = (
       SELECT CASE ic.name
         WHEN 'SAHAM'          THEN 'lot'
@@ -368,16 +406,14 @@ export function runMigrations() {
     WHERE investments.unit IS NULL
   `)
 
-  // Remove INVESTASI from master income defaults — it should not be a global default
-  db.prepare(`DELETE FROM income_categories WHERE name = 'INVESTASI' AND user_id IS NULL AND year IS NULL`).run()
+  database.prepare(`DELETE FROM income_categories WHERE name = 'INVESTASI' AND user_id IS NULL AND year IS NULL`).run()
 
-  // Migrate bank_fundamental_analyses → fundamental_analyses
   try {
-    const rows = db.prepare("SELECT * FROM bank_fundamental_analyses").all() as {
+    const rows = database.prepare("SELECT * FROM bank_fundamental_analyses").all() as {
       id: string; user_id: string; stock_code: string; period: string; input_data: string; result_data: string; created_at: string
     }[]
     if (rows.length > 0) {
-      const ins = db.prepare(
+      const ins = database.prepare(
         "INSERT OR IGNORE INTO fundamental_analyses (id, user_id, sector, stock_code, period, input_data, result_data, created_at) VALUES (?, ?, 'BANK', ?, ?, ?, ?, ?)"
       )
       for (const r of rows) ins.run(r.id, r.user_id, r.stock_code, r.period, r.input_data, r.result_data, r.created_at)
@@ -385,85 +421,76 @@ export function runMigrations() {
   } catch { /* bank_fundamental_analyses empty or migration already done */ }
 }
 
-runMigrations()
+// ── Seed master data ──────────────────────────────────────────────────────────
 
-// ── Seed master data ─────────────────────────────────────────────────────────
+function seedData(database: Database.Database) {
+  const uuid = () => crypto.randomUUID()
 
-function uuid() { return crypto.randomUUID() }
+  database.prepare(`INSERT OR IGNORE INTO "user" (id, name, email) VALUES ('local-user', 'TONAS', 'local@tonas.app')`).run()
 
-// Single local user
-db.prepare(`INSERT OR IGNORE INTO "user" (id, name, email) VALUES ('local-user', 'TONAS', 'local@tonas.app')`).run()
-
-// Default credentials (INSERT OR IGNORE to be safe against concurrent module loads)
-const hasCreds = db.prepare("SELECT 1 FROM credentials LIMIT 1").get()
-if (!hasCreds) {
-  try {
-    db.prepare("INSERT OR IGNORE INTO credentials (username, password_hash) VALUES (?, ?)").run(
-      "TONAS",
-      bcryptjs.hashSync("12346", 10),
-    )
-  } catch {
-    // Another worker already seeded — OK
+  const hasCreds = database.prepare("SELECT 1 FROM credentials LIMIT 1").get()
+  if (!hasCreds) {
+    try {
+      database.prepare("INSERT OR IGNORE INTO credentials (username, password_hash) VALUES (?, ?)").run(
+        "TONAS",
+        bcryptjs.hashSync("12346", 10),
+      )
+    } catch { /* Another worker already seeded */ }
   }
-}
 
-// Wallet categories
-const hasWalletCats = db.prepare("SELECT 1 FROM wallet_categories LIMIT 1").get()
-if (!hasWalletCats) {
-  const stmt = db.prepare("INSERT INTO wallet_categories (id, name, is_liquid, is_default, sort_order) VALUES (?, ?, ?, 1, ?)")
-  stmt.run(uuid(), "TUNAI",      1, 1)
-  stmt.run(uuid(), "BANK",       1, 2)
-  stmt.run(uuid(), "E-WALLET",   1, 3)
-  stmt.run(uuid(), "INVESTASI",  0, 4)
-  stmt.run(uuid(), "ASET FISIK", 0, 5)
-  stmt.run(uuid(), "KRIPTO",     0, 6)
-}
+  const hasWalletCats = database.prepare("SELECT 1 FROM wallet_categories LIMIT 1").get()
+  if (!hasWalletCats) {
+    const stmt = database.prepare("INSERT INTO wallet_categories (id, name, is_liquid, is_default, sort_order) VALUES (?, ?, ?, 1, ?)")
+    stmt.run(uuid(), "TUNAI",      1, 1)
+    stmt.run(uuid(), "BANK",       1, 2)
+    stmt.run(uuid(), "E-WALLET",   1, 3)
+    stmt.run(uuid(), "INVESTASI",  0, 4)
+    stmt.run(uuid(), "ASET FISIK", 0, 5)
+    stmt.run(uuid(), "KRIPTO",     0, 6)
+  }
 
-// Default income categories (master, no user) — INVESTASI intentionally excluded
-const hasDefaultIncome = db.prepare("SELECT 1 FROM income_categories WHERE is_default = 1 AND user_id IS NULL LIMIT 1").get()
-if (!hasDefaultIncome) {
-  const stmt = db.prepare("INSERT INTO income_categories (id, name, is_default, sort_order) VALUES (?, ?, 1, ?)")
-  stmt.run(uuid(), "TETAP",       1)
-  stmt.run(uuid(), "BONUS TETAP", 2)
-  stmt.run(uuid(), "FREELANCE",   3)
-  stmt.run(uuid(), "LAINNYA",     4)
-}
+  const hasDefaultIncome = database.prepare("SELECT 1 FROM income_categories WHERE is_default = 1 AND user_id IS NULL LIMIT 1").get()
+  if (!hasDefaultIncome) {
+    const stmt = database.prepare("INSERT INTO income_categories (id, name, is_default, sort_order) VALUES (?, ?, 1, ?)")
+    stmt.run(uuid(), "TETAP",       1)
+    stmt.run(uuid(), "BONUS TETAP", 2)
+    stmt.run(uuid(), "FREELANCE",   3)
+    stmt.run(uuid(), "LAINNYA",     4)
+  }
 
-// Default expense types (TETAP, FLEKSIBEL only — MENABUNG removed)
-const hasDefaultTypes = db.prepare("SELECT 1 FROM expense_types WHERE is_default = 1 AND user_id IS NULL LIMIT 1").get()
-if (!hasDefaultTypes) {
-  const tetapId    = uuid()
-  const fleksibelId = uuid()
-  const typeStmt = db.prepare("INSERT INTO expense_types (id, name, is_default, sort_order) VALUES (?, ?, 1, ?)")
-  typeStmt.run(tetapId,     "TETAP",     1)
-  typeStmt.run(fleksibelId, "FLEKSIBEL", 2)
+  const hasDefaultTypes = database.prepare("SELECT 1 FROM expense_types WHERE is_default = 1 AND user_id IS NULL LIMIT 1").get()
+  if (!hasDefaultTypes) {
+    const tetapId     = uuid()
+    const fleksibelId = uuid()
+    const typeStmt = database.prepare("INSERT INTO expense_types (id, name, is_default, sort_order) VALUES (?, ?, 1, ?)")
+    typeStmt.run(tetapId,     "TETAP",     1)
+    typeStmt.run(fleksibelId, "FLEKSIBEL", 2)
 
-  const catStmt = db.prepare("INSERT INTO expense_categories (id, name, type_id, is_default, sort_order, default_percentage) VALUES (?, ?, ?, 1, ?, ?)")
-  const tetapCats = [
-    ["TRANSPORTASI",     1,  5.27],
-    ["RUMAH",            2, 17.80],
-    ["PENDIDIKAN",       3,  1.80],
-    ["MY LOVE",          4,  2.70],
-    ["KESEHATAN",        5,  3.57],
-    ["KOMUNIKASI",       6,  3.60],
-    ["HIBURAN/JAJAN",    7,  1.80],
-    ["HEWAN PELIHARAAN", 8,  0.00],
-    ["CICILAN/UTANG",    9,  0.00],
-  ] as [string, number, number][]
+    const catStmt = database.prepare("INSERT INTO expense_categories (id, name, type_id, is_default, sort_order, default_percentage) VALUES (?, ?, ?, 1, ?, ?)")
+    const tetapCats: [string, number, number][] = [
+      ["TRANSPORTASI",      1,  5.27],
+      ["RUMAH",             2, 17.80],
+      ["PENDIDIKAN",        3,  1.80],
+      ["MY LOVE",           4,  2.70],
+      ["KESEHATAN",         5,  3.57],
+      ["KOMUNIKASI",        6,  3.60],
+      ["HIBURAN/JAJAN",     7,  1.80],
+      ["HEWAN PELIHARAAN",  8,  0.00],
+      ["CICILAN/UTANG",     9,  0.00],
+    ]
+    for (const [name, sort, pct] of tetapCats) catStmt.run(uuid(), name, tetapId, sort, pct)
 
-  for (const [name, sort, pct] of tetapCats) catStmt.run(uuid(), name, tetapId, sort, pct)
+    const fleksCats = [
+      "GAYA HIDUP", "SOSIAL", "RELATION", "SELF DEVELOPMENT",
+      "INVESTASI BISNIS", "KANTOR", "FREELANCE EXPENSE", "DONASI/ZAKAT", "LAINNYA",
+    ]
+    for (let i = 0; i < fleksCats.length; i++) catStmt.run(uuid(), fleksCats[i], fleksibelId, i + 1, 0)
+  }
 
-  const fleksCats = [
-    "GAYA HIDUP", "SOSIAL", "RELATION", "SELF DEVELOPMENT",
-    "INVESTASI BISNIS", "KANTOR", "FREELANCE EXPENSE", "DONASI/ZAKAT", "LAINNYA",
-  ]
-  for (let i = 0; i < fleksCats.length; i++) catStmt.run(uuid(), fleksCats[i], fleksibelId, i + 1, 0)
-}
-
-// Default investment categories
-const hasInvCats = db.prepare("SELECT 1 FROM investment_categories WHERE is_default = 1 LIMIT 1").get()
-if (!hasInvCats) {
-  const stmt = db.prepare("INSERT INTO investment_categories (id, name, is_default, sort_order) VALUES (?, ?, 1, ?)")
-  const cats = ["SAHAM", "REKSA DANA", "EMAS", "KRIPTO", "DEPOSITO", "LAINNYA"]
-  cats.forEach((n, i) => stmt.run(uuid(), n, i + 1))
+  const hasInvCats = database.prepare("SELECT 1 FROM investment_categories WHERE is_default = 1 LIMIT 1").get()
+  if (!hasInvCats) {
+    const stmt = database.prepare("INSERT INTO investment_categories (id, name, is_default, sort_order) VALUES (?, ?, 1, ?)")
+    const cats = ["SAHAM", "REKSA DANA", "EMAS", "KRIPTO", "DEPOSITO", "LAINNYA"]
+    cats.forEach((n, i) => stmt.run(uuid(), n, i + 1))
+  }
 }

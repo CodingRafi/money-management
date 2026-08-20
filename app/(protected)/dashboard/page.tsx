@@ -9,9 +9,6 @@ import { LOCAL_USER_ID } from "@/lib/auth-simple"
 import { NetWorthSection, NetWorthSkeleton } from "@/components/dashboard/NetWorthCard"
 import { CashflowSection, CashflowSkeleton } from "@/components/dashboard/CashflowCards"
 import { WalletSection, WalletSkeleton } from "@/components/dashboard/WalletCard"
-import { InvestmentSection, InvestmentSkeleton } from "@/components/dashboard/InvestmentCard"
-import { LoanSection, LoanSkeleton } from "@/components/dashboard/LoanCard"
-import { RecentTransactionsSection, RecentTransactionsSkeleton } from "@/components/dashboard/RecentTransactions"
 import { CategorySection, CategorySkeleton } from "@/components/dashboard/CategorySection"
 
 const MONTHS = [
@@ -68,19 +65,10 @@ export default async function DashboardPage({
         <NetWorthSection userId={userId} year={chartYear} />
       </Suspense>
 
-      {/* ── Dompet, Investasi, Pinjaman — tidak ikut filter bulan ── */}
+      {/* ── Dompet — tidak ikut filter bulan ── */}
       <Suspense fallback={<WalletSkeleton />}>
         <WalletSection userId={userId} />
       </Suspense>
-
-      <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
-        <Suspense fallback={<InvestmentSkeleton />}>
-          <InvestmentSection userId={userId} />
-        </Suspense>
-        <Suspense fallback={<LoanSkeleton />}>
-          <LoanSection userId={userId} />
-        </Suspense>
-      </div>
 
       {/* ── Cashflow — pakai filter bulan ── */}
       <div className="space-y-4">
@@ -114,10 +102,6 @@ export default async function DashboardPage({
         </Suspense>
 
       </div>
-
-      <Suspense fallback={<RecentTransactionsSkeleton />}>
-        <RecentTransactionsSection userId={userId} />
-      </Suspense>
     </div>
   )
 }

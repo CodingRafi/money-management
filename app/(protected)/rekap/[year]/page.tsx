@@ -307,14 +307,8 @@ export default async function YearDetailPage({
   }
   const avgIncomeGrowth = growthData.length > 0 ? growthData.reduce((s, d) => s + d.value, 0) / growthData.length : null
 
-  const ratioData: { label: string; value: number }[] = []
-  for (let m = 1; m <= 12; m++) {
-    const income  = incomeMo[String(m)]  ?? 0
-    const expense = expenseMo[String(m)] ?? 0
-    if (income <= 0) continue
-    ratioData.push({ label: MONTHS[m - 1].substring(0, 3), value: parseFloat(((expense / income) * 100).toFixed(2)) })
-  }
-  const avgExpenseRatio = ratioData.length > 0 ? ratioData.reduce((s, d) => s + d.value, 0) / ratioData.length : null
+  // expense ratio: total expense / total income (yearly)
+  const avgExpenseRatio = totalIncome > 0 ? (totalExpense / totalIncome) * 100 : null
 
   const wealthData: { label: string; nominal: number; pct: number }[] = []
   for (let m = 1; m <= 12; m++) {
@@ -328,7 +322,8 @@ export default async function YearDetailPage({
   const avgWealthPct     = wealthData.length > 0 ? wealthData.reduce((s, d) => s + d.pct,     0) / wealthData.length : null
 
   const savingRateData = wealthData.map(d => ({ label: d.label, value: d.pct }))
-  const avgSavingRate  = savingRateData.length > 0 ? savingRateData.reduce((s, d) => s + d.value, 0) / savingRateData.length : null
+  // saving rate: (total income - total expense) / total income (yearly)
+  const avgSavingRate = totalIncome > 0 ? ((totalIncome - totalExpense) / totalIncome) * 100 : null
 
   const MONTH_ABBRS_CHART = ["JAN", "FEB", "MAR", "APR", "MEI", "JUN", "JUL", "AGU", "SEP", "OKT", "NOV", "DES"]
 
