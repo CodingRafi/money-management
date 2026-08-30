@@ -35,6 +35,7 @@ const SECTOR_LABEL: Record<string, string> = {
   ENERGY_MIGAS:     "Migas",
   ENERGY_BATUBARA:  "Batu Bara",
   ENERGY_EBT:       "EBT",
+  PROPERTY:         "Property",
 }
 
 const SECTOR_HREF: Record<string, string> = {
@@ -45,6 +46,7 @@ const SECTOR_HREF: Record<string, string> = {
   ENERGY_MIGAS:     "/investasi/fundamental/energy/migas",
   ENERGY_BATUBARA:  "/investasi/fundamental/energy/batubara",
   ENERGY_EBT:       "/investasi/fundamental/energy/ebt",
+  PROPERTY:         "/investasi/fundamental/property",
 }
 
 export default function FundamentalPage() {

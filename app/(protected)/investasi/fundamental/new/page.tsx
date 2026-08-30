@@ -1,6 +1,6 @@
 import { Button } from "@/components/ui/button"
 import { Card, CardContent } from "@/components/ui/card"
-import { ArrowLeft, Building2, Cpu, Zap } from "lucide-react"
+import { ArrowLeft, Building2, Cpu, Zap, Building } from "lucide-react"
 import Link from "next/link"
 
 export default function NewAnalysisPage() {
@@ -16,7 +16,7 @@ export default function NewAnalysisPage() {
         </div>
       </div>
 
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
         <Link href="/investasi/fundamental/bank">
           <Card className="hover:border-primary/60 hover:shadow-sm transition-all cursor-pointer h-full">
             <CardContent className="p-6 space-y-3">
@@ -32,6 +32,27 @@ export default function NewAnalysisPage() {
               <div className="flex flex-wrap gap-1 pt-1">
                 {["NIM", "NPL", "CAR", "BOPO", "LDR"].map((r) => (
                   <span key={r} className="text-[10px] px-1.5 py-0.5 rounded bg-blue-50 text-blue-700 font-medium">{r}</span>
+                ))}
+              </div>
+            </CardContent>
+          </Card>
+        </Link>
+
+        <Link href="/investasi/fundamental/property">
+          <Card className="hover:border-primary/60 hover:shadow-sm transition-all cursor-pointer h-full">
+            <CardContent className="p-6 space-y-3">
+              <div className="w-10 h-10 rounded-lg bg-emerald-100 text-emerald-700 flex items-center justify-center">
+                <Building className="h-5 w-5" />
+              </div>
+              <div>
+                <p className="font-semibold text-base">Property</p>
+                <p className="text-sm text-muted-foreground mt-1">
+                  Analisis perusahaan property: profitabilitas, leverage, likuiditas, valuasi PBV & PER
+                </p>
+              </div>
+              <div className="flex flex-wrap gap-1 pt-1">
+                {["GPM", "ROE", "DER", "CR", "PBV"].map((r) => (
+                  <span key={r} className="text-[10px] px-1.5 py-0.5 rounded bg-emerald-50 text-emerald-700 font-medium">{r}</span>
                 ))}
               </div>
             </CardContent>

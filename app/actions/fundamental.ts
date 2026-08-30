@@ -5,6 +5,7 @@ import { requireUserIdAction } from "@/lib/session"
 import type { BankAnalysisResult } from "@/lib/fundamental/types"
 import type { TechAnalysisResult } from "@/lib/fundamental/tech-types"
 import type { EnergyAnalysisResult } from "@/lib/fundamental/energy-types"
+import type { PropertyAnalysisResult } from "@/lib/fundamental/property-types"
 import crypto from "crypto"
 import { revalidatePath } from "next/cache"
 
@@ -47,6 +48,19 @@ export async function saveEnergyAnalysis(result: EnergyAnalysisResult): Promise<
     `INSERT INTO fundamental_analyses (id, user_id, sector, stock_code, period, input_data, result_data)
      VALUES (?, ?, ?, ?, ?, ?, ?)`
   ).run(id, userId, sector, result.input.stockCode.toUpperCase(), result.input.period, JSON.stringify(result.input), JSON.stringify(result))
+  revalidatePath("/investasi/fundamental")
+  return id
+}
+
+// ── Property ─────────────────────────────────────────────────────────────────
+
+export async function savePropertyAnalysis(result: PropertyAnalysisResult): Promise<string> {
+  const userId = await requireUserIdAction()
+  const id     = uuid()
+  db.prepare(
+    `INSERT INTO fundamental_analyses (id, user_id, sector, stock_code, period, input_data, result_data)
+     VALUES (?, ?, 'PROPERTY', ?, ?, ?, ?)`
+  ).run(id, userId, result.input.stockCode.toUpperCase(), result.input.period, JSON.stringify(result.input), JSON.stringify(result))
   revalidatePath("/investasi/fundamental")
   return id
 }
