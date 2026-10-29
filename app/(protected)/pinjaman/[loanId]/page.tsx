@@ -54,7 +54,7 @@ export default async function LoanDetailPage({
   const showNew    = sp.new === "1"
   const isEdit     = sp.edit === "1"
 
-  const loan = db.prepare<[string, string], LoanDetail>(
+  const loan = await db.prepare<[string, string], LoanDetail>(
     `SELECT l.id, l.type, l.name, l.description,
             l.principal_amount, l.interest_rate, l.interest_type,
             l.start_date, l.due_date, l.status, l.payment_likelihood, l.wallet_id, w.name AS wallet_name
@@ -63,7 +63,7 @@ export default async function LoanDetailPage({
   ).get(loanId, userId) as LoanDetail | undefined
   if (!loan) redirect("/pinjaman")
 
-  const payments = db.prepare<[string], PaymentRow>(
+  const payments = await db.prepare<[string], PaymentRow>(
     `SELECT id, principal_paid, interest_paid, total_paid, date, notes
      FROM loan_payments WHERE loan_id=? ORDER BY date DESC, created_at DESC`
   ).all(loanId) as PaymentRow[]

@@ -33,8 +33,8 @@ export async function createLoan(formData: FormData) {
   if (!walletId)                             throw new Error("Dompet wajib dipilih")
 
   let loanId!: string
-  db.transaction(() => {
-    const wallet = db.prepare(
+  await db.transaction(async () => {
+    const wallet = await db.prepare(
       "SELECT balance, user_id FROM wallets WHERE id=? AND is_active=1"
     ).get(walletId) as { balance: number; user_id: string } | undefined
     if (!wallet || wallet.user_id !== userId) throw new Error("Dompet tidak ditemukan")
@@ -42,17 +42,17 @@ export async function createLoan(formData: FormData) {
     if (!isInitial) {
       if (type === "PIUTANG") {
         if (wallet.balance < principalAmount) throw new Error(`Saldo tidak mencukupi. Tersedia: ${formatRupiah(wallet.balance)}`)
-        db.prepare("UPDATE wallets SET balance = balance - ? WHERE id = ?").run(principalAmount, walletId)
+        await db.prepare("UPDATE wallets SET balance = balance - ? WHERE id = ?").run(principalAmount, walletId)
       } else {
-        db.prepare("UPDATE wallets SET balance = balance + ? WHERE id = ?").run(principalAmount, walletId)
+        await db.prepare("UPDATE wallets SET balance = balance + ? WHERE id = ?").run(principalAmount, walletId)
       }
     }
 
     loanId = uuid()
-    db.prepare(
+    await db.prepare(
       "INSERT INTO loans (id, user_id, type, name, description, principal_amount, interest_rate, interest_type, start_date, due_date, wallet_id, is_initial, payment_likelihood) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
     ).run(loanId, userId, type, name, description, principalAmount, interestRate, interestType, startDate, dueDate, walletId, isInitial, paymentLikelihood)
-  })()
+  })
 
   redirect(`/pinjaman/${loanId}`)
 }
@@ -70,10 +70,10 @@ export async function updateLoan(id: string, formData: FormData) {
   if (!name)            throw new Error("Nama wajib diisi")
   if (interestRate < 0) throw new Error("Bunga tidak boleh negatif")
 
-  const loan = db.prepare("SELECT type FROM loans WHERE id=? AND user_id=?").get(id, userId) as { type: string } | undefined
+  const loan = await db.prepare("SELECT type FROM loans WHERE id=? AND user_id=?").get(id, userId) as { type: string } | undefined
   const finalLikelihood = loan?.type === "PIUTANG" ? paymentLikelihood : null
 
-  db.prepare(
+  await db.prepare(
     "UPDATE loans SET name=?, description=?, due_date=?, interest_rate=?, interest_type=?, payment_likelihood=?, updated_at=datetime('now') WHERE id=? AND user_id=?"
   ).run(name, description, dueDate, interestRate, interestType, finalLikelihood, id, userId)
 
@@ -85,28 +85,28 @@ export async function updateLoan(id: string, formData: FormData) {
 export async function deleteLoan(id: string) {
   const userId = await requireUserIdAction()
 
-  const payRow = db.prepare(
+  const payRow = await db.prepare(
     "SELECT COUNT(*) AS cnt FROM loan_payments WHERE loan_id=?"
   ).get(id) as { cnt: number }
   if (payRow.cnt > 0) throw new Error("Hapus semua cicilan terlebih dahulu")
 
-  const loan = db.prepare(
+  const loan = await db.prepare(
     "SELECT type, principal_amount, wallet_id, is_initial FROM loans WHERE id=? AND user_id=? AND is_active=1"
   ).get(id, userId) as { type: string; principal_amount: number; wallet_id: string; is_initial: number } | undefined
   if (!loan) throw new Error("Pinjaman tidak ditemukan")
 
-  db.transaction(() => {
+  await db.transaction(async () => {
     if (!loan.is_initial) {
       if (loan.type === "PIUTANG") {
-        db.prepare("UPDATE wallets SET balance = balance + ? WHERE id = ?").run(loan.principal_amount, loan.wallet_id)
+        await db.prepare("UPDATE wallets SET balance = balance + ? WHERE id = ?").run(loan.principal_amount, loan.wallet_id)
       } else {
-        db.prepare("UPDATE wallets SET balance = balance - ? WHERE id = ?").run(loan.principal_amount, loan.wallet_id)
+        await db.prepare("UPDATE wallets SET balance = balance - ? WHERE id = ?").run(loan.principal_amount, loan.wallet_id)
       }
     }
-    db.prepare(
+    await db.prepare(
       "UPDATE loans SET is_active=0, updated_at=datetime('now') WHERE id=? AND user_id=?"
     ).run(id, userId)
-  })()
+  })
 
   revalidatePath("/pinjaman")
   redirect("/pinjaman")
@@ -122,13 +122,13 @@ export async function addLoanPayment(loanId: string, formData: FormData) {
   if (isNaN(principalPaid) || principalPaid <= 0) throw new Error("Jumlah pokok tidak valid")
   if (!date)                                      throw new Error("Tanggal wajib diisi")
 
-  db.transaction(() => {
-    const loan = db.prepare(
+  await db.transaction(async () => {
+    const loan = await db.prepare(
       "SELECT type, principal_amount, interest_rate, interest_type, due_date, wallet_id, user_id FROM loans WHERE id=? AND is_active=1"
     ).get(loanId) as { type: string; principal_amount: number; interest_rate: number; interest_type: string; due_date: string | null; wallet_id: string; user_id: string } | undefined
     if (!loan || loan.user_id !== userId) throw new Error("Pinjaman tidak ditemukan")
 
-    const paidRow = db.prepare(
+    const paidRow = await db.prepare(
       "SELECT COALESCE(SUM(principal_paid), 0) AS total_pp FROM loan_payments WHERE loan_id=?"
     ).get(loanId) as { total_pp: number }
     const remainingPrincipal = loan.principal_amount - paidRow.total_pp
@@ -140,26 +140,26 @@ export async function addLoanPayment(loanId: string, formData: FormData) {
     const interestPaid = calcNextInterest(loan.principal_amount, loan.interest_rate, loan.interest_type as InterestType, remainingPrincipal)
     const totalPaid    = principalPaid + interestPaid
 
-    const wallet = db.prepare("SELECT balance FROM wallets WHERE id=? AND is_active=1").get(loan.wallet_id) as { balance: number } | undefined
+    const wallet = await db.prepare("SELECT balance FROM wallets WHERE id=? AND is_active=1").get(loan.wallet_id) as { balance: number } | undefined
     if (!wallet) throw new Error("Dompet tidak ditemukan")
 
     if (!isInitial) {
       if (loan.type === "HUTANG") {
         if (wallet.balance < totalPaid) throw new Error(`Saldo tidak mencukupi. Tersedia: ${formatRupiah(wallet.balance)}`)
-        db.prepare("UPDATE wallets SET balance = balance - ? WHERE id = ?").run(totalPaid, loan.wallet_id)
+        await db.prepare("UPDATE wallets SET balance = balance - ? WHERE id = ?").run(totalPaid, loan.wallet_id)
       } else {
-        db.prepare("UPDATE wallets SET balance = balance + ? WHERE id = ?").run(totalPaid, loan.wallet_id)
+        await db.prepare("UPDATE wallets SET balance = balance + ? WHERE id = ?").run(totalPaid, loan.wallet_id)
       }
     }
 
-    db.prepare(
+    await db.prepare(
       "INSERT INTO loan_payments (id, loan_id, principal_paid, interest_paid, total_paid, date, notes, is_initial) VALUES (?, ?, ?, ?, ?, ?, ?, ?)"
     ).run(uuid(), loanId, principalPaid, interestPaid, totalPaid, date, notes, isInitial)
 
     const newRemaining = remainingPrincipal - principalPaid
     const newStatus    = calcLoanStatus(loan.due_date, newRemaining)
-    db.prepare("UPDATE loans SET status=?, updated_at=datetime('now') WHERE id=?").run(newStatus, loanId)
-  })()
+    await db.prepare("UPDATE loans SET status=?, updated_at=datetime('now') WHERE id=?").run(newStatus, loanId)
+  })
 
   revalidatePath(`/pinjaman/${loanId}`)
   revalidatePath("/pinjaman")
@@ -169,36 +169,36 @@ export async function addLoanPayment(loanId: string, formData: FormData) {
 export async function deleteLoanPayment(paymentId: string, loanId: string) {
   const userId = await requireUserIdAction()
 
-  db.transaction(() => {
-    const pay = db.prepare(`
+  await db.transaction(async () => {
+    const pay = await db.prepare(`
       SELECT lp.total_paid, lp.is_initial
       FROM loan_payments lp JOIN loans l ON l.id = lp.loan_id
       WHERE lp.id=? AND l.user_id=?
     `).get(paymentId, userId) as { total_paid: number; is_initial: number } | undefined
     if (!pay) throw new Error("Cicilan tidak ditemukan")
 
-    const loan = db.prepare(
+    const loan = await db.prepare(
       "SELECT type, wallet_id, due_date, principal_amount FROM loans WHERE id=? AND user_id=?"
     ).get(loanId, userId) as { type: string; wallet_id: string; due_date: string | null; principal_amount: number } | undefined
     if (!loan) throw new Error("Pinjaman tidak ditemukan")
 
     if (!pay.is_initial) {
       if (loan.type === "PIUTANG") {
-        db.prepare("UPDATE wallets SET balance = balance - ? WHERE id = ?").run(pay.total_paid, loan.wallet_id)
+        await db.prepare("UPDATE wallets SET balance = balance - ? WHERE id = ?").run(pay.total_paid, loan.wallet_id)
       } else {
-        db.prepare("UPDATE wallets SET balance = balance + ? WHERE id = ?").run(pay.total_paid, loan.wallet_id)
+        await db.prepare("UPDATE wallets SET balance = balance + ? WHERE id = ?").run(pay.total_paid, loan.wallet_id)
       }
     }
 
-    db.prepare("DELETE FROM loan_payments WHERE id=?").run(paymentId)
+    await db.prepare("DELETE FROM loan_payments WHERE id=?").run(paymentId)
 
-    const newPaidRow = db.prepare(
+    const newPaidRow = await db.prepare(
       "SELECT COALESCE(SUM(principal_paid), 0) AS total_pp FROM loan_payments WHERE loan_id=?"
     ).get(loanId) as { total_pp: number }
     const remaining = loan.principal_amount - newPaidRow.total_pp
     const newStatus = calcLoanStatus(loan.due_date, remaining)
-    db.prepare("UPDATE loans SET status=?, updated_at=datetime('now') WHERE id=?").run(newStatus, loanId)
-  })()
+    await db.prepare("UPDATE loans SET status=?, updated_at=datetime('now') WHERE id=?").run(newStatus, loanId)
+  })
 
   revalidatePath(`/pinjaman/${loanId}`)
   revalidatePath("/pinjaman")

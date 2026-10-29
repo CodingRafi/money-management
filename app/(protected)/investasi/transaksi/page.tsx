@@ -43,7 +43,7 @@ export default async function InvestmentTxPage({
   const type = typeof sp.type === "string" ? sp.type : "all"
   const paramsStr = buildParamsStr(sp)
 
-  const { items, total } = getInvestmentTxList(userId, {
+  const { items, total } = await getInvestmentTxList(userId, {
     from: from || undefined,
     to:   to   || undefined,
     type,

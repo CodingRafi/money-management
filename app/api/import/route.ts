@@ -1,12 +1,36 @@
 import { NextRequest, NextResponse } from "next/server"
-import { db, runMigrations } from "@/lib/db"
+import { db } from "@/lib/db"
 import { validateSession } from "@/lib/auth-simple"
 import { cookies } from "next/headers"
+
+// Urutan hapus: child lebih dulu supaya tidak bentrok dengan foreign key.
+const DELETE_ORDER = [
+  "loan_payments",
+  "investment_transactions",
+  "loans_taken",
+  "loans_given",
+  "loans",
+  "transfers",
+  "expenses",
+  "incomes",
+  "investments",
+  "investment_goals",
+  "wallets",
+  "budgets",
+  "category_nominal_budgets",
+  "year_budget_settings",
+  "type_allocations",
+  "expense_categories",
+  "expense_types",
+  "income_categories",
+  "wallet_categories",
+  "investment_categories",
+]
 
 export async function POST(req: NextRequest) {
   const cookieStore = await cookies()
   const token = cookieStore.get("session_token")?.value
-  if (!token || !validateSession(token)) {
+  if (!token || !(await validateSession(token))) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
   }
 
@@ -29,53 +53,34 @@ export async function POST(req: NextRequest) {
   }
 
   try {
-    // Must be outside the transaction — SQLite silently ignores PRAGMA foreign_keys inside a transaction
-    db.exec("PRAGMA foreign_keys = OFF")
+    await db.transaction(async () => {
+      // Hapus tabel anak lebih dulu
+      for (const table of DELETE_ORDER) {
+        await db.execRaw(`DELETE FROM ${table}`)
+      }
 
-    db.transaction(() => {
-      // Delete child tables first (no user_id — joined via parent)
-      db.exec("DELETE FROM loan_payments")
-      db.exec("DELETE FROM investment_transactions")
-      // Delete all user-owned tables
-      db.exec("DELETE FROM loans_given")
-      db.exec("DELETE FROM loans_taken")
-      db.exec("DELETE FROM loans")
-      db.exec("DELETE FROM investment_goals")
-      db.exec("DELETE FROM investments")
-      db.exec("DELETE FROM transfers")
-      db.exec("DELETE FROM expenses")
-      db.exec("DELETE FROM incomes")
-      db.exec("DELETE FROM budgets")
-      db.exec("DELETE FROM type_allocations")
-      db.exec("DELETE FROM expense_categories")
-      db.exec("DELETE FROM expense_types")
-      db.exec("DELETE FROM income_categories")
-      db.exec("DELETE FROM wallets")
-      // Master tables
-      db.exec("DELETE FROM wallet_categories")
-      db.exec("DELETE FROM investment_categories")
-
-      // Insert from SQL dump
+      // Jalankan statement dari dump (satu statement per baris)
+      let skipped = 0
       for (const line of sqlText.split("\n")) {
         const stmt = line.trim()
-        if (!stmt || stmt.startsWith("--") || stmt.toUpperCase().startsWith("PRAGMA")) continue
+        if (!stmt || stmt.startsWith("--")) continue
+        if (/^SET\s+session_replication_role/i.test(stmt)) continue
         const sql = stmt.endsWith(";") ? stmt.slice(0, -1) : stmt
         if (!sql) continue
         try {
-          db.prepare(sql).run()
+          await db.execRaw(sql)
         } catch {
-          // Skip statements that fail (e.g. table doesn't exist yet)
+          // Lewati statement yang gagal (mis. tabel belum ada)
+          skipped++
         }
       }
-    })()
-
-    db.exec("PRAGMA foreign_keys = ON")
-
-    runMigrations()
+      if (skipped > 0) {
+        console.warn(`[import] ${skipped} statement dilewati`)
+      }
+    })
 
     return NextResponse.json({ success: true, message: "Data berhasil diimport" })
   } catch (err) {
-    db.exec("PRAGMA foreign_keys = ON")
     const msg = err instanceof Error ? err.message : "Unknown error"
     return NextResponse.json({ error: `Gagal import: ${msg}` }, { status: 500 })
   }

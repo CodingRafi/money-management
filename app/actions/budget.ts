@@ -19,10 +19,10 @@ export async function setBudget(formData: FormData) {
   if (!categoryId || isNaN(pct) || isNaN(month) || isNaN(year)) throw new Error("Invalid input")
   if (pct < 0 || pct > 100) throw new Error("Percentage must be between 0 and 100")
 
-  const cat = db.prepare("SELECT 1 FROM expense_categories WHERE id = ? AND user_id = ?").get(categoryId, userId)
+  const cat = await db.prepare("SELECT 1 FROM expense_categories WHERE id = ? AND user_id = ?").get(categoryId, userId)
   if (!cat) throw new Error("Category not found")
 
-  db.prepare(`
+  await db.prepare(`
     INSERT INTO budgets (id, user_id, category_id, percentage, month, year)
     VALUES (?, ?, ?, ?, ?, ?)
     ON CONFLICT (user_id, category_id, month, year) DO UPDATE SET percentage = excluded.percentage
@@ -41,10 +41,10 @@ export async function setCategoryNominal(formData: FormData) {
   if (!categoryId || isNaN(year) || isNaN(nominal)) throw new Error("Invalid input")
   if (nominal < 0) throw new Error("Nominal must be >= 0")
 
-  const cat = db.prepare("SELECT 1 FROM expense_categories WHERE id = ? AND user_id = ?").get(categoryId, userId)
+  const cat = await db.prepare("SELECT 1 FROM expense_categories WHERE id = ? AND user_id = ?").get(categoryId, userId)
   if (!cat) throw new Error("Category not found")
 
-  db.prepare(`
+  await db.prepare(`
     INSERT INTO category_nominal_budgets (id, user_id, category_id, year, nominal)
     VALUES (?, ?, ?, ?, ?)
     ON CONFLICT (user_id, category_id, year) DO UPDATE SET nominal = excluded.nominal
@@ -60,7 +60,7 @@ export async function setMaxExpensePct(formData: FormData) {
   if (isNaN(year) || isNaN(pct)) throw new Error("Invalid input")
   if (pct < 0 || pct > 100) throw new Error("Percentage must be between 0 and 100")
 
-  db.prepare(`
+  await db.prepare(`
     INSERT INTO year_budget_settings (id, user_id, year, max_expense_pct)
     VALUES (?, ?, ?, ?)
     ON CONFLICT (user_id, year) DO UPDATE SET max_expense_pct = excluded.max_expense_pct
@@ -88,9 +88,9 @@ export async function setTypeAllocations(formData: FormData) {
   if (Math.abs(total - 100) > 0.01) redirect(`${backUrl}&alloc_error=1`)
 
   for (const { typeId, pct } of pairs) {
-    const check = db.prepare("SELECT 1 FROM expense_types WHERE id = ? AND user_id = ?").get(typeId, userId)
+    const check = await db.prepare("SELECT 1 FROM expense_types WHERE id = ? AND user_id = ?").get(typeId, userId)
     if (!check) continue
-    db.prepare(`
+    await db.prepare(`
       INSERT INTO type_allocations (id, user_id, type_id, percentage, year)
       VALUES (?, ?, ?, ?, ?)
       ON CONFLICT (user_id, type_id, year) DO UPDATE SET percentage = excluded.percentage

@@ -16,7 +16,7 @@ function uuid() { return crypto.randomUUID() }
 export async function saveAnalysis(result: BankAnalysisResult): Promise<string> {
   const userId = await requireUserIdAction()
   const id     = uuid()
-  db.prepare(
+  await db.prepare(
     `INSERT INTO fundamental_analyses (id, user_id, sector, stock_code, period, input_data, result_data)
      VALUES (?, ?, 'BANK', ?, ?, ?, ?)`
   ).run(id, userId, result.input.stockCode.toUpperCase(), result.input.period, JSON.stringify(result.input), JSON.stringify(result))
@@ -30,7 +30,7 @@ export async function saveTechAnalysis(result: TechAnalysisResult): Promise<stri
   const userId = await requireUserIdAction()
   const id     = uuid()
   const sector = `TECH_${result.subsector.toUpperCase()}`
-  db.prepare(
+  await db.prepare(
     `INSERT INTO fundamental_analyses (id, user_id, sector, stock_code, period, input_data, result_data)
      VALUES (?, ?, ?, ?, ?, ?, ?)`
   ).run(id, userId, sector, result.input.stockCode.toUpperCase(), result.input.period, JSON.stringify(result.input), JSON.stringify(result))
@@ -44,7 +44,7 @@ export async function saveEnergyAnalysis(result: EnergyAnalysisResult): Promise<
   const userId = await requireUserIdAction()
   const id     = uuid()
   const sector = `ENERGY_${result.subsector.toUpperCase()}`
-  db.prepare(
+  await db.prepare(
     `INSERT INTO fundamental_analyses (id, user_id, sector, stock_code, period, input_data, result_data)
      VALUES (?, ?, ?, ?, ?, ?, ?)`
   ).run(id, userId, sector, result.input.stockCode.toUpperCase(), result.input.period, JSON.stringify(result.input), JSON.stringify(result))
@@ -57,7 +57,7 @@ export async function saveEnergyAnalysis(result: EnergyAnalysisResult): Promise<
 export async function savePropertyAnalysis(result: PropertyAnalysisResult): Promise<string> {
   const userId = await requireUserIdAction()
   const id     = uuid()
-  db.prepare(
+  await db.prepare(
     `INSERT INTO fundamental_analyses (id, user_id, sector, stock_code, period, input_data, result_data)
      VALUES (?, ?, 'PROPERTY', ?, ?, ?, ?)`
   ).run(id, userId, result.input.stockCode.toUpperCase(), result.input.period, JSON.stringify(result.input), JSON.stringify(result))
@@ -69,6 +69,6 @@ export async function savePropertyAnalysis(result: PropertyAnalysisResult): Prom
 
 export async function deleteAnalysis(id: string): Promise<void> {
   const userId = await requireUserIdAction()
-  db.prepare("DELETE FROM fundamental_analyses WHERE id = ? AND user_id = ?").run(id, userId)
+  await db.prepare("DELETE FROM fundamental_analyses WHERE id = ? AND user_id = ?").run(id, userId)
   revalidatePath("/investasi/fundamental")
 }

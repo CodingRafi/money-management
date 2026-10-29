@@ -36,11 +36,11 @@ export default async function DompetPage({
   const editId   = typeof sp.edit === "string" ? sp.edit : null
   const adjustId = typeof sp.adjust === "string" ? sp.adjust : null
 
-  const categories = db.prepare<[], WalletCategory>(
+  const categories = await db.prepare<[], WalletCategory>(
     "SELECT id, name FROM wallet_categories ORDER BY sort_order, name"
   ).all() as WalletCategory[]
 
-  const wallets = db.prepare<[string], WalletRow>(
+  const wallets = await db.prepare<[string], WalletRow>(
     `SELECT w.id, w.category_id, wc.name AS category_name,
             w.name, w.color, w.balance
      FROM wallets w

@@ -4,46 +4,57 @@ import { LOCAL_USER_ID } from "@/lib/auth-simple"
 import { validateSession } from "@/lib/auth-simple"
 import { cookies } from "next/headers"
 
-// Tables with a user_id column — filtered by user
-const USER_TABLES = [
-  "wallets",
-  "income_categories",
-  "expense_types",
-  "expense_categories",
-  "type_allocations",
-  "budgets",
-  "incomes",
-  "expenses",
-  "transfers",
-  "investments",
-  "investment_goals",
-  "loans",
-  "loans_given",
-  "loans_taken",
-] as const
-
-// Tables without user_id that need a JOIN to filter by user
-const JOINED_TABLES: { table: string; join: string }[] = [
+// Urutan dump — mengikuti dependensi foreign key (parent ditulis duluan),
+// supaya hasil dump bisa langsung di-import ke database kosong.
+const DUMP_ORDER: { table: string; userScoped: boolean; join?: string }[] = [
+  { table: "wallet_categories", userScoped: false },
+  { table: "investment_categories", userScoped: false },
+  { table: "income_categories", userScoped: true },
+  { table: "expense_types", userScoped: true },
+  { table: "expense_categories", userScoped: true },
+  { table: "type_allocations", userScoped: true },
+  { table: "budgets", userScoped: true },
+  { table: "category_nominal_budgets", userScoped: true },
+  { table: "year_budget_settings", userScoped: true },
+  { table: "wallets", userScoped: true },
+  { table: "investment_goals", userScoped: true },
+  { table: "investments", userScoped: true },
+  { table: "incomes", userScoped: true },
+  { table: "expenses", userScoped: true },
+  { table: "transfers", userScoped: true },
+  { table: "loans", userScoped: true },
+  { table: "loans_given", userScoped: true },
+  { table: "loans_taken", userScoped: true },
   {
     table: "investment_transactions",
+    userScoped: false,
     join: "JOIN investments i ON investment_transactions.investment_id = i.id WHERE i.user_id = ?",
   },
   {
     table: "loan_payments",
+    userScoped: false,
     join: "JOIN loans l ON loan_payments.loan_id = l.id WHERE l.user_id = ?",
   },
 ]
 
-// Shared master data (no user filter) — exported FIRST so FK refs resolve on import
-const MASTER_TABLES = ["wallet_categories", "investment_categories"] as const
-
+/**
+ * Escape nilai untuk literal Postgres.
+ * String selalu ditulis sebagai E'...' supaya newline/backslash tetap aman
+ * dan dump bisa diproses per baris.
+ */
 function escapeSQL(val: unknown): string {
   if (val === null || val === undefined) return "NULL"
   if (typeof val === "number") return String(val)
-  if (typeof val === "string") {
-    return `'${val.replace(/'/g, "''")}'`
-  }
-  return `'${String(val).replace(/'/g, "''")}'`
+  if (typeof val === "boolean") return val ? "1" : "0"
+  if (val instanceof Date) return `E'${val.toISOString()}'`
+  const s = String(val)
+  const escaped = s
+    .replace(/\\/g, "\\\\")
+    .replace(/'/g, "''")
+    .replace(/\n/g, "\\n")
+    .replace(/\r/g, "\\r")
+    .replace(/\t/g, "\\t")
+  return `E'${escaped}'`
 }
 
 function tableToInserts(table: string, rows: Record<string, unknown>[]): string {
@@ -51,7 +62,7 @@ function tableToInserts(table: string, rows: Record<string, unknown>[]): string 
   const cols = Object.keys(rows[0])
   const lines = rows.map((row) => {
     const vals = cols.map((c) => escapeSQL(row[c])).join(", ")
-    return `INSERT OR REPLACE INTO ${table} (${cols.join(", ")}) VALUES (${vals});`
+    return `INSERT INTO ${table} (${cols.join(", ")}) VALUES (${vals}) ON CONFLICT DO NOTHING;`
   })
   return lines.join("\n") + "\n"
 }
@@ -59,39 +70,27 @@ function tableToInserts(table: string, rows: Record<string, unknown>[]): string 
 export async function GET() {
   const cookieStore = await cookies()
   const token = cookieStore.get("session_token")?.value
-  if (!token || !validateSession(token)) {
+  if (!token || !(await validateSession(token))) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
   }
 
   const userId = LOCAL_USER_ID
   const lines: string[] = [
-    `-- Money Management SQL Dump`,
+    `-- Money Management SQL Dump (PostgreSQL)`,
     `-- Exported: ${new Date().toISOString()}`,
     `-- User: ${userId}`,
     ``,
-    `PRAGMA foreign_keys = OFF;`,
-    ``,
   ]
 
-  for (const table of MASTER_TABLES) {
-    const rows = db.prepare(`SELECT * FROM ${table}`).all() as Record<string, unknown>[]
+  for (const { table, userScoped, join } of DUMP_ORDER) {
+    const rows = (userScoped
+      ? await db.prepare(`SELECT * FROM ${table} WHERE user_id = ?`).all(userId)
+      : join
+        ? await db.prepare(`SELECT ${table}.* FROM ${table} ${join}`).all(userId)
+        : await db.prepare(`SELECT * FROM ${table}`).all()) as Record<string, unknown>[]
     lines.push(`-- Table: ${table} (${rows.length} rows)`)
     lines.push(tableToInserts(table, rows))
   }
-
-  for (const table of USER_TABLES) {
-    const rows = db.prepare(`SELECT * FROM ${table} WHERE user_id = ?`).all(userId) as Record<string, unknown>[]
-    lines.push(`-- Table: ${table} (${rows.length} rows)`)
-    lines.push(tableToInserts(table, rows))
-  }
-
-  for (const { table, join } of JOINED_TABLES) {
-    const rows = db.prepare(`SELECT ${table}.* FROM ${table} ${join}`).all(userId) as Record<string, unknown>[]
-    lines.push(`-- Table: ${table} (${rows.length} rows)`)
-    lines.push(tableToInserts(table, rows))
-  }
-
-  lines.push(`PRAGMA foreign_keys = ON;`)
 
   const dump = lines.join("\n")
   const filename = `money-management-${new Date().toISOString().slice(0, 10)}.sql`

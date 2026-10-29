@@ -18,11 +18,11 @@ export async function createWallet(formData: FormData) {
   if (!name)       throw new Error("Nama dompet tidak boleh kosong")
   if (!categoryId) throw new Error("Kategori wajib dipilih")
 
-  const orderRow = db.prepare(
+  const orderRow = await db.prepare(
     "SELECT COALESCE(MAX(sort_order), 0) + 1 AS max FROM wallets WHERE user_id = ?"
   ).get(userId) as { max: number }
 
-  db.prepare(
+  await db.prepare(
     "INSERT INTO wallets (id, user_id, category_id, name, is_liquid, color, sort_order, initial_balance, balance) VALUES (?, ?, ?, ?, 1, ?, ?, ?, ?)"
   ).run(uuid(), userId, categoryId, name, color, orderRow.max, initialBalance, initialBalance)
 
@@ -36,7 +36,7 @@ export async function updateWallet(id: string, formData: FormData) {
 
   if (!name) throw new Error("Nama dompet tidak boleh kosong")
 
-  db.prepare(
+  await db.prepare(
     "UPDATE wallets SET name = ?, is_liquid = 1, color = ?, updated_at = datetime('now') WHERE id = ? AND user_id = ? AND is_active = 1"
   ).run(name, color, id, userId)
 
@@ -45,7 +45,7 @@ export async function updateWallet(id: string, formData: FormData) {
 
 export async function deleteWallet(id: string) {
   const userId = await requireUserIdAction()
-  db.prepare(
+  await db.prepare(
     "UPDATE wallets SET is_active = 0, updated_at = datetime('now') WHERE id = ? AND user_id = ?"
   ).run(id, userId)
   revalidatePath("/dompet")
@@ -57,13 +57,13 @@ export async function adjustBalance(id: string, formData: FormData) {
   const targetBalance = raw === "" || raw === null ? 0 : parseFloat(raw)
   if (isNaN(targetBalance)) throw new Error("Nominal tidak valid")
 
-  const row = db.prepare(
+  const row = await db.prepare(
     "SELECT balance, initial_balance FROM wallets WHERE id = ? AND user_id = ? AND is_active = 1"
   ).get(id, userId) as { balance: number; initial_balance: number } | undefined
   if (!row) throw new Error("Dompet tidak ditemukan")
 
   const newInitial = row.initial_balance + (targetBalance - row.balance)
-  db.prepare(
+  await db.prepare(
     "UPDATE wallets SET initial_balance = ?, balance = ?, updated_at = datetime('now') WHERE id = ? AND user_id = ?"
   ).run(newInitial, targetBalance, id, userId)
 

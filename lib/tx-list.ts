@@ -21,10 +21,10 @@ export type CashflowTxItem = {
   date: string
 }
 
-export function getCashflowTxList(
+export async function getCashflowTxList(
   userId: string,
   { from, to, type = "all", search, page = 1, limit = 10 }: ListOpts = {}
-): { items: CashflowTxItem[]; total: number } {
+): Promise<{ items: CashflowTxItem[]; total: number }> {
   const like = search ? `%${search}%` : null
   const all: CashflowTxItem[] = []
 
@@ -33,8 +33,8 @@ export function getCashflowTxList(
     const p: (string | null)[] = [userId]
     if (from) { c.push("i.date >= ?"); p.push(from) }
     if (to)   { c.push("i.date <= ?"); p.push(to) }
-    if (like) { c.push("i.name LIKE ?"); p.push(like) }
-    const rows = db.prepare(
+    if (like) { c.push("i.name ILIKE ?"); p.push(like) }
+    const rows = await db.prepare(
       `SELECT i.id, i.date, i.name, c.name AS cat, i.amount
        FROM incomes i LEFT JOIN income_categories c ON c.id = i.category_id
        WHERE ${c.join(" AND ")} ORDER BY i.date DESC, i.created_at DESC`
@@ -47,8 +47,8 @@ export function getCashflowTxList(
     const p: (string | null)[] = [userId]
     if (from) { c.push("e.date >= ?"); p.push(from) }
     if (to)   { c.push("e.date <= ?"); p.push(to) }
-    if (like) { c.push("e.name LIKE ?"); p.push(like) }
-    const rows = db.prepare(
+    if (like) { c.push("e.name ILIKE ?"); p.push(like) }
+    const rows = await db.prepare(
       `SELECT e.id, e.date, e.name, c.name AS cat, e.amount
        FROM expenses e LEFT JOIN expense_categories c ON c.id = e.category_id
        WHERE ${c.join(" AND ")} ORDER BY e.date DESC, e.created_at DESC`
@@ -61,8 +61,8 @@ export function getCashflowTxList(
     const p: (string | null)[] = [userId]
     if (from) { c.push("t.date >= ?"); p.push(from) }
     if (to)   { c.push("t.date <= ?"); p.push(to) }
-    if (like) { c.push("(fw.name LIKE ? OR tw.name LIKE ?)"); p.push(like, like) }
-    const rows = db.prepare(
+    if (like) { c.push("(fw.name ILIKE ? OR tw.name ILIKE ?)"); p.push(like, like) }
+    const rows = await db.prepare(
       `SELECT t.id, t.date, t.amount, fw.name AS from_name, tw.name AS to_name
        FROM transfers t
        JOIN wallets fw ON fw.id = t.from_wallet_id
@@ -88,19 +88,19 @@ export type InvestmentTxItem = {
   date: string
 }
 
-export function getInvestmentTxList(
+export async function getInvestmentTxList(
   userId: string,
   { from, to, type = "all", search, page = 1, limit = 10 }: ListOpts = {}
-): { items: InvestmentTxItem[]; total: number } {
+): Promise<{ items: InvestmentTxItem[]; total: number }> {
   const like = search ? `%${search}%` : null
   const c = ["i.user_id = ?"]
   const p: (string | null)[] = [userId]
   if (from)          { c.push("it.date >= ?"); p.push(from) }
   if (to)            { c.push("it.date <= ?"); p.push(to) }
   if (type !== "all") { c.push("it.type = ?"); p.push(type) }
-  if (like)          { c.push("(i.name LIKE ? OR g.name LIKE ?)"); p.push(like, like) }
+  if (like)          { c.push("(i.name ILIKE ? OR g.name ILIKE ?)"); p.push(like, like) }
 
-  const rows = db.prepare(
+  const rows = await db.prepare(
     `SELECT it.id, it.date, it.type, i.name AS investment_name, g.name AS goal_name, it.total_amount
      FROM investment_transactions it
      JOIN investments i ON i.id = it.investment_id
@@ -131,19 +131,19 @@ export type LoanPaymentItem = {
   date: string
 }
 
-export function getLoanPaymentList(
+export async function getLoanPaymentList(
   userId: string,
   { from, to, type = "all", search, page = 1, limit = 10 }: ListOpts = {}
-): { items: LoanPaymentItem[]; total: number } {
+): Promise<{ items: LoanPaymentItem[]; total: number }> {
   const like = search ? `%${search}%` : null
   const c = ["l.user_id = ?"]
   const p: (string | null)[] = [userId]
   if (from)          { c.push("lp.date >= ?"); p.push(from) }
   if (to)            { c.push("lp.date <= ?"); p.push(to) }
   if (type !== "all") { c.push("l.type = ?"); p.push(type) }
-  if (like)          { c.push("(l.name LIKE ? OR lp.notes LIKE ?)"); p.push(like, like) }
+  if (like)          { c.push("(l.name ILIKE ? OR lp.notes ILIKE ?)"); p.push(like, like) }
 
-  const rows = db.prepare(
+  const rows = await db.prepare(
     `SELECT lp.id, lp.date, lp.total_paid, lp.principal_paid, lp.interest_paid, lp.notes,
             l.name AS loan_name, l.type AS loan_type
      FROM loan_payments lp

@@ -1,7 +1,7 @@
 import { db } from "@/lib/db"
 
-export function recalcWalletBalances(userId: string) {
-  db.prepare(`
+export async function recalcWalletBalances(userId: string) {
+  await db.prepare(`
     UPDATE wallets SET balance = initial_balance + (
       COALESCE((SELECT SUM(i.amount)   FROM incomes i   WHERE i.wallet_id      = wallets.id AND i.is_initial = 0), 0)
       - COALESCE((SELECT SUM(e.amount) FROM expenses e  WHERE e.wallet_id      = wallets.id AND e.is_initial = 0), 0)

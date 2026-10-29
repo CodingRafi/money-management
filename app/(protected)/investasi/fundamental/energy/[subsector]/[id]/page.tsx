@@ -24,7 +24,7 @@ export default async function SavedEnergyAnalysisPage({
   const userId = LOCAL_USER_ID
   const sector = `ENERGY_${subsector.toUpperCase()}`
 
-  const row = db.prepare<[string, string, string], Row>(
+  const row = await db.prepare<[string, string, string], Row>(
     "SELECT id, sector, stock_code, period, result_data, created_at FROM fundamental_analyses WHERE id = ? AND user_id = ? AND sector = ?"
   ).get(id, userId, sector) as Row | undefined
 

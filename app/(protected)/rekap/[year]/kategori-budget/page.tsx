@@ -32,7 +32,7 @@ export default async function KategoriBudgetPage({
   if (isNaN(year)) redirect("/rekap")
 
   if (year === new Date().getFullYear()) {
-    ensureYearlyCategories(userId, year)
+    await ensureYearlyCategories(userId, year)
   }
 
   const sp = await searchParams
@@ -43,16 +43,16 @@ export default async function KategoriBudgetPage({
   const rawMonth     = typeof sp.bulan === "string" ? parseInt(sp.bulan) : new Date().getMonth() + 1
   const month        = Math.max(1, Math.min(12, isNaN(rawMonth) ? 1 : rawMonth))
 
-  const yearBudgetRow = db.prepare<[string, number], YearBudgetRaw>(
+  const yearBudgetRow = await db.prepare<[string, number], YearBudgetRaw>(
     "SELECT max_expense_pct FROM year_budget_settings WHERE user_id=? AND year=?"
   ).get(userId, year) as YearBudgetRaw | undefined
   const maxExpensePct = yearBudgetRow?.max_expense_pct ?? 100
 
-  const katIncomeRows = (db.prepare<[string, number], IncomeRaw>(
+  const katIncomeRows = (await db.prepare<[string, number], IncomeRaw>(
     "SELECT id, name, color, is_hidden FROM income_categories WHERE user_id=? AND year=? ORDER BY sort_order, name"
   ).all(userId, year) as IncomeRaw[]).map<KatIncomeCat>((r) => ({ ...r, is_hidden: !!r.is_hidden }))
 
-  const katTypeRows = (db.prepare<[string, number, string, number], TypeRaw>(
+  const katTypeRows = (await db.prepare<[string, number, string, number], TypeRaw>(
     `SELECT et.id, et.name, COALESCE(ta.percentage, 0) AS allocation
      FROM expense_types et
      LEFT JOIN type_allocations ta ON ta.type_id = et.id AND ta.user_id = ? AND ta.year = ?
@@ -60,7 +60,7 @@ export default async function KategoriBudgetPage({
      ORDER BY et.sort_order, et.name`
   ).all(userId, year, userId, year) as TypeRaw[]).map<KatExpenseType>((r) => ({ id: r.id, name: r.name, allocation: String(r.allocation ?? 0) }))
 
-  const katExpCatRows = (db.prepare<[string, number, number, string, number, string, number], ExpCatRaw>(
+  const katExpCatRows = (await db.prepare<[string, number, number, string, number, string, number], ExpCatRaw>(
     `SELECT ec.id, ec.name, ec.type_id, et.name AS type_name, ec.is_hidden,
             b.percentage AS budget_pct,
             nb.nominal AS nominal_budget

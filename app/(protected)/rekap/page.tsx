@@ -20,11 +20,11 @@ function formatRupiah(amount: number) {
 export default async function RekapPage() {
   const userId = LOCAL_USER_ID
 
-  const incomeRows = db.prepare<[string], { year: number; total: number }>(
+  const incomeRows = await db.prepare<[string], { year: number; total: number }>(
     "SELECT year, COALESCE(SUM(amount), 0) AS total FROM incomes WHERE user_id = ? GROUP BY year"
   ).all(userId) as { year: number; total: number }[]
 
-  const expenseRows = db.prepare<[string], { year: number; total: number }>(
+  const expenseRows = await db.prepare<[string], { year: number; total: number }>(
     "SELECT year, COALESCE(SUM(amount), 0) AS total FROM expenses WHERE user_id = ? GROUP BY year"
   ).all(userId) as { year: number; total: number }[]
 

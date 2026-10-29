@@ -16,7 +16,15 @@ npx next typegen  # generate PageProps/LayoutProps/RouteContext type helpers
 
 ## Architecture
 
-**Stack:** Next.js 16.2.6 · React 19.2.4 · TypeScript · Tailwind CSS v4
+**Stack:** Next.js 16.2.6 · React 19.2.4 · TypeScript · Tailwind CSS v4 · PostgreSQL (`pg`)
+
+**Database:** PostgreSQL only (SQLite/Electron sudah dihapus). Semua akses DB lewat `lib/db.ts`:
+
+- `db.prepare(sql).all(...)` / `.get(...)` / `.run(...)` mengembalikan **Promise** → wajib `await`, dan fungsi pemanggilnya harus `async`.
+- Placeholder ditulis `?` (gaya SQLite) lalu otomatis jadi `$1, $2, ...` oleh `lib/db.ts`.
+- `db.transaction(async () => { ... })` memakai `AsyncLocalStorage`; query di dalam callback otomatis memakai koneksi transaksi yang sama.
+- Flag boolean disimpan sebagai INTEGER `0/1`, bukan BOOLEAN.
+- Skema database ada di `migrations/*.sql`; jalankan `npm run migrate` (butuh `DATABASE_URL`).
 
 **Router:** App Router only. Pages live under `app/`. The path alias `@/*` maps to the repo root (not `src/`), so `@/app/...`, `@/lib/...`, etc.
 

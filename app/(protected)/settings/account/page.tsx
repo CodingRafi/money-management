@@ -15,12 +15,12 @@ export default function AccountSettingsPage() {
   const fileRef = useRef<HTMLInputElement>(null)
   const [importMsg, setImportMsg] = useState<{ type: "ok" | "err"; text: string } | null>(null)
   const [importing, setImporting] = useState(false)
-  const [dbPath, setDbPath] = useState<string | null>(null)
+  const [dbInfo, setDbInfo] = useState<{ host: string; port: string; database: string; user: string; driver: string } | null>(null)
 
   useEffect(() => {
-    fetch("/api/db-path")
+    fetch("/api/db-info")
       .then((r) => r.json())
-      .then((d) => { if (d.path) setDbPath(d.path) })
+      .then((d) => { if (d.host) setDbInfo(d) })
       .catch(() => {})
   }, [])
 
@@ -114,7 +114,7 @@ export default function AccountSettingsPage() {
           <div className="flex items-start gap-2 rounded-md border bg-muted/40 px-3 py-2">
             <FolderOpen className="h-4 w-4 mt-0.5 shrink-0 text-muted-foreground" />
             <span className="text-sm font-mono break-all">
-              {dbPath ?? "Memuat..."}
+              {dbInfo ? `${dbInfo.driver} · ${dbInfo.host}:${dbInfo.port} · db=${dbInfo.database} · user=${dbInfo.user}` : "Memuat..."}
             </span>
           </div>
         </CardContent>

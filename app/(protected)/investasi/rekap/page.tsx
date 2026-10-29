@@ -12,7 +12,7 @@ type LiquidRow   = { is_liquid: number; total_buy: number; total_sell: number }
 export default async function InvestasiRekapPage() {
   const userId = LOCAL_USER_ID
 
-  const categoryRows = db.prepare<[string], CategoryRow>(
+  const categoryRows = await db.prepare<[string], CategoryRow>(
     `SELECT ic.name AS category_name,
             COALESCE(SUM(CASE WHEN it.type='BUY'  THEN it.total_amount ELSE 0 END),0) AS total_buy,
             COALESCE(SUM(CASE WHEN it.type='SELL' THEN it.total_amount ELSE 0 END),0) AS total_sell
@@ -23,7 +23,7 @@ export default async function InvestasiRekapPage() {
      ORDER BY ic.sort_order`
   ).all(userId) as CategoryRow[]
 
-  const liquidRows = db.prepare<[string], LiquidRow>(
+  const liquidRows = await db.prepare<[string], LiquidRow>(
     `SELECT i.is_liquid,
             COALESCE(SUM(CASE WHEN it.type='BUY'  THEN it.total_amount ELSE 0 END),0) AS total_buy,
             COALESCE(SUM(CASE WHEN it.type='SELL' THEN it.total_amount ELSE 0 END),0) AS total_sell

@@ -37,7 +37,7 @@ export default async function DashboardPage({
   searchParams: Promise<Record<string, string | string[] | undefined>>
 }) {
   const userId    = LOCAL_USER_ID
-  const username  = getUsername()
+  const username  = await getUsername()
   const firstName = username
 
   const sp  = await searchParams

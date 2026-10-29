@@ -34,14 +34,14 @@ export default async function InvestasiPage({
   const editId      = typeof sp.edit === "string" ? sp.edit : null
   const asetTab     = sp.asetTab === "history" ? "history" : "aktif"
 
-  const wallets = db.prepare<[string], WalletRow>(
+  const wallets = await db.prepare<[string], WalletRow>(
     `SELECT w.id, w.name, w.color, w.balance, wc.name AS category_name
      FROM wallets w JOIN wallet_categories wc ON wc.id = w.category_id
      WHERE w.user_id = ? AND w.is_active = 1
      ORDER BY wc.sort_order, w.sort_order`
   ).all(userId) as WalletRow[]
 
-  const goals = db.prepare<[string], GoalRow>(
+  const goals = await db.prepare<[string], GoalRow>(
     `SELECT g.id, g.name, g.color, g.target_amount, g.target_date,
             COALESCE(SUM(CASE WHEN it.type='BUY'  THEN it.total_amount ELSE 0 END),0) AS total_modal,
             COALESCE(SUM(CASE WHEN it.type='SELL' THEN it.total_amount ELSE 0 END),0) AS total_hasil
@@ -52,7 +52,7 @@ export default async function InvestasiPage({
      ORDER BY g.sort_order, g.created_at`
   ).all(userId) as GoalRow[]
 
-  const assets = db.prepare<[string], AssetRow>(
+  const assets = await db.prepare<[string], AssetRow>(
     `SELECT i.id, i.name, ic.name AS category_name, i.is_liquid, i.is_closed,
             COALESCE(SUM(CASE WHEN it.type='BUY'  THEN it.total_amount ELSE 0 END),0) AS total_modal,
             COALESCE(SUM(CASE WHEN it.type='SELL' THEN it.total_amount ELSE 0 END),0) AS total_hasil
@@ -67,14 +67,14 @@ export default async function InvestasiPage({
   const activeAssets = assets.filter((a) => !a.is_closed)
   const closedAssets = assets.filter((a) => a.is_closed)
 
-  const investSummary = db.prepare<[string]>(
+  const investSummary = await db.prepare<[string]>(
     `SELECT COALESCE(SUM(CASE WHEN it.type='BUY'  THEN it.total_amount ELSE 0 END),0) AS total_modal,
             COALESCE(SUM(CASE WHEN it.type='SELL' THEN it.total_amount ELSE 0 END),0) AS total_hasil
      FROM investment_transactions it JOIN investments i ON i.id = it.investment_id
      WHERE i.user_id = ? AND i.is_closed = 0`
   ).get(userId) as { total_modal: number; total_hasil: number }
 
-  const realizedTahunIni = db.prepare<[string]>(
+  const realizedTahunIni = await db.prepare<[string]>(
     `SELECT
        COALESCE(SUM(CASE WHEN it.type='BUY'  THEN it.total_amount ELSE 0 END),0) AS total_modal,
        COALESCE(SUM(CASE WHEN it.type='SELL' THEN it.total_amount ELSE 0 END),0) AS total_hasil,
@@ -82,18 +82,18 @@ export default async function InvestasiPage({
      FROM investment_transactions it
      JOIN investments i ON i.id = it.investment_id
      WHERE i.user_id = ? AND i.is_closed = 1
-       AND strftime('%Y', i.closed_at) = strftime('%Y', 'now')`
+       AND EXTRACT(YEAR FROM i.closed_at)::int = EXTRACT(YEAR FROM NOW())::int`
   ).get(userId) as { total_modal: number; total_hasil: number; jumlah_aset: number }
 
-  const dividenTahunIni = db.prepare<[string]>(
+  const dividenTahunIni = await db.prepare<[string]>(
     `SELECT COALESCE(SUM(it.total_amount), 0) AS total_dividen
      FROM investment_transactions it
      JOIN investments i ON i.id = it.investment_id
      WHERE i.user_id = ? AND it.type = 'DIVIDEND'
-       AND strftime('%Y', it.date) = strftime('%Y', 'now')`
+       AND EXTRACT(YEAR FROM it.date::date)::int = EXTRACT(YEAR FROM NOW())::int`
   ).get(userId) as { total_dividen: number }
 
-  const categories = db.prepare<[], CategoryRow>(
+  const categories = await db.prepare<[], CategoryRow>(
     "SELECT id, name FROM investment_categories ORDER BY sort_order, name"
   ).all() as CategoryRow[]
 

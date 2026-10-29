@@ -1,105 +1,30 @@
 import { Pool } from "pg"
-import { readFileSync } from "fs"
-import { join } from "path"
+import { runMigrations } from "../lib/db"
 
-const pool = new Pool({ connectionString: process.env.DATABASE_URL })
-
-const migrations = [
-  "001_better_auth.sql",
-  "002_roles_permissions.sql",
-  "003_licence_system.sql",
-  "004_licence_price.sql",
-  "005_remove_devices.sql",
-  "006_categories.sql",
-  "007_type_allocations.sql",
-  "008_wallets.sql",
-  "009_wallets_remove_balance.sql",
-  "010_transactions.sql",
-  "011_yearly_recap.sql",
-  "012_yearly_recap_jsonb.sql",
-  "013_yearly_categories.sql",
-  "014_investments.sql",
-  "015_transfers.sql",
-  "016_wallet_balance_investment_goals.sql",
-  "017_remove_menabung_type.sql",
-  "018_wallet_initial_balance.sql",
-  "019_feature_permissions.sql",
-  "020_expense_monthly.sql",
-  "021_is_initial.sql",
-  "022_simplify_wallet_categories.sql",
-  "023_investment_goal_on_asset.sql",
-  "024_loans.sql",
-  "025_drop_investment_unit.sql",
-  "026_investment_categories.sql",
-  "027_investment_quantity_text.sql",
-  "028_investment_is_liquid.sql",
-  "029_loan_is_initial.sql",
-  "030_loan_payment_is_initial.sql",
-]
-
-// Postgres error codes that mean "this object already exists" — safe to skip
-const IDEMPOTENT_CODES = new Set(["42P07", "42701", "42710", "42P16", "23505", "42P13"])
-
-async function run() {
-  const client = await pool.connect()
-  try {
-    await client.query("BEGIN")
-
-    await client.query(`
-      CREATE TABLE IF NOT EXISTS schema_migrations (
-        filename   TEXT PRIMARY KEY,
-        applied_at TIMESTAMPTZ NOT NULL DEFAULT now()
-      )
-    `)
-
-    const appliedRes = await client.query<{ filename: string }>(
-      `SELECT filename FROM schema_migrations`,
-    )
-    const applied = new Set(appliedRes.rows.map((r) => r.filename))
-
-    for (const file of migrations) {
-      if (applied.has(file)) {
-        console.log(`  — ${file} (skipping)`)
-        continue
-      }
-
-      const sql = readFileSync(join(process.cwd(), "migrations", file), "utf-8")
-      console.log(`Running ${file}...`)
-
-      await client.query("SAVEPOINT migration_sp")
-      try {
-        await client.query(sql)
-        await client.query(
-          `INSERT INTO schema_migrations (filename) VALUES ($1) ON CONFLICT DO NOTHING`,
-          [file],
-        )
-        await client.query("RELEASE SAVEPOINT migration_sp")
-        console.log(`  ✓ ${file}`)
-      } catch (err: any) {
-        await client.query("ROLLBACK TO SAVEPOINT migration_sp")
-        if (IDEMPOTENT_CODES.has(err.code)) {
-          // Migration was already applied outside of this tracker — mark it and move on
-          await client.query(
-            `INSERT INTO schema_migrations (filename) VALUES ($1) ON CONFLICT DO NOTHING`,
-            [file],
-          )
-          console.log(`  ~ ${file} (already applied, marked)`)
-        } else {
-          throw err
-        }
-      }
-    }
-
-    await client.query("COMMIT")
-    console.log("\nMigration complete.")
-  } catch (err) {
-    await client.query("ROLLBACK").catch(() => {})
-    console.error("Migration failed:", err)
+async function main() {
+  if (!process.env.DATABASE_URL) {
+    console.error("DATABASE_URL belum diset.")
+    console.error("Contoh: DATABASE_URL=postgres://user:pass@localhost:5432/tonas npm run migrate")
     process.exit(1)
-  } finally {
-    client.release()
-    await pool.end()
   }
+
+  const pool = new Pool({ connectionString: process.env.DATABASE_URL })
+  try {
+    await pool.query("SELECT 1")
+  } catch (err) {
+    console.error("Tidak bisa terhubung ke Postgres:", err instanceof Error ? err.message : err)
+    await pool.end()
+    process.exit(1)
+  }
+  await pool.end()
+
+  console.log("Menjalankan migrasi...")
+  await runMigrations()
+  console.log("Migrasi selesai.")
+  process.exit(0)
 }
 
-run()
+main().catch((err) => {
+  console.error(err)
+  process.exit(1)
+})

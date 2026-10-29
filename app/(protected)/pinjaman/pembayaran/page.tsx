@@ -42,7 +42,7 @@ export default async function LoanPaymentPage({
   const type = typeof sp.type === "string" ? sp.type : "all"
   const paramsStr = buildParamsStr(sp)
 
-  const { items, total } = getLoanPaymentList(userId, {
+  const { items, total } = await getLoanPaymentList(userId, {
     from: from || undefined,
     to:   to   || undefined,
     type,

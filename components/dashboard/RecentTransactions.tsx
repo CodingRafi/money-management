@@ -2,10 +2,10 @@ import { Card, CardContent, CardHeader } from "@/components/ui/card"
 import { getRecentCashflowTx, getRecentInvestmentTx, getRecentLoanTx } from "@/lib/dashboard"
 import { RecentTransactionsClient } from "./RecentTransactionsClient"
 
-export function RecentTransactionsSection({ userId }: { userId: string }) {
-  const cashflow   = getRecentCashflowTx(userId, 30)
-  const investment = getRecentInvestmentTx(userId, 30)
-  const loan       = getRecentLoanTx(userId, 30)
+export async function RecentTransactionsSection({ userId }: { userId: string }) {
+  const cashflow   = await getRecentCashflowTx(userId, 30)
+  const investment = await getRecentInvestmentTx(userId, 30)
+  const loan       = await getRecentLoanTx(userId, 30)
 
   return (
     <RecentTransactionsClient

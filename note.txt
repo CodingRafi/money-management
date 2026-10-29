@@ -1,5 +1,3 @@
-fetch('/api/admin/setup', { method: 'POST' }).then(r => r.json()).then(console.log) -> for assign user can admin
-npm migrate -> buat migrate
-
-npm rebuild better-sqlite3 -> kalau npm run dev error jalankan ini
-npm run electron:build -> kalau pas build error -> hapus node_modules -> npm install -> coba lagi
+DATABASE_URL=postgres://postgres:password@localhost:5432/money_management
+npm run migrate -> jalankan migrasi database (butuh DATABASE_URL)
+bun scripts/smoke.ts -> cek query aplikasi terhadap Postgres

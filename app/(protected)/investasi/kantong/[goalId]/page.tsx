@@ -17,7 +17,7 @@ function formatDate(dateStr: string) {
   return new Date(dateStr).toLocaleDateString("id-ID", { day: "numeric", month: "short", year: "numeric" })
 }
 
-type GoalDetail = { id: string; name: string; color: string | null; target_amount: number | null; target_date: string | null }
+type GoalDetail = { id: string; name: string; color: string | null; target_amount: number | null; target_date: string | null; bulan_sisa: number | null }
 type AssetInGoal = { id: string; name: string; category_name: string; total_modal: number; total_hasil: number }
 type TxInGoal = { id: string; date: string; type: string; quantity: number; price_per_unit: number; total_amount: number; asset_name: string; from_wallet_name: string | null; to_wallet_name: string | null; notes: string | null }
 
@@ -29,12 +29,16 @@ export default async function KantongDetailPage({
   const userId = LOCAL_USER_ID
   const { goalId } = await params
 
-  const goal = db.prepare<[string, string], GoalDetail>(
-    "SELECT id, name, color, target_amount, target_date FROM investment_goals WHERE id=? AND user_id=? AND is_active=1"
+  const goal = await db.prepare<[string, string], GoalDetail>(
+    `SELECT id, name, color, target_amount, target_date,
+            CASE WHEN target_date IS NOT NULL
+                 THEN GREATEST(1, CEIL((target_date::date - CURRENT_DATE) / 30.0))
+            END AS bulan_sisa
+     FROM investment_goals WHERE id=? AND user_id=? AND is_active=1`
   ).get(goalId, userId) as GoalDetail | undefined
   if (!goal) redirect("/investasi")
 
-  const assets = db.prepare<[string, string], AssetInGoal>(
+  const assets = await db.prepare<[string, string], AssetInGoal>(
     `SELECT i.id, i.name, ic.name AS category_name,
             COALESCE(SUM(CASE WHEN it.type='BUY'  THEN it.total_amount ELSE 0 END),0) AS total_modal,
             COALESCE(SUM(CASE WHEN it.type='SELL' THEN it.total_amount ELSE 0 END),0) AS total_hasil
@@ -46,7 +50,7 @@ export default async function KantongDetailPage({
      ORDER BY ic.sort_order, i.name`
   ).all(goalId, userId) as AssetInGoal[]
 
-  const txs = db.prepare<[string, string], TxInGoal>(
+  const txs = await db.prepare<[string, string], TxInGoal>(
     `SELECT it.id, it.date, it.type, it.quantity, it.price_per_unit, it.total_amount,
             i.name AS asset_name, fw.name AS from_wallet_name, tw.name AS to_wallet_name, it.notes
      FROM investment_transactions it
@@ -63,9 +67,7 @@ export default async function KantongDetailPage({
   const target     = goal.target_amount
   const progress   = target && target > 0 ? Math.min(100, (modalAktif / target) * 100) : null
 
-  const bulanSisa = goal.target_date && target && modalAktif < target
-    ? Math.max(1, Math.ceil((new Date(goal.target_date).getTime() - Date.now()) / (1000 * 60 * 60 * 24 * 30)))
-    : null
+  const bulanSisa = goal.target_date && target && modalAktif < target ? goal.bulan_sisa : null
   const perBulan = bulanSisa && target ? (target - modalAktif) / bulanSisa : null
 
   return (

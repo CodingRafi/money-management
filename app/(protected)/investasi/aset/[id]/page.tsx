@@ -65,7 +65,7 @@ export default async function AsetDetailPage({
   const showNew = sp.new === "1"
   const isEdit  = sp.edit === "1"
 
-  const asset = db.prepare<[string, string], AssetDetail>(
+  const asset = await db.prepare<[string, string], AssetDetail>(
     `SELECT i.id, i.name, i.notes, i.is_liquid, i.is_closed, ic.name AS category_name, i.wallet_id, w.name AS wallet_name, i.unit
      FROM investments i
      JOIN investment_categories ic ON ic.id = i.category_id
@@ -76,7 +76,7 @@ export default async function AsetDetailPage({
 
   const isClosed = !!asset.is_closed
 
-  const txs = db.prepare<[string], TxRow>(
+  const txs = await db.prepare<[string], TxRow>(
     `SELECT it.id, it.type, it.quantity, it.price_per_unit, it.total_amount,
             it.date, it.notes, g.name AS goal_name,
             fw.name AS from_wallet_name, tw.name AS to_wallet_name
@@ -88,11 +88,11 @@ export default async function AsetDetailPage({
      ORDER BY it.date DESC, it.created_at DESC`
   ).all(investmentId) as TxRow[]
 
-  const wallets = db.prepare<[string], { id: string; name: string }>(
+  const wallets = await db.prepare<[string], { id: string; name: string }>(
     "SELECT id, name FROM wallets WHERE user_id=? AND is_active=1 ORDER BY sort_order"
   ).all(userId) as { id: string; name: string }[]
 
-  const goals = db.prepare<[string], { id: string; name: string; color: string | null }>(
+  const goals = await db.prepare<[string], { id: string; name: string; color: string | null }>(
     "SELECT id, name, color FROM investment_goals WHERE user_id=? AND is_active=1 ORDER BY sort_order, created_at"
   ).all(userId) as { id: string; name: string; color: string | null }[]
 

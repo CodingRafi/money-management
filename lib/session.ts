@@ -8,7 +8,7 @@ export async function getSession() {
   const cookieStore = await cookies()
   const token = cookieStore.get("session_token")?.value
   if (!token) return null
-  return validateSession(token)
+  return await validateSession(token)
 }
 
 /** Use in pages — redirects to /login if not authenticated */
@@ -23,7 +23,7 @@ export async function requireUserIdAction(): Promise<string> {
   const cookieStore = await cookies()
   const token = cookieStore.get("session_token")?.value
   if (!token) throw new Error("Unauthenticated")
-  const session = validateSession(token)
+  const session = await validateSession(token)
   if (!session) throw new Error("Unauthenticated")
   return session.userId
 }

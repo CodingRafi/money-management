@@ -49,9 +49,9 @@ const SECTOR_HREF: Record<string, string> = {
   PROPERTY:         "/investasi/fundamental/property",
 }
 
-export default function FundamentalPage() {
+export default async function FundamentalPage() {
   const userId = LOCAL_USER_ID
-  const rows   = db.prepare<[string], Row>(
+  const rows   = await db.prepare<[string], Row>(
     "SELECT id, sector, stock_code, period, result_data, created_at FROM fundamental_analyses WHERE user_id = ? ORDER BY created_at DESC"
   ).all(userId) as Row[]
 

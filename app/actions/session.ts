@@ -10,9 +10,9 @@ export async function login(_prev: unknown, formData: FormData) {
   const password  = (formData.get("password")  as string) ?? ""
 
   if (!username || !password) return { error: "Username dan password wajib diisi" }
-  if (!verifyPassword(username, password)) return { error: "Username atau password salah" }
+  if (!(await verifyPassword(username, password))) return { error: "Username atau password salah" }
 
-  const token = createSession()
+  const token = await createSession()
   const cookieStore = await cookies()
   cookieStore.set("session_token", token, {
     httpOnly: true,
@@ -27,7 +27,7 @@ export async function login(_prev: unknown, formData: FormData) {
 export async function logout() {
   const cookieStore = await cookies()
   const token = cookieStore.get("session_token")?.value
-  if (token) deleteSession(token)
+  if (token) await deleteSession(token)
   cookieStore.delete("session_token")
   redirect("/login")
 }
@@ -44,16 +44,16 @@ export async function updateCredentials(_prev: unknown, formData: FormData) {
 
   // Verify current password
   const { validateSession, getUsername, verifyPassword: vp } = await import("@/lib/auth-simple")
-  const session = validateSession(token)
+  const session = await validateSession(token)
   if (!session) return { error: "Sesi tidak valid" }
-  if (!vp(session.username, currentPassword)) return { error: "Password saat ini salah" }
+  if (!(await vp(session.username, currentPassword))) return { error: "Password saat ini salah" }
 
   if (!newUsername) return { error: "Username tidak boleh kosong" }
   if (!newPassword) return { error: "Password baru tidak boleh kosong" }
   if (newPassword !== confirmPassword) return { error: "Konfirmasi password tidak cocok" }
   if (newPassword.length < 4) return { error: "Password minimal 4 karakter" }
 
-  changeCredentials(newUsername, newPassword)
+  await changeCredentials(newUsername, newPassword)
   revalidatePath("/settings")
   return { success: true }
 }

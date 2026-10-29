@@ -11,7 +11,7 @@ export async function CategorySection({
   month: number
   year: number
 }) {
-  const data = getCategoryBreakdown(userId, month, year)
+  const data = await getCategoryBreakdown(userId, month, year)
   if (data.expenses.length === 0 && data.incomes.length === 0) return null
   return <CategoryPieCharts data={data} />
 }

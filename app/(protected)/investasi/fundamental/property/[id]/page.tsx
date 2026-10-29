@@ -18,7 +18,7 @@ export default async function SavedPropertyAnalysisPage({
   const { id }  = await params
   const userId  = LOCAL_USER_ID
 
-  const row = db.prepare<[string, string], Row>(
+  const row = await db.prepare<[string, string], Row>(
     "SELECT id, stock_code, period, result_data, created_at FROM fundamental_analyses WHERE id = ? AND user_id = ? AND sector = 'PROPERTY'"
   ).get(id, userId) as Row | undefined
 

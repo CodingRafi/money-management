@@ -32,8 +32,8 @@ export type LoanItem        = { id: string; name: string; total: number; sisa: n
 export type LoanData        = { piutang: { totalSisa: number; items: LoanItem[] }; hutang: { totalSisa: number; items: LoanItem[] }; terlambatCount: number }
 export type RecentTransaction = { id: string; type: "INCOME" | "EXPENSE" | "TRANSFER" | "INVESTMENT"; label: string; sublabel: string; amount: number; isCredit: boolean; date: Date }
 
-export function getWealthOverview(userId: string, year: number): WealthOverviewData {
-  const walletRow = db.prepare(`
+export async function getWealthOverview(userId: string, year: number): Promise<WealthOverviewData> {
+  const walletRow = await db.prepare(`
     SELECT
       COALESCE(SUM(balance), 0)                                              AS total,
       COALESCE(SUM(CASE WHEN is_liquid = 1 THEN balance ELSE 0 END), 0)     AS liquid,
@@ -41,7 +41,7 @@ export function getWealthOverview(userId: string, year: number): WealthOverviewD
     FROM wallets WHERE user_id = ? AND is_active = 1
   `).get(userId) as { total: number; liquid: number; non_liquid: number }
 
-  const investRows = db.prepare(`
+  const investRows = await db.prepare(`
     SELECT i.is_liquid,
       COALESCE(SUM(CASE WHEN it.type = 'BUY'  THEN it.total_amount ELSE 0 END), 0) AS total_buy,
       COALESCE(SUM(CASE WHEN it.type = 'SELL' THEN it.total_amount ELSE 0 END), 0) AS total_sell
@@ -59,8 +59,8 @@ export function getWealthOverview(userId: string, year: number): WealthOverviewD
     else nonLiquidInvestasi += aktif
   }
 
-  const piutangRow = db.prepare(`
-    SELECT COALESCE(SUM(MAX(l.principal_amount - COALESCE(pp.total_pp, 0), 0)), 0) AS sisa
+  const piutangRow = await db.prepare(`
+    SELECT COALESCE(SUM(GREATEST(l.principal_amount - COALESCE(pp.total_pp, 0), 0)), 0) AS sisa
     FROM loans l
     LEFT JOIN (
       SELECT loan_id, SUM(principal_paid) AS total_pp FROM loan_payments GROUP BY loan_id
@@ -68,8 +68,8 @@ export function getWealthOverview(userId: string, year: number): WealthOverviewD
     WHERE l.user_id = ? AND l.type = 'PIUTANG' AND l.is_active = 1
   `).get(userId) as { sisa: number }
 
-  const hutangRow = db.prepare(`
-    SELECT COALESCE(SUM(MAX(l.principal_amount - COALESCE(pp.total_pp, 0), 0)), 0) AS sisa
+  const hutangRow = await db.prepare(`
+    SELECT COALESCE(SUM(GREATEST(l.principal_amount - COALESCE(pp.total_pp, 0), 0)), 0) AS sisa
     FROM loans l
     LEFT JOIN (
       SELECT loan_id, SUM(principal_paid) AS total_pp FROM loan_payments GROUP BY loan_id
@@ -77,8 +77,8 @@ export function getWealthOverview(userId: string, year: number): WealthOverviewD
     WHERE l.user_id = ? AND l.type = 'HUTANG' AND l.is_active = 1
   `).get(userId) as { sisa: number }
 
-  const piutangMacetRow = db.prepare(`
-    SELECT COALESCE(SUM(MAX(l.principal_amount - COALESCE(pp.total_pp, 0), 0)), 0) AS sisa
+  const piutangMacetRow = await db.prepare(`
+    SELECT COALESCE(SUM(GREATEST(l.principal_amount - COALESCE(pp.total_pp, 0), 0)), 0) AS sisa
     FROM loans l
     LEFT JOIN (
       SELECT loan_id, SUM(principal_paid) AS total_pp FROM loan_payments GROUP BY loan_id
@@ -86,7 +86,7 @@ export function getWealthOverview(userId: string, year: number): WealthOverviewD
     WHERE l.user_id = ? AND l.type = 'PIUTANG' AND l.is_active = 1 AND l.payment_likelihood = 'MACET'
   `).get(userId) as { sisa: number }
 
-  const monthlyRows = db.prepare(`
+  const monthlyRows = await db.prepare(`
     SELECT month,
       COALESCE(SUM(CASE WHEN src = 'i' THEN amount ELSE 0 END), 0) AS income,
       COALESCE(SUM(CASE WHEN src = 'e' THEN amount ELSE 0 END), 0) AS expense
@@ -99,29 +99,29 @@ export function getWealthOverview(userId: string, year: number): WealthOverviewD
   `).all(userId, year, userId, year) as { month: number; income: number; expense: number }[]
 
   // Capital: (SELL - BUY) untuk investasi yang ditutup di bulan tersebut
-  const monthlyCapitalRows = db.prepare(`
-    SELECT CAST(strftime('%m', i.closed_at) AS INTEGER) AS month,
+  const monthlyCapitalRows = await db.prepare(`
+    SELECT EXTRACT(MONTH FROM i.closed_at)::int AS month,
       COALESCE(SUM(CASE WHEN it.type='SELL' THEN it.total_amount ELSE 0 END), 0) -
       COALESCE(SUM(CASE WHEN it.type='BUY'  THEN it.total_amount ELSE 0 END), 0) AS capital_gain
     FROM investment_transactions it
     JOIN investments i ON i.id = it.investment_id
     WHERE i.user_id = ? AND i.is_closed = 1
-      AND CAST(strftime('%Y', i.closed_at) AS INTEGER) = ?
-    GROUP BY month
+      AND EXTRACT(YEAR FROM i.closed_at)::int = ?
+    GROUP BY EXTRACT(MONTH FROM i.closed_at)::int
   `).all(userId, year) as { month: number; capital_gain: number }[]
 
   // Dividen: diterima di bulan tersebut
-  const monthlyDividenRows = db.prepare(`
-    SELECT CAST(strftime('%m', it.date) AS INTEGER) AS month,
+  const monthlyDividenRows = await db.prepare(`
+    SELECT EXTRACT(MONTH FROM it.date::date)::int AS month,
       COALESCE(SUM(it.total_amount), 0) AS dividen
     FROM investment_transactions it
     JOIN investments i ON i.id = it.investment_id
     WHERE i.user_id = ? AND it.type = 'DIVIDEND'
-      AND CAST(strftime('%Y', it.date) AS INTEGER) = ?
-    GROUP BY month
+      AND EXTRACT(YEAR FROM it.date::date)::int = ?
+    GROUP BY EXTRACT(MONTH FROM it.date::date)::int
   `).all(userId, year) as { month: number; dividen: number }[]
 
-  const yearlyRows = db.prepare(`
+  const yearlyRows = await db.prepare(`
     SELECT year,
       COALESCE(SUM(CASE WHEN src = 'i' THEN amount ELSE 0 END), 0) AS income,
       COALESCE(SUM(CASE WHEN src = 'e' THEN amount ELSE 0 END), 0) AS expense
@@ -133,23 +133,23 @@ export function getWealthOverview(userId: string, year: number): WealthOverviewD
     GROUP BY year ORDER BY year
   `).all(userId, userId) as { year: number; income: number; expense: number }[]
 
-  const yearlyCapitalRows = db.prepare(`
-    SELECT CAST(strftime('%Y', i.closed_at) AS INTEGER) AS year,
+  const yearlyCapitalRows = await db.prepare(`
+    SELECT EXTRACT(YEAR FROM i.closed_at)::int AS year,
       COALESCE(SUM(CASE WHEN it.type='SELL' THEN it.total_amount ELSE 0 END), 0) -
       COALESCE(SUM(CASE WHEN it.type='BUY'  THEN it.total_amount ELSE 0 END), 0) AS capital_gain
     FROM investment_transactions it
     JOIN investments i ON i.id = it.investment_id
     WHERE i.user_id = ? AND i.is_closed = 1
-    GROUP BY year
+    GROUP BY EXTRACT(YEAR FROM i.closed_at)::int
   `).all(userId) as { year: number; capital_gain: number }[]
 
-  const yearlyDividenRows = db.prepare(`
-    SELECT CAST(strftime('%Y', it.date) AS INTEGER) AS year,
+  const yearlyDividenRows = await db.prepare(`
+    SELECT EXTRACT(YEAR FROM it.date::date)::int AS year,
       COALESCE(SUM(it.total_amount), 0) AS dividen
     FROM investment_transactions it
     JOIN investments i ON i.id = it.investment_id
     WHERE i.user_id = ? AND it.type = 'DIVIDEND'
-    GROUP BY year
+    GROUP BY EXTRACT(YEAR FROM it.date::date)::int
   `).all(userId) as { year: number; dividen: number }[]
 
   const MONTH_LABELS = ["Jan","Feb","Mar","Apr","Mei","Jun","Jul","Agu","Sep","Okt","Nov","Des"]
@@ -168,7 +168,7 @@ export function getWealthOverview(userId: string, year: number): WealthOverviewD
 
   const now = new Date()
   const nowYM = now.getFullYear() * 12 + (now.getMonth() + 1)
-  const expRow = db.prepare(`
+  const expRow = await db.prepare(`
     SELECT COALESCE(SUM(amount), 0) AS total
     FROM expenses
     WHERE user_id = ?
@@ -208,8 +208,8 @@ export function getWealthOverview(userId: string, year: number): WealthOverviewD
   }
 }
 
-export function getNetWorth(userId: string): NetWorthData {
-  const walletRow = db.prepare(`
+export async function getNetWorth(userId: string): Promise<NetWorthData> {
+  const walletRow = await db.prepare(`
     SELECT
       COALESCE(SUM(balance), 0)                                      AS total_all,
       COALESCE(SUM(CASE WHEN is_liquid THEN balance ELSE 0 END), 0)  AS liquid,
@@ -217,9 +217,9 @@ export function getNetWorth(userId: string): NetWorthData {
     FROM wallets WHERE user_id = ? AND is_active = 1
   `).get(userId) as { total_all: number; liquid: number; non_liquid: number }
 
-  const loanRow = db.prepare(`
+  const loanRow = await db.prepare(`
     SELECT COALESCE(SUM(
-      MAX(l.principal_amount - COALESCE(pp.total_pp, 0), 0)
+      GREATEST(l.principal_amount - COALESCE(pp.total_pp, 0), 0)
     ), 0) AS total_hutang_sisa
     FROM loans l
     LEFT JOIN (SELECT loan_id, SUM(principal_paid) AS total_pp FROM loan_payments GROUP BY loan_id) pp ON pp.loan_id = l.id
@@ -231,8 +231,8 @@ export function getNetWorth(userId: string): NetWorthData {
   return { total: walletRow.total_all - loanRow.total_hutang_sisa, liquid, nonLiquid, changePercent: null }
 }
 
-export function getCashflow(userId: string, month: number, year: number): CashflowData {
-  const row = db.prepare(`
+export async function getCashflow(userId: string, month: number, year: number): Promise<CashflowData> {
+  const row = await db.prepare(`
     SELECT
       COALESCE(SUM(CASE WHEN src='i' THEN amount ELSE 0 END), 0) AS total_income,
       COALESCE(SUM(CASE WHEN src='e' THEN amount ELSE 0 END), 0) AS total_expense,
@@ -246,25 +246,25 @@ export function getCashflow(userId: string, month: number, year: number): Cashfl
   `).get(userId, month, year, userId, month, year) as { total_income: number; total_expense: number; income_count: number; expense_count: number }
 
   // Capital: (SELL - BUY) investasi yang ditutup di bulan ini
-  const capitalRow = db.prepare(`
+  const capitalRow = await db.prepare(`
     SELECT
       COALESCE(SUM(CASE WHEN it.type='SELL' THEN it.total_amount ELSE 0 END), 0) -
       COALESCE(SUM(CASE WHEN it.type='BUY'  THEN it.total_amount ELSE 0 END), 0) AS capital_gain
     FROM investment_transactions it
     JOIN investments i ON i.id = it.investment_id
     WHERE i.user_id = ? AND i.is_closed = 1
-      AND CAST(strftime('%m', i.closed_at) AS INTEGER) = ?
-      AND CAST(strftime('%Y', i.closed_at) AS INTEGER) = ?
+      AND EXTRACT(MONTH FROM i.closed_at)::int = ?
+      AND EXTRACT(YEAR FROM i.closed_at)::int = ?
   `).get(userId, month, year) as { capital_gain: number }
 
   // Dividen: diterima bulan ini
-  const dividenRow = db.prepare(`
+  const dividenRow = await db.prepare(`
     SELECT COALESCE(SUM(it.total_amount), 0) AS dividen
     FROM investment_transactions it
     JOIN investments i ON i.id = it.investment_id
     WHERE i.user_id = ? AND it.type = 'DIVIDEND'
-      AND CAST(strftime('%m', it.date) AS INTEGER) = ?
-      AND CAST(strftime('%Y', it.date) AS INTEGER) = ?
+      AND EXTRACT(MONTH FROM it.date::date)::int = ?
+      AND EXTRACT(YEAR FROM it.date::date)::int = ?
   `).get(userId, month, year) as { dividen: number }
 
   const totalIncome  = row.total_income
@@ -285,8 +285,8 @@ export function getCashflow(userId: string, month: number, year: number): Cashfl
   }
 }
 
-export function getWallets(userId: string): WalletData {
-  const rows = db.prepare(`
+export async function getWallets(userId: string): Promise<WalletData> {
+  const rows = await db.prepare(`
     SELECT id, name, balance, color, is_liquid
     FROM wallets WHERE user_id=? AND is_active=1 ORDER BY balance DESC
   `).all(userId) as { id: string; name: string; balance: number; color: string | null; is_liquid: number }[]
@@ -297,8 +297,8 @@ export function getWallets(userId: string): WalletData {
   }
 }
 
-export function getInvestment(userId: string): InvestmentData {
-  const summaryRow = db.prepare(`
+export async function getInvestment(userId: string): Promise<InvestmentData> {
+  const summaryRow = await db.prepare(`
     SELECT
       COALESCE(SUM(CASE WHEN it.type='BUY'  THEN it.total_amount ELSE 0 END), 0) AS total_buy,
       COALESCE(SUM(CASE WHEN it.type='SELL' THEN it.total_amount ELSE 0 END), 0) AS total_sell
@@ -307,7 +307,7 @@ export function getInvestment(userId: string): InvestmentData {
     WHERE i.user_id = ? AND i.is_closed = 0
   `).get(userId) as { total_buy: number; total_sell: number }
 
-  const goalsRows = db.prepare(`
+  const goalsRows = await db.prepare(`
     SELECT g.id, g.name, g.target_amount,
            COALESCE(SUM(CASE WHEN it.type='BUY' THEN it.total_amount ELSE -it.total_amount END), 0) AS total_modal
     FROM investment_goals g
@@ -340,8 +340,8 @@ export function getInvestment(userId: string): InvestmentData {
   }
 }
 
-export function getLoans(userId: string): LoanData {
-  const rows = db.prepare(`
+export async function getLoans(userId: string): Promise<LoanData> {
+  const rows = await db.prepare(`
     SELECT l.id, l.type, l.name, l.principal_amount, l.due_date, l.status,
            COALESCE(SUM(lp.principal_paid), 0) AS total_pp
     FROM loans l
@@ -378,8 +378,8 @@ export type CategoryBreakdownData = {
   incomes:  CategoryBreakdownItem[]
 }
 
-export function getCategoryBreakdown(userId: string, month: number, year: number): CategoryBreakdownData {
-  const expRows = db.prepare(`
+export async function getCategoryBreakdown(userId: string, month: number, year: number): Promise<CategoryBreakdownData> {
+  const expRows = await db.prepare(`
     SELECT COALESCE(ec.name, 'Lainnya') AS name, COALESCE(SUM(e.amount), 0) AS total
     FROM expenses e
     LEFT JOIN expense_categories ec ON ec.id = e.category_id
@@ -388,7 +388,7 @@ export function getCategoryBreakdown(userId: string, month: number, year: number
     ORDER BY total DESC
   `).all(userId, month, year) as CategoryBreakdownItem[]
 
-  const incRows = db.prepare(`
+  const incRows = await db.prepare(`
     SELECT COALESCE(ic.name, 'Lainnya') AS name, COALESCE(SUM(i.amount), 0) AS total
     FROM incomes i
     LEFT JOIN income_categories ic ON ic.id = i.category_id
@@ -439,24 +439,24 @@ function dateCutoff(days: number): string {
   return d.toISOString().slice(0, 10)
 }
 
-export function getRecentCashflowTx(userId: string, days = 30, limit = 10): RecentCashflowTx[] {
+export async function getRecentCashflowTx(userId: string, days = 30, limit = 10): Promise<RecentCashflowTx[]> {
   const cutoff = dateCutoff(days)
 
-  const incomes = db.prepare(`
+  const incomes = await db.prepare(`
     SELECT i.id, i.date, i.name, c.name AS cat, i.amount
     FROM incomes i LEFT JOIN income_categories c ON c.id = i.category_id
     WHERE i.user_id = ? AND i.date >= ?
     ORDER BY i.date DESC, i.created_at DESC LIMIT ?
   `).all(userId, cutoff, limit) as { id: string; date: string; name: string; cat: string | null; amount: number }[]
 
-  const expenses = db.prepare(`
+  const expenses = await db.prepare(`
     SELECT e.id, e.date, e.name, c.name AS cat, e.amount
     FROM expenses e LEFT JOIN expense_categories c ON c.id = e.category_id
     WHERE e.user_id = ? AND e.date >= ?
     ORDER BY e.date DESC, e.created_at DESC LIMIT ?
   `).all(userId, cutoff, limit) as { id: string; date: string; name: string; cat: string | null; amount: number }[]
 
-  const transfers = db.prepare(`
+  const transfers = await db.prepare(`
     SELECT t.id, t.date, t.amount, fw.name AS from_name, tw.name AS to_name
     FROM transfers t
     JOIN wallets fw ON fw.id = t.from_wallet_id
@@ -473,9 +473,9 @@ export function getRecentCashflowTx(userId: string, days = 30, limit = 10): Rece
   return rows.sort((a, b) => b.dateStr.localeCompare(a.dateStr)).slice(0, limit)
 }
 
-export function getRecentInvestmentTx(userId: string, days = 30, limit = 10): RecentInvestmentTx[] {
+export async function getRecentInvestmentTx(userId: string, days = 30, limit = 10): Promise<RecentInvestmentTx[]> {
   const cutoff = dateCutoff(days)
-  const rows = db.prepare(`
+  const rows = await db.prepare(`
     SELECT it.id, it.date, it.type, i.name AS investment_name, g.name AS goal_name, it.total_amount
     FROM investment_transactions it
     JOIN investments i ON i.id = it.investment_id
@@ -494,9 +494,9 @@ export function getRecentInvestmentTx(userId: string, days = 30, limit = 10): Re
   }))
 }
 
-export function getRecentLoanTx(userId: string, days = 30, limit = 10): RecentLoanTx[] {
+export async function getRecentLoanTx(userId: string, days = 30, limit = 10): Promise<RecentLoanTx[]> {
   const cutoff = dateCutoff(days)
-  const rows = db.prepare(`
+  const rows = await db.prepare(`
     SELECT lp.id, lp.date, lp.total_paid, lp.notes, l.name AS loan_name, l.type AS loan_type
     FROM loan_payments lp
     JOIN loans l ON l.id = lp.loan_id
@@ -516,8 +516,8 @@ export function getRecentLoanTx(userId: string, days = 30, limit = 10): RecentLo
 
 // ── Legacy combined recent transactions ──────────────────────────────────────
 
-export function getRecentTransactions(userId: string, limit = 10): RecentTransaction[] {
-  const incomes = db.prepare(`
+export async function getRecentTransactions(userId: string, limit = 10): Promise<RecentTransaction[]> {
+  const incomes = await db.prepare(`
     SELECT i.id, i.date, i.name, c.name AS category_name, i.amount
     FROM incomes i
     LEFT JOIN income_categories c ON c.id = i.category_id
@@ -525,7 +525,7 @@ export function getRecentTransactions(userId: string, limit = 10): RecentTransac
     ORDER BY i.date DESC, i.created_at DESC LIMIT ?
   `).all(userId, limit) as { id: string; date: string; name: string; category_name: string | null; amount: number }[]
 
-  const expenses = db.prepare(`
+  const expenses = await db.prepare(`
     SELECT e.id, e.date, e.name, c.name AS category_name, e.amount
     FROM expenses e
     LEFT JOIN expense_categories c ON c.id = e.category_id
@@ -533,7 +533,7 @@ export function getRecentTransactions(userId: string, limit = 10): RecentTransac
     ORDER BY e.date DESC, e.created_at DESC LIMIT ?
   `).all(userId, limit) as { id: string; date: string; name: string; category_name: string | null; amount: number }[]
 
-  const transfers = db.prepare(`
+  const transfers = await db.prepare(`
     SELECT t.id, t.date, t.amount, fw.name AS from_wallet_name, tw.name AS to_wallet_name
     FROM transfers t
     JOIN wallets fw ON fw.id = t.from_wallet_id
@@ -542,7 +542,7 @@ export function getRecentTransactions(userId: string, limit = 10): RecentTransac
     ORDER BY t.date DESC, t.created_at DESC LIMIT ?
   `).all(userId, limit) as { id: string; date: string; amount: number; from_wallet_name: string; to_wallet_name: string }[]
 
-  const invests = db.prepare(`
+  const invests = await db.prepare(`
     SELECT it.id, it.date, it.type, i.name AS investment_name, g.name AS goal_name, it.total_amount
     FROM investment_transactions it
     JOIN investments i ON i.id = it.investment_id

@@ -70,7 +70,7 @@ export default async function YearDetailPage({
   if (isNaN(year)) redirect("/rekap")
 
   if (year === new Date().getFullYear()) {
-    ensureYearlyCategories(userId, year)
+    await ensureYearlyCategories(userId, year)
   }
 
   const isActive = true
@@ -97,14 +97,14 @@ export default async function YearDetailPage({
       ) AS y
     )`
 
-  const incomeCats = db.prepare<unknown[], IncomeCatRow>(
+  const incomeCats = await db.prepare<unknown[], IncomeCatRow>(
     `${bestYearCTE("income_categories")}
      SELECT id, name FROM income_categories, best_year
      WHERE user_id = ? AND is_hidden = 0 AND year = best_year.y
      ORDER BY sort_order`
   ).all(userId, year, userId, year, userId, userId) as IncomeCatRow[]
 
-  const expenseCats = db.prepare<unknown[], ExpenseCatRow>(
+  const expenseCats = await db.prepare<unknown[], ExpenseCatRow>(
     `${bestYearCTE("expense_categories")}
      SELECT ec.id, ec.name, ec.type_id, et.name AS type_name, ec.default_percentage
      FROM expense_categories ec
@@ -113,12 +113,12 @@ export default async function YearDetailPage({
      ORDER BY et.sort_order, ec.sort_order`
   ).all(userId, year, userId, year, userId, userId) as ExpenseCatRow[]
 
-  const wallets = db.prepare<[string], { id: string; name: string }>(
+  const wallets = await db.prepare<[string], { id: string; name: string }>(
     "SELECT id, name FROM wallets WHERE user_id = ? AND is_active = 1 ORDER BY sort_order"
   ).all(userId) as { id: string; name: string }[]
 
   // ── Monthly data ──────────────────────────────────────────────────────────────
-  const incomes = db.prepare<[string, number, number], IncomeRow>(
+  const incomes = await db.prepare<[string, number, number], IncomeRow>(
     `SELECT i.id, i.date, i.name, i.category_id, ic.name AS category_name,
             i.wallet_id, w.name AS wallet_name, i.amount, i.is_initial
      FROM incomes i
@@ -128,7 +128,7 @@ export default async function YearDetailPage({
      ORDER BY i.date DESC, i.created_at DESC`
   ).all(userId, year, month) as IncomeRow[]
 
-  const expenses = db.prepare<[string, number, number], ExpenseRow>(
+  const expenses = await db.prepare<[string, number, number], ExpenseRow>(
     `SELECT e.id, e.date, e.name, e.wallet_id, w.name AS wallet_name,
             e.category_id, ec.name AS category_name, e.needs_type, e.amount, e.is_initial
      FROM expenses e
@@ -139,14 +139,14 @@ export default async function YearDetailPage({
   ).all(userId, year, month) as ExpenseRow[]
 
   // ── Yearly aggregate data (replaces yearly_recap table) ───────────────────────
-  const totalIncomeRow  = db.prepare<[string, number]>("SELECT COALESCE(SUM(amount), 0) AS total FROM incomes  WHERE user_id=? AND year=?").get(userId, year) as { total: number }
-  const totalExpenseRow = db.prepare<[string, number]>("SELECT COALESCE(SUM(amount), 0) AS total FROM expenses WHERE user_id=? AND year=?").get(userId, year) as { total: number }
+  const totalIncomeRow  = await db.prepare<[string, number]>("SELECT COALESCE(SUM(amount), 0) AS total FROM incomes  WHERE user_id=? AND year=?").get(userId, year) as { total: number }
+  const totalExpenseRow = await db.prepare<[string, number]>("SELECT COALESCE(SUM(amount), 0) AS total FROM expenses WHERE user_id=? AND year=?").get(userId, year) as { total: number }
   const totalIncome  = totalIncomeRow.total
   const totalExpense = totalExpenseRow.total
   const hasData      = totalIncome > 0 || totalExpense > 0
 
-  const incomeMoRows  = db.prepare<[string, number]>("SELECT month, COALESCE(SUM(amount),0) AS total FROM incomes  WHERE user_id=? AND year=? GROUP BY month").all(userId, year)  as { month: number; total: number }[]
-  const expenseMoRows = db.prepare<[string, number]>("SELECT month, COALESCE(SUM(amount),0) AS total FROM expenses WHERE user_id=? AND year=? GROUP BY month").all(userId, year) as { month: number; total: number }[]
+  const incomeMoRows  = await db.prepare<[string, number]>("SELECT month, COALESCE(SUM(amount),0) AS total FROM incomes  WHERE user_id=? AND year=? GROUP BY month").all(userId, year)  as { month: number; total: number }[]
+  const expenseMoRows = await db.prepare<[string, number]>("SELECT month, COALESCE(SUM(amount),0) AS total FROM expenses WHERE user_id=? AND year=? GROUP BY month").all(userId, year) as { month: number; total: number }[]
   const incomeMo: Record<string, number>  = {}
   const expenseMo: Record<string, number> = {}
   for (const r of incomeMoRows)  incomeMo[String(r.month)]  = r.total
@@ -155,7 +155,7 @@ export default async function YearDetailPage({
   const avgMonthlyExpense  = expenseMoRows.length > 0 ? totalExpense / expenseMoRows.length : null
 
   // expense breakdown by category & month
-  const expByCatMonthRows = db.prepare<[string, number]>(
+  const expByCatMonthRows = await db.prepare<[string, number]>(
     "SELECT category_id, month, COALESCE(SUM(amount),0) AS total FROM expenses WHERE user_id=? AND year=? AND category_id IS NOT NULL GROUP BY category_id, month"
   ).all(userId, year) as { category_id: string; month: number; total: number }[]
   const expBdSpendMap = new Map<string, Record<string, number>>()
@@ -165,17 +165,17 @@ export default async function YearDetailPage({
   }
 
   // prev year income_monthly (for income growth Jan vs Dec prev year)
-  const prevIncomeMoRows = db.prepare<[string, number]>("SELECT month, COALESCE(SUM(amount),0) AS total FROM incomes WHERE user_id=? AND year=? GROUP BY month").all(userId, year - 1) as { month: number; total: number }[]
+  const prevIncomeMoRows = await db.prepare<[string, number]>("SELECT month, COALESCE(SUM(amount),0) AS total FROM incomes WHERE user_id=? AND year=? GROUP BY month").all(userId, year - 1) as { month: number; total: number }[]
   const prevIncomeMo: Record<string, number> = {}
   for (const r of prevIncomeMoRows) prevIncomeMo[String(r.month)] = r.total
   const hasPrevYear = prevIncomeMoRows.length > 0
 
   // ── Report charts ─────────────────────────────────────────────────────────────
-  const needsChartRows = db.prepare<[string, number, number]>(
+  const needsChartRows = await db.prepare<[string, number, number]>(
     "SELECT needs_type AS label, COALESCE(SUM(amount),0) AS total FROM expenses WHERE user_id=? AND year=? AND month=? GROUP BY needs_type"
   ).all(userId, year, month) as { label: string; total: number }[]
 
-  const catChartRows = db.prepare<[string, number, number]>(
+  const catChartRows = await db.prepare<[string, number, number]>(
     `SELECT COALESCE(ec.name, 'Lainnya') AS label, COALESCE(SUM(e.amount),0) AS total
      FROM expenses e LEFT JOIN expense_categories ec ON ec.id = e.category_id
      WHERE e.user_id=? AND e.year=? AND e.month=?
@@ -185,7 +185,7 @@ export default async function YearDetailPage({
   // ── Income breakdown (only when detail open) ──────────────────────────────────
   let incomeBdRaw: { category_name: string; sort_order: number; month: number | null; total: number }[] = []
   if (view === "report" && detail === "pendapatan") {
-    incomeBdRaw = db.prepare<unknown[]>(
+    incomeBdRaw = await db.prepare<unknown[]>(
       `${bestYearCTE("income_categories")}
        SELECT ic.name AS category_name, ic.sort_order, i.month, COALESCE(SUM(i.amount),0) AS total
        FROM income_categories ic, best_year
@@ -202,16 +202,16 @@ export default async function YearDetailPage({
   let nominalRows:     { category_id: string; nominal: number }[] = []
   let maxExpensePct    = 100
   if (view === "report" && detail === "pengeluaran") {
-    budgetRows = db.prepare<[string, number]>(
+    budgetRows = await db.prepare<[string, number]>(
       "SELECT category_id AS cat_id, month, percentage AS pct FROM budgets WHERE user_id = ? AND year = ?"
     ).all(userId, year) as { cat_id: string; month: number; pct: number }[]
 
-    const yearBudgetRow = db.prepare<[string, number]>(
+    const yearBudgetRow = await db.prepare<[string, number]>(
       "SELECT max_expense_pct FROM year_budget_settings WHERE user_id=? AND year=?"
     ).get(userId, year) as { max_expense_pct: number } | undefined
     maxExpensePct = yearBudgetRow?.max_expense_pct ?? 100
 
-    typeAllocRows = db.prepare<[string, number, string, number]>(
+    typeAllocRows = await db.prepare<[string, number, string, number]>(
       `SELECT et.id, et.name, COALESCE(ta.percentage, 0) AS allocation
        FROM expense_types et
        LEFT JOIN type_allocations ta ON ta.type_id = et.id AND ta.user_id = ? AND ta.year = ?
@@ -219,7 +219,7 @@ export default async function YearDetailPage({
        ORDER BY et.sort_order`
     ).all(userId, year, userId, year) as { id: string; name: string; allocation: number }[]
 
-    nominalRows = db.prepare<[string, number]>(
+    nominalRows = await db.prepare<[string, number]>(
       "SELECT category_id, nominal FROM category_nominal_budgets WHERE user_id=? AND year=?"
     ).all(userId, year) as { category_id: string; nominal: number }[]
   }
@@ -228,7 +228,7 @@ export default async function YearDetailPage({
   let transfers: TransferRow[]  = []
   let liquidWallets: LiquidWallet[] = []
   if (tab === "transfer") {
-    transfers = db.prepare<[string, number, number]>(
+    transfers = await db.prepare<[string, number, number]>(
       `SELECT t.id, t.date, t.amount, t.notes,
               fw.name AS from_wallet_name, fw.color AS from_wallet_color,
               tw.name AS to_wallet_name,   tw.color AS to_wallet_color
@@ -239,7 +239,7 @@ export default async function YearDetailPage({
        ORDER BY t.date DESC, t.created_at DESC`
     ).all(userId, year, month) as TransferRow[]
 
-    liquidWallets = db.prepare<[string]>(
+    liquidWallets = await db.prepare<[string]>(
       "SELECT id, name, color FROM wallets WHERE user_id=? AND is_active=1 AND is_liquid=1 ORDER BY sort_order"
     ).all(userId) as LiquidWallet[]
   }

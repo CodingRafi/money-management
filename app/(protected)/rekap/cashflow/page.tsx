@@ -54,7 +54,7 @@ export default async function CashflowListPage({
   const type = typeof sp.type === "string" ? sp.type : "all"
   const paramsStr = buildParamsStr(sp)
 
-  const { items, total } = getCashflowTxList(userId, {
+  const { items, total } = await getCashflowTxList(userId, {
     from: from || undefined,
     to:   to   || undefined,
     type,

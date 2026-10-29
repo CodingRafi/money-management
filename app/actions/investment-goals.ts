@@ -17,7 +17,7 @@ export async function createGoal(formData: FormData) {
   if (!name) throw new Error("Nama kantong wajib diisi")
   if (targetAmount !== null && (isNaN(targetAmount) || targetAmount <= 0)) throw new Error("Target nominal tidak valid")
 
-  db.prepare(
+  await db.prepare(
     "INSERT INTO investment_goals (id, user_id, name, target_amount, target_date, color) VALUES (?, ?, ?, ?, ?, ?)"
   ).run(uuid(), userId, name, targetAmount, targetDate, color)
 
@@ -34,7 +34,7 @@ export async function updateGoal(id: string, formData: FormData) {
   if (!name) throw new Error("Nama kantong wajib diisi")
   if (targetAmount !== null && (isNaN(targetAmount) || targetAmount <= 0)) throw new Error("Target nominal tidak valid")
 
-  db.prepare(
+  await db.prepare(
     "UPDATE investment_goals SET name=?, target_amount=?, target_date=?, color=?, updated_at=datetime('now') WHERE id=? AND user_id=?"
   ).run(name, targetAmount, targetDate, color, id, userId)
 
@@ -44,12 +44,12 @@ export async function updateGoal(id: string, formData: FormData) {
 export async function deleteGoal(id: string) {
   const userId = await requireUserIdAction()
 
-  const txRow = db.prepare(
+  const txRow = await db.prepare(
     "SELECT COUNT(*) AS cnt FROM investment_transactions WHERE goal_id=?"
   ).get(id) as { cnt: number }
   if (txRow.cnt > 0) throw new Error("Kantong masih memiliki transaksi aktif dan tidak bisa dihapus")
 
-  db.prepare(
+  await db.prepare(
     "UPDATE investment_goals SET is_active=0, updated_at=datetime('now') WHERE id=? AND user_id=?"
   ).run(id, userId)
 
