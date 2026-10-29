@@ -2,8 +2,7 @@ export const dynamic = "force-dynamic"
 
 import { redirect } from "next/navigation"
 import { db } from "@/lib/db"
-import { LOCAL_USER_ID } from "@/lib/auth-simple"
-import { ensureYearlyCategories } from "@/lib/ensureYearlyCategories"
+import { requireHouseholdSession } from "@/lib/session"
 import { Button } from "@/components/ui/button"
 import { ArrowLeft } from "lucide-react"
 import Link from "next/link"
@@ -26,14 +25,10 @@ export default async function KategoriBudgetPage({
   params: Promise<{ year: string }>
   searchParams: Promise<Record<string, string | string[] | undefined>>
 }) {
-  const userId = LOCAL_USER_ID
+  const { userId, householdId } = await requireHouseholdSession()
   const { year: yearStr } = await params
   const year = parseInt(yearStr)
   if (isNaN(year)) redirect("/rekap")
-
-  if (year === new Date().getFullYear()) {
-    await ensureYearlyCategories(userId, year)
-  }
 
   const sp = await searchParams
   const ktab         = sp.ktab === "expense" ? "expense" : "income"
@@ -48,19 +43,20 @@ export default async function KategoriBudgetPage({
   ).get(userId, year) as YearBudgetRaw | undefined
   const maxExpensePct = yearBudgetRow?.max_expense_pct ?? 100
 
-  const katIncomeRows = (await db.prepare<[string, number], IncomeRaw>(
-    "SELECT id, name, color, is_hidden FROM income_categories WHERE user_id=? AND year=? ORDER BY sort_order, name"
-  ).all(userId, year) as IncomeRaw[]).map<KatIncomeCat>((r) => ({ ...r, is_hidden: !!r.is_hidden }))
+  const katIncomeRows = (await db.prepare<[string], IncomeRaw>(
+    "SELECT id, name, color, is_hidden FROM income_categories WHERE household_id=? ORDER BY sort_order, name"
+  ).all(householdId) as IncomeRaw[]).map<KatIncomeCat>((r) => ({ ...r, is_hidden: !!r.is_hidden }))
 
-  const katTypeRows = (await db.prepare<[string, number, string, number], TypeRaw>(
+  const katTypeRows = (await db.prepare<[string, string, number, string], TypeRaw>(
     `SELECT et.id, et.name, COALESCE(ta.percentage, 0) AS allocation
      FROM expense_types et
-     LEFT JOIN type_allocations ta ON ta.type_id = et.id AND ta.user_id = ? AND ta.year = ?
-     WHERE et.user_id = ? AND et.year = ?
+     LEFT JOIN type_allocations ta ON ta.type_id = et.id AND ta.user_id = ?
+       AND ta.year = (SELECT MAX(t2.year) FROM type_allocations t2 WHERE t2.user_id = ? AND t2.type_id = et.id AND t2.year <= ?)
+     WHERE et.household_id = ?
      ORDER BY et.sort_order, et.name`
-  ).all(userId, year, userId, year) as TypeRaw[]).map<KatExpenseType>((r) => ({ id: r.id, name: r.name, allocation: String(r.allocation ?? 0) }))
+  ).all(userId, userId, year, householdId) as TypeRaw[]).map<KatExpenseType>((r) => ({ id: r.id, name: r.name, allocation: String(r.allocation ?? 0) }))
 
-  const katExpCatRows = (await db.prepare<[string, number, number, string, number, string, number], ExpCatRaw>(
+  const katExpCatRows = (await db.prepare<[string, number, number, string, number, string], ExpCatRaw>(
     `SELECT ec.id, ec.name, ec.type_id, et.name AS type_name, ec.is_hidden,
             b.percentage AS budget_pct,
             nb.nominal AS nominal_budget
@@ -68,9 +64,9 @@ export default async function KategoriBudgetPage({
      JOIN expense_types et ON et.id = ec.type_id
      LEFT JOIN budgets b ON b.category_id = ec.id AND b.user_id = ? AND b.month = ? AND b.year = ?
      LEFT JOIN category_nominal_budgets nb ON nb.category_id = ec.id AND nb.user_id = ? AND nb.year = ?
-     WHERE ec.user_id = ? AND ec.year = ?
+     WHERE ec.household_id = ?
      ORDER BY ec.sort_order, ec.name`
-  ).all(userId, month, year, userId, year, userId, year) as ExpCatRaw[]).map<KatExpenseCat>((r) => ({
+  ).all(userId, month, year, userId, year, householdId) as ExpCatRaw[]).map<KatExpenseCat>((r) => ({
     id: r.id, name: r.name, type_id: r.type_id, type_name: r.type_name,
     is_hidden: !!r.is_hidden,
     budget_pct: r.budget_pct != null ? String(r.budget_pct) : null,

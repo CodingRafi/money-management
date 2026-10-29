@@ -1,6 +1,6 @@
 import { redirect } from "next/navigation"
 import { db } from "@/lib/db"
-import { LOCAL_USER_ID } from "@/lib/auth-simple"
+import { requireUserId } from "@/lib/session"
 import { Card, CardContent, CardHeader } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
@@ -47,7 +47,7 @@ export default async function LoanDetailPage({
   params: Promise<{ loanId: string }>
   searchParams: Promise<Record<string, string | string[] | undefined>>
 }) {
-  const userId  = LOCAL_USER_ID
+  const userId  = await requireUserId()
   const { loanId } = await params
   const isActive   = true
   const sp         = await searchParams

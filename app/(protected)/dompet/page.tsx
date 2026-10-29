@@ -1,18 +1,11 @@
 import { db } from "@/lib/db"
-import { LOCAL_USER_ID } from "@/lib/auth-simple"
+import { requireUserId } from "@/lib/session"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
-import { Plus, Pencil, Trash2, X, Wallet, SlidersHorizontal } from "lucide-react"
+import { Plus, Pencil, Trash2, X, Wallet } from "lucide-react"
 import Link from "next/link"
-import { Input } from "@/components/ui/input"
 import { WalletForm } from "./_components/wallet-form"
-import { createWallet, updateWallet, deleteWallet, adjustBalance } from "@/app/actions/wallets"
-
-function formatRupiah(n: number | string) {
-  return new Intl.NumberFormat("id-ID", {
-    style: "currency", currency: "IDR", maximumFractionDigits: 0,
-  }).format(Number(n))
-}
+import { createWallet, updateWallet, deleteWallet } from "@/app/actions/wallets"
 
 type WalletCategory = { id: string; name: string }
 type WalletRow = {
@@ -21,7 +14,6 @@ type WalletRow = {
   category_name: string
   name: string
   color: string | null
-  balance: number
 }
 
 export default async function DompetPage({
@@ -29,12 +21,11 @@ export default async function DompetPage({
 }: {
   searchParams: Promise<Record<string, string | string[] | undefined>>
 }) {
-  const userId = LOCAL_USER_ID
+  const userId = await requireUserId()
 
   const sp       = await searchParams
   const showNew  = sp.new === "1"
   const editId   = typeof sp.edit === "string" ? sp.edit : null
-  const adjustId = typeof sp.adjust === "string" ? sp.adjust : null
 
   const categories = await db.prepare<[], WalletCategory>(
     "SELECT id, name FROM wallet_categories ORDER BY sort_order, name"
@@ -42,7 +33,7 @@ export default async function DompetPage({
 
   const wallets = await db.prepare<[string], WalletRow>(
     `SELECT w.id, w.category_id, wc.name AS category_name,
-            w.name, w.color, w.balance
+            w.name, w.color
      FROM wallets w
      JOIN wallet_categories wc ON wc.id = w.category_id
      WHERE w.user_id = ? AND w.is_active = 1
@@ -56,14 +47,13 @@ export default async function DompetPage({
   }, {})
 
   const usedCats     = categories.filter((c) => byCategory[c.id]?.length)
-  const totalBalance = wallets.reduce((s, w) => s + w.balance, 0)
 
   return (
     <div className="space-y-6 max-w-3xl">
       <div className="flex items-start justify-between">
         <div>
           <h1 className="text-2xl font-bold">Dompet</h1>
-          <p className="text-sm text-muted-foreground">Kelola semua akun keuangan kamu</p>
+          <p className="text-sm text-muted-foreground">Dompet pribadimu — hanya sebagai label sumber arus kas</p>
         </div>
         {!showNew && (
           <Button asChild size="sm">
@@ -74,17 +64,6 @@ export default async function DompetPage({
           </Button>
         )}
       </div>
-
-      {wallets.length > 0 && (
-        <Card>
-          <CardContent className="p-4">
-            <p className="text-xs text-muted-foreground mb-1">Total Saldo</p>
-            <p className={`text-lg font-bold tabular-nums ${totalBalance < 0 ? "text-red-600" : "text-blue-600"}`}>
-              {formatRupiah(totalBalance)}
-            </p>
-          </CardContent>
-        </Card>
-      )}
 
       {showNew && (
         <Card>
@@ -115,7 +94,6 @@ export default async function DompetPage({
 
       {usedCats.map((cat) => {
         const catWallets = byCategory[cat.id] ?? []
-        const catTotal   = catWallets.reduce((s, w) => s + w.balance, 0)
         return (
           <Card key={cat.id}>
             <CardHeader className="pb-3">
@@ -123,9 +101,6 @@ export default async function DompetPage({
                 <CardTitle className="text-sm font-semibold uppercase tracking-wide text-muted-foreground">
                   {cat.name}
                 </CardTitle>
-                <p className={`text-sm font-bold tabular-nums ${catTotal < 0 ? "text-red-600" : "text-foreground"}`}>
-                  {formatRupiah(catTotal)}
-                </p>
               </div>
             </CardHeader>
             <CardContent className="space-y-2">
@@ -140,30 +115,6 @@ export default async function DompetPage({
                       cancelHref="/dompet"
                     />
                   </div>
-                ) : adjustId === w.id ? (
-                  <div key={w.id} className="rounded-lg border border-amber-400/50 bg-amber-50/50 dark:bg-amber-950/20 p-4 space-y-3">
-                    <div>
-                      <p className="text-sm font-medium">{w.name} — Sesuaikan Saldo</p>
-                      <p className="text-xs text-muted-foreground mt-0.5">
-                        Saldo tercatat: <span className="font-medium">{formatRupiah(w.balance)}</span>.
-                        Masukkan saldo aktual sesuai rekening/dompet fisik.
-                      </p>
-                    </div>
-                    <form action={adjustBalance.bind(null, w.id)} className="flex items-center gap-2">
-                      <Input
-                        name="target_balance"
-                        type="number"
-                        step="any"
-                        defaultValue={w.balance}
-                        className="h-8 max-w-[180px] text-sm"
-                        autoFocus
-                      />
-                      <Button type="submit" size="sm" className="h-8">Simpan</Button>
-                      <Button asChild variant="ghost" size="sm" className="h-8">
-                        <Link href="/dompet">Batal</Link>
-                      </Button>
-                    </form>
-                  </div>
                 ) : (
                   <div key={w.id} className="flex items-center justify-between rounded-lg border px-4 py-3">
                     <div className="flex min-w-0 items-center gap-3">
@@ -173,13 +124,7 @@ export default async function DompetPage({
                       <p className="truncate font-medium">{w.name}</p>
                     </div>
                     <div className="flex shrink-0 items-center gap-3">
-                      <p className={`tabular-nums font-semibold ${w.balance < 0 ? "text-red-600" : "text-foreground"}`}>
-                        {formatRupiah(w.balance)}
-                      </p>
                       <div className="flex items-center gap-1">
-                        <Button asChild variant="ghost" size="icon" className="h-8 w-8" title="Sesuaikan saldo">
-                          <Link href={`?adjust=${w.id}`}><SlidersHorizontal className="h-4 w-4" /></Link>
-                        </Button>
                         <Button asChild variant="ghost" size="icon" className="h-8 w-8">
                           <Link href={`?edit=${w.id}`}><Pencil className="h-4 w-4" /></Link>
                         </Button>

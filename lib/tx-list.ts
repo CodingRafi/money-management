@@ -22,15 +22,15 @@ export type CashflowTxItem = {
 }
 
 export async function getCashflowTxList(
-  userId: string,
+  userId: string | string[],
   { from, to, type = "all", search, page = 1, limit = 10 }: ListOpts = {}
 ): Promise<{ items: CashflowTxItem[]; total: number }> {
   const like = search ? `%${search}%` : null
   const all: CashflowTxItem[] = []
 
   if (type === "all" || type === "INCOME") {
-    const c = ["i.user_id = ?"]
-    const p: (string | null)[] = [userId]
+    const c = ["i.user_id = ANY(?)"]
+    const p: (string | string[] | null)[] = [Array.isArray(userId) ? userId : [userId]]
     if (from) { c.push("i.date >= ?"); p.push(from) }
     if (to)   { c.push("i.date <= ?"); p.push(to) }
     if (like) { c.push("i.name ILIKE ?"); p.push(like) }
@@ -43,8 +43,8 @@ export async function getCashflowTxList(
   }
 
   if (type === "all" || type === "EXPENSE") {
-    const c = ["e.user_id = ?"]
-    const p: (string | null)[] = [userId]
+    const c = ["e.user_id = ANY(?)"]
+    const p: (string | string[] | null)[] = [Array.isArray(userId) ? userId : [userId]]
     if (from) { c.push("e.date >= ?"); p.push(from) }
     if (to)   { c.push("e.date <= ?"); p.push(to) }
     if (like) { c.push("e.name ILIKE ?"); p.push(like) }
@@ -57,8 +57,8 @@ export async function getCashflowTxList(
   }
 
   if (type === "all" || type === "TRANSFER") {
-    const c = ["t.user_id = ?"]
-    const p: (string | null)[] = [userId]
+    const c = ["t.user_id = ANY(?)"]
+    const p: (string | string[] | null)[] = [Array.isArray(userId) ? userId : [userId]]
     if (from) { c.push("t.date >= ?"); p.push(from) }
     if (to)   { c.push("t.date <= ?"); p.push(to) }
     if (like) { c.push("(fw.name ILIKE ? OR tw.name ILIKE ?)"); p.push(like, like) }
@@ -89,12 +89,12 @@ export type InvestmentTxItem = {
 }
 
 export async function getInvestmentTxList(
-  userId: string,
+  userId: string | string[],
   { from, to, type = "all", search, page = 1, limit = 10 }: ListOpts = {}
 ): Promise<{ items: InvestmentTxItem[]; total: number }> {
   const like = search ? `%${search}%` : null
-  const c = ["i.user_id = ?"]
-  const p: (string | null)[] = [userId]
+  const c = ["i.user_id = ANY(?)"]
+  const p: (string | string[] | null)[] = [Array.isArray(userId) ? userId : [userId]]
   if (from)          { c.push("it.date >= ?"); p.push(from) }
   if (to)            { c.push("it.date <= ?"); p.push(to) }
   if (type !== "all") { c.push("it.type = ?"); p.push(type) }
@@ -132,12 +132,12 @@ export type LoanPaymentItem = {
 }
 
 export async function getLoanPaymentList(
-  userId: string,
+  userId: string | string[],
   { from, to, type = "all", search, page = 1, limit = 10 }: ListOpts = {}
 ): Promise<{ items: LoanPaymentItem[]; total: number }> {
   const like = search ? `%${search}%` : null
-  const c = ["l.user_id = ?"]
-  const p: (string | null)[] = [userId]
+  const c = ["l.user_id = ANY(?)"]
+  const p: (string | string[] | null)[] = [Array.isArray(userId) ? userId : [userId]]
   if (from)          { c.push("lp.date >= ?"); p.push(from) }
   if (to)            { c.push("lp.date <= ?"); p.push(to) }
   if (type !== "all") { c.push("l.type = ?"); p.push(type) }

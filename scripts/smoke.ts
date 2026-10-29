@@ -14,24 +14,21 @@ import {
   getRecentCashflowTx,
 } from "../lib/dashboard"
 import { getCashflowTxList, getInvestmentTxList, getLoanPaymentList } from "../lib/tx-list"
-import { recalcWalletBalances } from "../lib/wallet"
-import { seedUserCategories } from "../lib/seedUserCategories"
-import { ensureYearlyCategories } from "../lib/ensureYearlyCategories"
 import crypto from "crypto"
 
 const uid = () => crypto.randomUUID()
 const USER = "local-user"
 
 async function main() {
-  console.log("1. seed kategori user...")
-  await seedUserCategories(USER)
-  await ensureYearlyCategories(USER, new Date().getFullYear())
+  console.log("1. kategori keluarga...")
+  const hh = await db.prepare("SELECT household_id FROM household_members WHERE user_id = ?").get(USER) as { household_id: string } | undefined
+  if (!hh) throw new Error("local-user belum punya keluarga — jalankan migrasi 003")
 
   console.log("2. insert wallet + transaksi...")
   const catRow = await db.prepare("SELECT id FROM wallet_categories LIMIT 1").get() as { id: string }
   const walletId = uid()
   await db.prepare(
-    "INSERT INTO wallets (id, user_id, category_id, name, is_liquid, is_active, sort_order, balance, initial_balance) VALUES (?, ?, ?, ?, 1, 1, 1, 0, 0)",
+    "INSERT INTO wallets (id, user_id, category_id, name, is_liquid, is_active, sort_order) VALUES (?, ?, ?, ?, 1, 1, 1)",
   ).run(walletId, USER, catRow.id, "Smoke Wallet")
 
   const year = new Date().getFullYear()
@@ -59,8 +56,7 @@ async function main() {
     "INSERT INTO investment_transactions (id, investment_id, type, quantity, price_per_unit, total_amount, date, year, is_initial) VALUES (?, ?, 'BUY', '1', 1000, 1000, ?, ?, 0)",
   ).run(uid(), invId, date, year)
 
-  console.log("3. recalc saldo dompet...")
-  await recalcWalletBalances(USER)
+  console.log("3. (saldo dompet dihapus — tidak ada recalc)")
 
   console.log("4. jalankan query dashboard...")
   const wealth = await getWealthOverview(USER, year)
@@ -110,7 +106,7 @@ async function main() {
   // Transfer antar dompet
   const w2 = uid()
   await db.prepare(
-    "INSERT INTO wallets (id, user_id, category_id, name, is_liquid, is_active, sort_order, balance, initial_balance) VALUES (?, ?, ?, ?, 1, 1, 2, 0, 0)",
+    "INSERT INTO wallets (id, user_id, category_id, name, is_liquid, is_active, sort_order) VALUES (?, ?, ?, ?, 1, 1, 2)",
   ).run(w2, USER, catRow.id, "Smoke Wallet 2")
   await db.transaction(async () => {
     await db.prepare(

@@ -1,5 +1,5 @@
 import { db } from "@/lib/db"
-import { LOCAL_USER_ID } from "@/lib/auth-simple"
+import { requireScope } from "@/lib/scope"
 import { Card, CardContent, CardHeader } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
@@ -17,7 +17,7 @@ function formatRupiah(n: number | string) {
   }).format(Number(n))
 }
 
-type WalletRow   = { id: string; name: string; color: string | null; balance: number; category_name: string }
+type WalletRow   = { id: string; name: string; color: string | null; category_name: string }
 type GoalRow     = { id: string; name: string; color: string | null; target_amount: number | null; target_date: string | null; total_modal: number; total_hasil: number }
 type AssetRow    = { id: string; name: string; category_name: string; is_liquid: number; is_closed: number; total_modal: number; total_hasil: number }
 type CategoryRow = { id: string; name: string }
@@ -27,7 +27,9 @@ export default async function InvestasiPage({
 }: {
   searchParams: Promise<Record<string, string | string[] | undefined>>
 }) {
-  const userId = LOCAL_USER_ID
+  const scope  = await requireScope()
+  const userId = scope.userIds
+  const selfId = scope.targetUserId
   const sp          = await searchParams
   const showNew     = sp.new === "1"
   const showNewAset = sp.newAset === "1"
@@ -35,31 +37,31 @@ export default async function InvestasiPage({
   const asetTab     = sp.asetTab === "history" ? "history" : "aktif"
 
   const wallets = await db.prepare<[string], WalletRow>(
-    `SELECT w.id, w.name, w.color, w.balance, wc.name AS category_name
+    `SELECT w.id, w.name, w.color, wc.name AS category_name
      FROM wallets w JOIN wallet_categories wc ON wc.id = w.category_id
      WHERE w.user_id = ? AND w.is_active = 1
      ORDER BY wc.sort_order, w.sort_order`
-  ).all(userId) as WalletRow[]
+  ).all(selfId) as WalletRow[]
 
-  const goals = await db.prepare<[string], GoalRow>(
+  const goals = await db.prepare<[string[]], GoalRow>(
     `SELECT g.id, g.name, g.color, g.target_amount, g.target_date,
             COALESCE(SUM(CASE WHEN it.type='BUY'  THEN it.total_amount ELSE 0 END),0) AS total_modal,
             COALESCE(SUM(CASE WHEN it.type='SELL' THEN it.total_amount ELSE 0 END),0) AS total_hasil
      FROM investment_goals g
      LEFT JOIN investment_transactions it ON it.goal_id = g.id
-     WHERE g.user_id = ? AND g.is_active = 1
+     WHERE g.user_id = ANY(?) AND g.is_active = 1
      GROUP BY g.id, g.name, g.color, g.target_amount, g.target_date, g.sort_order
      ORDER BY g.sort_order, g.created_at`
   ).all(userId) as GoalRow[]
 
-  const assets = await db.prepare<[string], AssetRow>(
+  const assets = await db.prepare<[string[]], AssetRow>(
     `SELECT i.id, i.name, ic.name AS category_name, i.is_liquid, i.is_closed,
             COALESCE(SUM(CASE WHEN it.type='BUY'  THEN it.total_amount ELSE 0 END),0) AS total_modal,
             COALESCE(SUM(CASE WHEN it.type='SELL' THEN it.total_amount ELSE 0 END),0) AS total_hasil
      FROM investments i
      JOIN investment_categories ic ON ic.id = i.category_id
      LEFT JOIN investment_transactions it ON it.investment_id = i.id
-     WHERE i.user_id = ? AND i.is_active = 1
+     WHERE i.user_id = ANY(?) AND i.is_active = 1
      GROUP BY i.id, i.name, ic.name, ic.sort_order, i.is_liquid, i.is_closed, i.created_at
      ORDER BY ic.sort_order, i.created_at`
   ).all(userId) as AssetRow[]
@@ -67,29 +69,29 @@ export default async function InvestasiPage({
   const activeAssets = assets.filter((a) => !a.is_closed)
   const closedAssets = assets.filter((a) => a.is_closed)
 
-  const investSummary = await db.prepare<[string]>(
+  const investSummary = await db.prepare<[string[]]>(
     `SELECT COALESCE(SUM(CASE WHEN it.type='BUY'  THEN it.total_amount ELSE 0 END),0) AS total_modal,
             COALESCE(SUM(CASE WHEN it.type='SELL' THEN it.total_amount ELSE 0 END),0) AS total_hasil
      FROM investment_transactions it JOIN investments i ON i.id = it.investment_id
-     WHERE i.user_id = ? AND i.is_closed = 0`
+     WHERE i.user_id = ANY(?) AND i.is_closed = 0`
   ).get(userId) as { total_modal: number; total_hasil: number }
 
-  const realizedTahunIni = await db.prepare<[string]>(
+  const realizedTahunIni = await db.prepare<[string[]]>(
     `SELECT
        COALESCE(SUM(CASE WHEN it.type='BUY'  THEN it.total_amount ELSE 0 END),0) AS total_modal,
        COALESCE(SUM(CASE WHEN it.type='SELL' THEN it.total_amount ELSE 0 END),0) AS total_hasil,
        COUNT(DISTINCT i.id) AS jumlah_aset
      FROM investment_transactions it
      JOIN investments i ON i.id = it.investment_id
-     WHERE i.user_id = ? AND i.is_closed = 1
+     WHERE i.user_id = ANY(?) AND i.is_closed = 1
        AND EXTRACT(YEAR FROM i.closed_at)::int = EXTRACT(YEAR FROM NOW())::int`
   ).get(userId) as { total_modal: number; total_hasil: number; jumlah_aset: number }
 
-  const dividenTahunIni = await db.prepare<[string]>(
+  const dividenTahunIni = await db.prepare<[string[]]>(
     `SELECT COALESCE(SUM(it.total_amount), 0) AS total_dividen
      FROM investment_transactions it
      JOIN investments i ON i.id = it.investment_id
-     WHERE i.user_id = ? AND it.type = 'DIVIDEND'
+     WHERE i.user_id = ANY(?) AND it.type = 'DIVIDEND'
        AND EXTRACT(YEAR FROM it.date::date)::int = EXTRACT(YEAR FROM NOW())::int`
   ).get(userId) as { total_dividen: number }
 
@@ -97,7 +99,6 @@ export default async function InvestasiPage({
     "SELECT id, name FROM investment_categories ORDER BY sort_order, name"
   ).all() as CategoryRow[]
 
-  const totalLiquid   = wallets.reduce((s, w) => s + w.balance, 0)
   const totalModal    = investSummary?.total_modal ?? 0
   const totalHasil    = investSummary?.total_hasil ?? 0
   const modalAktif    = totalModal - totalHasil
@@ -166,12 +167,6 @@ export default async function InvestasiPage({
             )}
           </CardContent>
         </Card>
-        <Card className="sm:col-span-1">
-          <CardContent className="p-4">
-            <p className="text-xs text-muted-foreground mb-1">Total Saldo Dompet</p>
-            <p className="text-xl font-bold text-blue-600 tabular-nums">{formatRupiah(totalLiquid)}</p>
-          </CardContent>
-        </Card>
       </div>
 
       {modalAktif > 0 && (
@@ -223,7 +218,6 @@ export default async function InvestasiPage({
                         <p className="text-xs text-muted-foreground">{w.category_name}</p>
                       </div>
                     </div>
-                    <p className={`tabular-nums font-semibold text-sm ${w.balance < 0 ? "text-red-600" : "text-foreground"}`}>{formatRupiah(w.balance)}</p>
                   </div>
                 ))}
               </CardContent>

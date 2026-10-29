@@ -3,7 +3,7 @@
 import { revalidatePath, refresh } from "next/cache"
 import { redirect } from "next/navigation"
 import { db } from "@/lib/db"
-import { requireUserIdAction } from "@/lib/session"
+import { requireWritableUserId } from "@/lib/scope"
 import crypto from "crypto"
 
 function uuid() { return crypto.randomUUID() }
@@ -12,7 +12,7 @@ function formatRupiah(n: number) { return new Intl.NumberFormat("id-ID", { style
 // ── Asset CRUD ────────────────────────────────────────────────────────────────
 
 export async function createInvestment(year: string, formData: FormData) {
-  const userId     = await requireUserIdAction()
+  const userId     = await requireWritableUserId()
   const name       = (formData.get("name") as string)?.trim()
   const categoryId = formData.get("category_id") as string
   const walletId   = (formData.get("wallet_id") as string) || null
@@ -21,13 +21,13 @@ export async function createInvestment(year: string, formData: FormData) {
   const notes      = (formData.get("notes") as string)?.trim() || null
   if (!name || !categoryId) throw new Error("Data tidak valid")
   await db.prepare(
-    "INSERT INTO investments (id, user_id, category_id, name, wallet_id, is_liquid, unit, notes) VALUES (?, ?, ?, ?, ?, ?, ?, ?)"
-  ).run(uuid(), userId, categoryId, name, walletId, isLiquid, unit, notes)
+    "INSERT INTO investments (id, user_id, recorded_by, category_id, name, wallet_id, is_liquid, unit, notes) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)"
+  ).run(uuid(), userId, userId, categoryId, name, walletId, isLiquid, unit, notes)
   redirect(`/rekap/${year}?tab=investasi`)
 }
 
 export async function createInvestmentDirect(formData: FormData) {
-  const userId     = await requireUserIdAction()
+  const userId     = await requireWritableUserId()
   const name       = (formData.get("name") as string)?.trim()
   const categoryId = formData.get("category_id") as string
   const walletId   = (formData.get("wallet_id") as string) || null
@@ -37,13 +37,13 @@ export async function createInvestmentDirect(formData: FormData) {
   if (!name || !categoryId) throw new Error("Data tidak valid")
   const id = uuid()
   await db.prepare(
-    "INSERT INTO investments (id, user_id, category_id, name, wallet_id, is_liquid, unit, notes) VALUES (?, ?, ?, ?, ?, ?, ?, ?)"
-  ).run(id, userId, categoryId, name, walletId, isLiquid, unit, notes)
+    "INSERT INTO investments (id, user_id, recorded_by, category_id, name, wallet_id, is_liquid, unit, notes) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)"
+  ).run(id, userId, userId, categoryId, name, walletId, isLiquid, unit, notes)
   redirect(`/investasi/aset/${id}`)
 }
 
 export async function updateInvestment(id: string, year: string, formData: FormData) {
-  const userId   = await requireUserIdAction()
+  const userId   = await requireWritableUserId()
   const name     = (formData.get("name") as string)?.trim()
   const walletId = (formData.get("wallet_id") as string) || null
   const isLiquid = formData.get("is_liquid") === "true" ? 1 : 0
@@ -56,7 +56,7 @@ export async function updateInvestment(id: string, year: string, formData: FormD
 }
 
 export async function updateInvestmentDirect(id: string, formData: FormData) {
-  const userId   = await requireUserIdAction()
+  const userId   = await requireWritableUserId()
   const name     = (formData.get("name") as string)?.trim()
   const walletId = (formData.get("wallet_id") as string) || null
   const isLiquid = formData.get("is_liquid") === "true" ? 1 : 0
@@ -69,7 +69,7 @@ export async function updateInvestmentDirect(id: string, formData: FormData) {
 }
 
 export async function deleteInvestment(id: string, year: string) {
-  const userId = await requireUserIdAction()
+  const userId = await requireWritableUserId()
   const sellRow = await db.prepare(
     "SELECT COUNT(*) AS cnt FROM investment_transactions WHERE investment_id=? AND type='SELL'"
   ).get(id) as { cnt: number }
@@ -81,7 +81,7 @@ export async function deleteInvestment(id: string, year: string) {
 }
 
 export async function deleteInvestmentDirect(id: string) {
-  const userId = await requireUserIdAction()
+  const userId = await requireWritableUserId()
   const sellRow = await db.prepare(
     "SELECT COUNT(*) AS cnt FROM investment_transactions WHERE investment_id=? AND type='SELL'"
   ).get(id) as { cnt: number }
@@ -93,7 +93,7 @@ export async function deleteInvestmentDirect(id: string) {
 }
 
 export async function closeInvestmentDirect(id: string) {
-  const userId = await requireUserIdAction()
+  const userId = await requireWritableUserId()
   await db.prepare(
     "UPDATE investments SET is_closed=1, closed_at=datetime('now'), updated_at=datetime('now') WHERE id=? AND user_id=?"
   ).run(id, userId)
@@ -101,7 +101,7 @@ export async function closeInvestmentDirect(id: string) {
 }
 
 export async function reopenInvestmentDirect(id: string) {
-  const userId = await requireUserIdAction()
+  const userId = await requireWritableUserId()
   await db.prepare(
     "UPDATE investments SET is_closed=0, closed_at=NULL, updated_at=datetime('now') WHERE id=? AND user_id=?"
   ).run(id, userId)
@@ -149,17 +149,12 @@ async function execAddInvestmentTransaction(investmentId: string, userId: string
 
   await db.transaction(async () => {
     if (type === "BUY" && fromWalletId) {
-      const w = await db.prepare("SELECT balance, user_id FROM wallets WHERE id=? AND is_active=1").get(fromWalletId) as { balance: number; user_id: string } | undefined
+      const w = await db.prepare("SELECT user_id FROM wallets WHERE id=? AND is_active=1").get(fromWalletId) as { user_id: string } | undefined
       if (!w || w.user_id !== userId) throw new Error("Dompet tidak ditemukan")
-      if (!isInitial && w.balance < totalAmount) {
-        throw new Error(`Saldo tidak mencukupi. Tersedia: ${formatRupiah(w.balance)}`)
-      }
-      if (!isInitial) await db.prepare("UPDATE wallets SET balance = balance - ? WHERE id = ?").run(totalAmount, fromWalletId)
     }
     if ((type === "SELL" || type === "DIVIDEND") && toWalletId) {
       const w = await db.prepare("SELECT user_id FROM wallets WHERE id=? AND is_active=1").get(toWalletId) as { user_id: string } | undefined
       if (!w || w.user_id !== userId) throw new Error("Dompet tujuan tidak ditemukan")
-      if (!isInitial) await db.prepare("UPDATE wallets SET balance = balance + ? WHERE id = ?").run(totalAmount, toWalletId)
     }
     await db.prepare(
       "INSERT INTO investment_transactions (id, investment_id, goal_id, type, quantity, price_per_unit, total_amount, from_wallet_id, to_wallet_id, date, year, notes, is_initial) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
@@ -170,23 +165,18 @@ async function execAddInvestmentTransaction(investmentId: string, userId: string
 async function execDeleteInvestmentTransaction(id: string, userId: string) {
   await db.transaction(async () => {
     const row = await db.prepare(`
-      SELECT it.type, it.total_amount, it.from_wallet_id, it.to_wallet_id, it.is_initial
-      FROM investment_transactions it
+      SELECT it.id FROM investment_transactions it
       JOIN investments i ON i.id = it.investment_id
       WHERE it.id=? AND i.user_id=?
-    `).get(id, userId) as { type: string; total_amount: number; from_wallet_id: string | null; to_wallet_id: string | null; is_initial: number } | undefined
+    `).get(id, userId)
     if (!row) throw new Error("Transaksi tidak ditemukan")
 
-    if (!row.is_initial) {
-      if (row.type === "BUY"                             && row.from_wallet_id) await db.prepare("UPDATE wallets SET balance = balance + ? WHERE id = ?").run(row.total_amount, row.from_wallet_id)
-      if ((row.type === "SELL" || row.type === "DIVIDEND") && row.to_wallet_id)  await db.prepare("UPDATE wallets SET balance = balance - ? WHERE id = ?").run(row.total_amount, row.to_wallet_id)
-    }
     await db.prepare("DELETE FROM investment_transactions WHERE id=?").run(id)
   })
 }
 
 export async function addInvestmentTransaction(investmentId: string, year: string, formData: FormData) {
-  const userId = await requireUserIdAction()
+  const userId = await requireWritableUserId()
   await execAddInvestmentTransaction(investmentId, userId, formData)
   revalidatePath("/dompet")
   revalidatePath("/investasi")
@@ -199,7 +189,7 @@ export async function addInvestmentTransactionDirect(
   _prevState: { error?: string } | null,
   formData: FormData,
 ): Promise<{ error?: string } | null> {
-  const userId = await requireUserIdAction()
+  const userId = await requireWritableUserId()
   try {
     await execAddInvestmentTransaction(investmentId, userId, formData)
   } catch (e) {
@@ -212,7 +202,7 @@ export async function addInvestmentTransactionDirect(
 }
 
 export async function deleteInvestmentTransaction(id: string, investmentId: string, year: string) {
-  const userId = await requireUserIdAction()
+  const userId = await requireWritableUserId()
   await execDeleteInvestmentTransaction(id, userId)
   revalidatePath(`/rekap/${year}/investasi/${investmentId}`)
   revalidatePath("/dompet")
@@ -221,7 +211,7 @@ export async function deleteInvestmentTransaction(id: string, investmentId: stri
 }
 
 export async function deleteInvestmentTransactionDirect(id: string, investmentId: string) {
-  const userId = await requireUserIdAction()
+  const userId = await requireWritableUserId()
   await execDeleteInvestmentTransaction(id, userId)
   revalidatePath(`/investasi/aset/${investmentId}`)
   revalidatePath("/dompet")

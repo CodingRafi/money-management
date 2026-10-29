@@ -10,14 +10,18 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
-import { LogOut, FolderOpen, TrendingUp, LayoutDashboard, Banknote, Settings, Wallet } from "lucide-react"
+import { LogOut, FolderOpen, TrendingUp, LayoutDashboard, Banknote, Settings, Wallet, ShieldCheck, Users } from "lucide-react"
 import Image from "next/image"
 import Link from "next/link"
 import { usePathname, useRouter } from "next/navigation"
 import { logout } from "@/app/actions/session"
+import { ContextSwitcher, type ContextOption } from "@/components/context-switcher"
 
 interface NavbarProps {
   username: string
+  role: "super_admin" | "admin" | "member" | "child"
+  context?: { current: string; options: ContextOption[] } | null
+  familyMode?: boolean
 }
 
 const NAV_LINKS = [
@@ -28,7 +32,12 @@ const NAV_LINKS = [
   { href: "/pinjaman",  label: "Pinjaman",  icon: Banknote },
 ]
 
-export function Navbar({ username }: NavbarProps) {
+const CHILD_LINKS = [
+  { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
+  { href: "/saya",      label: "Saya",      icon: Wallet },
+]
+
+export function Navbar({ username, role, context, familyMode }: NavbarProps) {
   const pathname = usePathname()
   const router   = useRouter()
 
@@ -40,7 +49,7 @@ export function Navbar({ username }: NavbarProps) {
   }
 
   return (
-    <header className="sticky top-0 z-40 border-b border-border bg-background/95 backdrop-blur">
+    <header className={`sticky top-0 z-40 border-b backdrop-blur ${familyMode ? "border-emerald-700/40 bg-emerald-50/90 dark:bg-emerald-950/40" : "border-border bg-background/95"}`}>
       <div className="mx-auto flex h-14 max-w-7xl items-center justify-between px-4">
         <div className="flex items-center gap-6">
           <Link href="/dashboard" className="flex items-center shrink-0">
@@ -48,7 +57,7 @@ export function Navbar({ username }: NavbarProps) {
           </Link>
 
           <nav className="flex items-center gap-1">
-            {NAV_LINKS.map(({ href, label }) => {
+            {(role === "child" ? CHILD_LINKS : NAV_LINKS).map(({ href, label }) => {
               const isActive = pathname.startsWith(href)
               return (
                 <Link
@@ -67,6 +76,8 @@ export function Navbar({ username }: NavbarProps) {
           </nav>
         </div>
 
+        <div className="flex items-center gap-3">
+        {context && <ContextSwitcher current={context.current} options={context.options} />}
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
             <Button variant="ghost" className="h-9 gap-2 px-2">
@@ -87,6 +98,22 @@ export function Navbar({ username }: NavbarProps) {
                 Pengaturan Akun
               </Link>
             </DropdownMenuItem>
+            {role === "super_admin" && (
+              <DropdownMenuItem asChild className="cursor-pointer">
+                <Link href="/super-admin">
+                  <ShieldCheck className="h-4 w-4" />
+                  Super Admin
+                </Link>
+              </DropdownMenuItem>
+            )}
+            {role === "admin" && (
+              <DropdownMenuItem asChild className="cursor-pointer">
+                <Link href="/pengaturan/anggota">
+                  <Users className="h-4 w-4" />
+                  Anggota Keluarga
+                </Link>
+              </DropdownMenuItem>
+            )}
             <DropdownMenuSeparator />
             <DropdownMenuItem onSelect={handleSignOut} className="cursor-pointer text-destructive focus:text-destructive">
               <LogOut className="h-4 w-4" />
@@ -94,6 +121,7 @@ export function Navbar({ username }: NavbarProps) {
             </DropdownMenuItem>
           </DropdownMenuContent>
         </DropdownMenu>
+        </div>
       </div>
     </header>
   )

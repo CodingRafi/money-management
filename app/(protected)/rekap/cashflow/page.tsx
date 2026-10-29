@@ -1,6 +1,6 @@
 export const dynamic = "force-dynamic"
 
-import { LOCAL_USER_ID } from "@/lib/auth-simple"
+import { requireUserId } from "@/lib/session"
 import { getCashflowTxList } from "@/lib/tx-list"
 import { parsePageParams, buildParamsStr, totalPages } from "@/lib/paginate"
 import { Card, CardContent } from "@/components/ui/card"
@@ -46,7 +46,7 @@ export default async function CashflowListPage({
 }: {
   searchParams: Promise<Record<string, string | string[] | undefined>>
 }) {
-  const userId = LOCAL_USER_ID
+  const userId = await requireUserId()
   const sp = await searchParams
   const pp = parsePageParams(sp)
   const from = typeof sp.from === "string" ? sp.from : ""

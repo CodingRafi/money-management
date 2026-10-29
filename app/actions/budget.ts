@@ -3,13 +3,13 @@
 import { revalidatePath } from "next/cache"
 import { redirect } from "next/navigation"
 import { db } from "@/lib/db"
-import { requireUserIdAction } from "@/lib/session"
+import { requireHouseholdSessionAction, requireUserIdAction } from "@/lib/session"
 import crypto from "crypto"
 
 function uuid() { return crypto.randomUUID() }
 
 export async function setBudget(formData: FormData) {
-  const userId     = await requireUserIdAction()
+  const { userId, householdId } = await requireHouseholdSessionAction()
   const categoryId = formData.get("category_id") as string
   const pctRaw     = formData.get("percentage") as string
   const month      = parseInt(formData.get("month") as string)
@@ -19,7 +19,7 @@ export async function setBudget(formData: FormData) {
   if (!categoryId || isNaN(pct) || isNaN(month) || isNaN(year)) throw new Error("Invalid input")
   if (pct < 0 || pct > 100) throw new Error("Percentage must be between 0 and 100")
 
-  const cat = await db.prepare("SELECT 1 FROM expense_categories WHERE id = ? AND user_id = ?").get(categoryId, userId)
+  const cat = await db.prepare("SELECT 1 FROM expense_categories WHERE id = ? AND household_id = ?").get(categoryId, householdId)
   if (!cat) throw new Error("Category not found")
 
   await db.prepare(`
@@ -33,7 +33,7 @@ export async function setBudget(formData: FormData) {
 }
 
 export async function setCategoryNominal(formData: FormData) {
-  const userId    = await requireUserIdAction()
+  const { userId, householdId } = await requireHouseholdSessionAction()
   const categoryId = formData.get("category_id") as string
   const year      = parseInt(formData.get("year") as string)
   const nominal   = parseFloat(formData.get("nominal") as string)
@@ -41,7 +41,7 @@ export async function setCategoryNominal(formData: FormData) {
   if (!categoryId || isNaN(year) || isNaN(nominal)) throw new Error("Invalid input")
   if (nominal < 0) throw new Error("Nominal must be >= 0")
 
-  const cat = await db.prepare("SELECT 1 FROM expense_categories WHERE id = ? AND user_id = ?").get(categoryId, userId)
+  const cat = await db.prepare("SELECT 1 FROM expense_categories WHERE id = ? AND household_id = ?").get(categoryId, householdId)
   if (!cat) throw new Error("Category not found")
 
   await db.prepare(`
@@ -70,10 +70,10 @@ export async function setMaxExpensePct(formData: FormData) {
 }
 
 export async function setTypeAllocations(formData: FormData) {
-  const userId  = await requireUserIdAction()
+  const { userId, householdId } = await requireHouseholdSessionAction()
   const year    = parseInt(formData.get("year") as string) || new Date().getFullYear()
   const rawBack = formData.get("back_url") as string | null
-  const backUrl = rawBack?.startsWith("/") ? rawBack : "/settings/categories?tab=expense"
+  const backUrl = rawBack?.startsWith("/") && !rawBack.startsWith("//") ? rawBack : "/settings/categories?tab=expense"
 
   const pairs: Array<{ typeId: string; pct: number }> = []
   let i = 0
@@ -88,7 +88,7 @@ export async function setTypeAllocations(formData: FormData) {
   if (Math.abs(total - 100) > 0.01) redirect(`${backUrl}&alloc_error=1`)
 
   for (const { typeId, pct } of pairs) {
-    const check = await db.prepare("SELECT 1 FROM expense_types WHERE id = ? AND user_id = ?").get(typeId, userId)
+    const check = await db.prepare("SELECT 1 FROM expense_types WHERE id = ? AND household_id = ?").get(typeId, householdId)
     if (!check) continue
     await db.prepare(`
       INSERT INTO type_allocations (id, user_id, type_id, percentage, year)

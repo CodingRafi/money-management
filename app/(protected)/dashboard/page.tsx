@@ -4,8 +4,9 @@ import { Suspense } from "react"
 import Link from "next/link"
 import { ChevronLeft, ChevronRight } from "lucide-react"
 import { Button } from "@/components/ui/button"
-import { getUsername } from "@/lib/auth-simple"
-import { LOCAL_USER_ID } from "@/lib/auth-simple"
+import { requireSession } from "@/lib/session"
+import { requireScope } from "@/lib/scope"
+import { FamilySpendingSection } from "@/components/dashboard/FamilySpendingChart"
 import { NetWorthSection, NetWorthSkeleton } from "@/components/dashboard/NetWorthCard"
 import { CashflowSection, CashflowSkeleton } from "@/components/dashboard/CashflowCards"
 import { WalletSection, WalletSkeleton } from "@/components/dashboard/WalletCard"
@@ -36,8 +37,10 @@ export default async function DashboardPage({
 }: {
   searchParams: Promise<Record<string, string | string[] | undefined>>
 }) {
-  const userId    = LOCAL_USER_ID
-  const username  = await getUsername()
+  const scope     = await requireScope()
+  const userId    = scope.userIds
+  const familyMode = scope.mode === "family"
+  const username  = (await requireSession()).username
   const firstName = username
 
   const sp  = await searchParams
@@ -57,7 +60,9 @@ export default async function DashboardPage({
       {/* Greeting — tanpa filter */}
       <div>
         <h1 className="text-2xl font-bold">{getGreeting()}, {firstName}!</h1>
-        <p className="text-sm text-muted-foreground">Ringkasan keuangan kamu</p>
+        <p className="text-sm text-muted-foreground">
+          {familyMode ? "Laporan keuangan keluarga (gabungan seluruh anggota)" : scope.readOnly ? "Ringkasan keuangan anggota (read-only)" : "Ringkasan keuangan kamu"}
+        </p>
       </div>
 
       {/* Wealth section — chartYear mengontrol Cashflow Bulanan */}
@@ -66,9 +71,11 @@ export default async function DashboardPage({
       </Suspense>
 
       {/* ── Dompet — tidak ikut filter bulan ── */}
-      <Suspense fallback={<WalletSkeleton />}>
-        <WalletSection userId={userId} />
-      </Suspense>
+      {!familyMode && (
+        <Suspense fallback={<WalletSkeleton />}>
+          <WalletSection userId={scope.targetUserId} />
+        </Suspense>
+      )}
 
       {/* ── Cashflow — pakai filter bulan ── */}
       <div className="space-y-4">
@@ -94,11 +101,17 @@ export default async function DashboardPage({
         </div>
 
         <Suspense fallback={<CashflowSkeleton />}>
-          <CashflowSection userId={userId} month={month} year={year} />
+          <CashflowSection userId={userId} month={month} year={year} excludeFamily={!familyMode} />
         </Suspense>
 
+        {familyMode && (
+          <Suspense fallback={null}>
+            <FamilySpendingSection members={scope.members} year={year} month={month} />
+          </Suspense>
+        )}
+
         <Suspense fallback={<CategorySkeleton />}>
-          <CategorySection userId={userId} month={month} year={year} />
+          <CategorySection userId={userId} month={month} year={year} excludeFamily={!familyMode} />
         </Suspense>
 
       </div>

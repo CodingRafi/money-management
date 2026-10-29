@@ -1,6 +1,6 @@
 import { redirect } from "next/navigation"
 import { db } from "@/lib/db"
-import { LOCAL_USER_ID } from "@/lib/auth-simple"
+import { requireUserId } from "@/lib/session"
 import { Card, CardContent } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
@@ -26,7 +26,7 @@ export default async function KantongDetailPage({
 }: {
   params: Promise<{ goalId: string }>
 }) {
-  const userId = LOCAL_USER_ID
+  const userId = await requireUserId()
   const { goalId } = await params
 
   const goal = await db.prepare<[string, string], GoalDetail>(

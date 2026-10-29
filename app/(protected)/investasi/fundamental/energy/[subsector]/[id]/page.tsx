@@ -1,6 +1,6 @@
 import { redirect } from "next/navigation"
 import { db } from "@/lib/db"
-import { LOCAL_USER_ID } from "@/lib/auth-simple"
+import { requireUserId } from "@/lib/session"
 import { Button } from "@/components/ui/button"
 import { ArrowLeft, Trash2 } from "lucide-react"
 import Link from "next/link"
@@ -21,7 +21,7 @@ export default async function SavedEnergyAnalysisPage({
   const { subsector, id } = await params
   if (!VALID.includes(subsector as EnergySubsector)) redirect("/investasi/fundamental/energy")
 
-  const userId = LOCAL_USER_ID
+  const userId = await requireUserId()
   const sector = `ENERGY_${subsector.toUpperCase()}`
 
   const row = await db.prepare<[string, string, string], Row>(

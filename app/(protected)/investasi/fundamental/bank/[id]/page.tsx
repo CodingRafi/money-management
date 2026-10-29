@@ -1,6 +1,6 @@
 import { redirect } from "next/navigation"
 import { db } from "@/lib/db"
-import { LOCAL_USER_ID } from "@/lib/auth-simple"
+import { requireUserId } from "@/lib/session"
 import { Button } from "@/components/ui/button"
 import { ArrowLeft, Trash2 } from "lucide-react"
 import Link from "next/link"
@@ -16,7 +16,7 @@ export default async function SavedAnalysisPage({
   params: Promise<{ id: string }>
 }) {
   const { id }  = await params
-  const userId  = LOCAL_USER_ID
+  const userId  = await requireUserId()
 
   const row = await db.prepare<[string, string], Row>(
     "SELECT id, stock_code, period, result_data, created_at FROM fundamental_analyses WHERE id = ? AND user_id = ? AND sector = 'BANK'"

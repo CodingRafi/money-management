@@ -14,6 +14,7 @@ interface DefaultValues {
   needsType?: string
   amount?: number
   isInitial?: boolean
+  isFamilyExpense?: boolean
 }
 
 interface Props {
@@ -99,6 +100,20 @@ export function ExpenseForm({
       <div className="flex items-center gap-2 pt-1">
         <input
           type="checkbox"
+          id="is_family_expense"
+          name="is_family_expense"
+          value="true"
+          defaultChecked={defaultValues?.isFamilyExpense ?? false}
+          className="h-4 w-4 accent-primary"
+        />
+        <label htmlFor="is_family_expense" className="text-sm">
+          Catat sebagai Pengeluaran Keluarga <span className="text-muted-foreground">(tidak mengurangi budget personal)</span>
+        </label>
+      </div>
+
+      <div className="flex items-center gap-2 pt-1">
+        <input
+          type="checkbox"
           id="is_initial_expense"
           name="is_initial"
           value="true"
@@ -106,7 +121,7 @@ export function ExpenseForm({
           className="h-4 w-4 accent-primary"
         />
         <label htmlFor="is_initial_expense" className="text-sm text-muted-foreground">
-          Data awal (tidak mempengaruhi saldo dompet)
+          Data awal (saldo pembuka, tidak dihitung ke arus kas)
         </label>
       </div>
 

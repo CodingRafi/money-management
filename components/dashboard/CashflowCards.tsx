@@ -10,14 +10,16 @@ function formatRp(n: number) {
 
 export async function CashflowSection({
   userId,
+  excludeFamily = false,
   month,
   year,
 }: {
-  userId: string
+  userId: string | string[]
+  excludeFamily?: boolean
   month: number
   year: number
 }) {
-  const data = await getCashflow(userId, month, year)
+  const data = await getCashflow(userId, month, year, excludeFamily)
 
   const hasAnyData = data.totalIncome > 0 || data.totalExpense > 0 || data.investGain !== 0
   if (!hasAnyData) {

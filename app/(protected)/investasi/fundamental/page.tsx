@@ -1,5 +1,5 @@
 import { db } from "@/lib/db"
-import { LOCAL_USER_ID } from "@/lib/auth-simple"
+import { requireUserId } from "@/lib/session"
 import { Card, CardContent } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { ArrowLeft, Plus, Trash2 } from "lucide-react"
@@ -50,7 +50,7 @@ const SECTOR_HREF: Record<string, string> = {
 }
 
 export default async function FundamentalPage() {
-  const userId = LOCAL_USER_ID
+  const userId = await requireUserId()
   const rows   = await db.prepare<[string], Row>(
     "SELECT id, sector, stock_code, period, result_data, created_at FROM fundamental_analyses WHERE user_id = ? ORDER BY created_at DESC"
   ).all(userId) as Row[]

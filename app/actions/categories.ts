@@ -2,97 +2,83 @@
 
 import { revalidatePath } from "next/cache"
 import { redirect } from "next/navigation"
-import { db } from "@/lib/db"
-import { requireUserIdAction } from "@/lib/session"
-import crypto from "crypto"
+import { z } from "zod"
+import { requireSessionAction } from "@/lib/session"
+import { categoryRepository } from "@/repositories/category.repository"
 
-function uuid() { return crypto.randomUUID() }
+// Kategori satu daftar untuk seluruh keluarga: household_id selalu dari sesi.
+// Anak (child) tidak boleh mengubah kategori.
+async function requireHousehold() {
+  const s = await requireSessionAction()
+  if (!s.householdId || s.householdRole === "child") throw new Error("Forbidden")
+  return s.householdId
+}
 
-export async function createUserIncomeCategory(formData: FormData) {
-  const userId = await requireUserIdAction()
-  const name   = (formData.get("name") as string)?.trim().toUpperCase()
-  const color  = (formData.get("color") as string)?.trim() || null
-  const year   = parseInt(formData.get("year") as string) || new Date().getFullYear()
-  if (!name) throw new Error("Name is required")
-  const orderRow = await db.prepare(
-    "SELECT COALESCE(MAX(sort_order), 0) + 1 AS max FROM income_categories WHERE user_id = ? AND year = ?"
-  ).get(userId, year) as { max: number }
-  await db.prepare(
-    "INSERT INTO income_categories (id, name, is_default, user_id, color, sort_order, year) VALUES (?, ?, 0, ?, ?, ?, ?)"
-  ).run(uuid(), name, userId, color, orderRow.max, year)
+const nameSchema = z.string().trim().min(1, "Nama wajib diisi").max(80).transform((v) => v.toUpperCase())
+const colorSchema = z.string().trim().max(32).nullish().transform((v) => v || null)
+const idSchema = z.string().min(1)
+
+function refresh() {
   revalidatePath("/settings/categories")
   revalidatePath("/rekap", "layout")
+}
+
+function backOr(formData: FormData, fallback: string): never {
+  const backUrl = formData.get("back_url")
+  redirect(typeof backUrl === "string" && backUrl.startsWith("/") && !backUrl.startsWith("//") ? backUrl : fallback)
+}
+
+// ── Income ───────────────────────────────────────────────────────────────────
+
+export async function createUserIncomeCategory(formData: FormData) {
+  const householdId = await requireHousehold()
+  await categoryRepository.createIncome(householdId, nameSchema.parse(formData.get("name")), colorSchema.parse(formData.get("color")))
+  refresh()
 }
 
 export async function updateUserIncomeCategory(id: string, formData: FormData) {
-  const userId = await requireUserIdAction()
-  const name   = (formData.get("name") as string)?.trim().toUpperCase()
-  const color  = (formData.get("color") as string)?.trim() || null
-  if (!name) throw new Error("Name is required")
-  await db.prepare(
-    "UPDATE income_categories SET name = ?, color = ? WHERE id = ? AND user_id = ?"
-  ).run(name, color, id, userId)
-  const backUrl = formData.get("back_url") as string | null
-  if (backUrl?.startsWith("/")) redirect(backUrl)
-  else redirect("/settings/categories?tab=income")
+  const householdId = await requireHousehold()
+  await categoryRepository.updateIncome(householdId, idSchema.parse(id), nameSchema.parse(formData.get("name")), colorSchema.parse(formData.get("color")))
+  backOr(formData, "/settings/categories?tab=income")
 }
 
 export async function toggleUserIncomeCategoryVisibility(id: string) {
-  const userId = await requireUserIdAction()
-  await db.prepare(
-    "UPDATE income_categories SET is_hidden = CASE WHEN is_hidden = 1 THEN 0 ELSE 1 END WHERE id = ? AND user_id = ?"
-  ).run(id, userId)
-  revalidatePath("/settings/categories")
-  revalidatePath("/rekap", "layout")
+  const householdId = await requireHousehold()
+  await categoryRepository.toggleHidden("income_categories", householdId, idSchema.parse(id))
+  refresh()
 }
 
 export async function deleteUserIncomeCategory(id: string) {
-  const userId = await requireUserIdAction()
-  await db.prepare("DELETE FROM income_categories WHERE id = ? AND user_id = ?").run(id, userId)
-  revalidatePath("/settings/categories")
-  revalidatePath("/rekap", "layout")
+  const householdId = await requireHousehold()
+  await categoryRepository.remove("income_categories", householdId, idSchema.parse(id))
+  refresh()
 }
 
+// ── Expense ──────────────────────────────────────────────────────────────────
+
 export async function createUserExpenseCategory(formData: FormData) {
-  const userId = await requireUserIdAction()
-  const name   = (formData.get("name") as string)?.trim().toUpperCase()
-  const typeId = formData.get("type_id") as string
-  const year   = parseInt(formData.get("year") as string) || new Date().getFullYear()
-  if (!name || !typeId) throw new Error("Name and type are required")
-  const orderRow = await db.prepare(
-    "SELECT COALESCE(MAX(sort_order), 0) + 1 AS max FROM expense_categories WHERE user_id = ? AND type_id = ?"
-  ).get(userId, typeId) as { max: number }
-  await db.prepare(
-    "INSERT INTO expense_categories (id, name, type_id, is_default, user_id, sort_order, year) VALUES (?, ?, ?, 0, ?, ?, ?)"
-  ).run(uuid(), name, typeId, userId, orderRow.max, year)
-  revalidatePath("/settings/categories")
-  revalidatePath("/rekap", "layout")
+  const householdId = await requireHousehold()
+  const name = nameSchema.parse(formData.get("name"))
+  const typeId = idSchema.parse(formData.get("type_id"))
+  if (!(await categoryRepository.typeInHousehold(householdId, typeId))) throw new Error("Tipe tidak ditemukan")
+  await categoryRepository.createExpense(householdId, typeId, name)
+  refresh()
 }
 
 export async function updateUserExpenseCategory(id: string, formData: FormData) {
-  const userId = await requireUserIdAction()
-  const name   = (formData.get("name") as string)?.trim().toUpperCase()
-  if (!name) throw new Error("Name is required")
-  await db.prepare(
-    "UPDATE expense_categories SET name = ? WHERE id = ? AND user_id = ?"
-  ).run(name, id, userId)
-  const backUrl = formData.get("back_url") as string | null
-  if (backUrl?.startsWith("/")) redirect(backUrl)
-  else redirect("/settings/categories?tab=expense")
+  const householdId = await requireHousehold()
+  await categoryRepository.updateExpense(householdId, idSchema.parse(id), nameSchema.parse(formData.get("name")))
+  backOr(formData, "/settings/categories?tab=expense")
 }
 
 export async function toggleUserExpenseCategoryVisibility(id: string) {
-  const userId = await requireUserIdAction()
-  await db.prepare(
-    "UPDATE expense_categories SET is_hidden = CASE WHEN is_hidden = 1 THEN 0 ELSE 1 END WHERE id = ? AND user_id = ?"
-  ).run(id, userId)
-  revalidatePath("/settings/categories")
-  revalidatePath("/rekap", "layout")
+  const householdId = await requireHousehold()
+  await categoryRepository.toggleHidden("expense_categories", householdId, idSchema.parse(id))
+  refresh()
 }
 
 export async function deleteUserExpenseCategory(id: string) {
-  const userId = await requireUserIdAction()
-  await db.prepare("DELETE FROM expense_categories WHERE id = ? AND user_id = ?").run(id, userId)
-  revalidatePath("/settings/categories")
-  revalidatePath("/rekap", "layout")
+  const householdId = await requireHousehold()
+  await categoryRepository.remove("expense_categories", householdId, idSchema.parse(id))
+  refresh()
 }

@@ -1,7 +1,6 @@
 import { redirect } from "next/navigation"
 import { db } from "@/lib/db"
-import { LOCAL_USER_ID } from "@/lib/auth-simple"
-import { ensureYearlyCategories } from "@/lib/ensureYearlyCategories"
+import { requireHouseholdSession } from "@/lib/session"
 import { Card, CardContent, CardHeader } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
@@ -50,7 +49,7 @@ function expenseStatus(pct: number, max: number, spent: number): "DANGER" | "WAR
 }
 
 type IncomeRow      = { id: string; date: string; name: string; category_id: string | null; category_name: string | null; wallet_id: string | null; wallet_name: string | null; amount: number; is_initial: number }
-type ExpenseRow     = { id: string; date: string; name: string; wallet_id: string | null; wallet_name: string | null; category_id: string | null; category_name: string | null; needs_type: string; amount: number; is_initial: number }
+type ExpenseRow     = { id: string; date: string; name: string; wallet_id: string | null; wallet_name: string | null; category_id: string | null; category_name: string | null; needs_type: string; amount: number; is_initial: number; is_family_expense: number }
 type TransferRow    = { id: string; date: string; amount: number; notes: string | null; from_wallet_name: string; from_wallet_color: string | null; to_wallet_name: string; to_wallet_color: string | null }
 type LiquidWallet   = { id: string; name: string; color: string | null }
 type IncomeCatRow   = { id: string; name: string }
@@ -63,15 +62,11 @@ export default async function YearDetailPage({
   params: Promise<{ year: string }>
   searchParams: Promise<Record<string, string | string[] | undefined>>
 }) {
-  const userId = LOCAL_USER_ID
+  const { userId, householdId } = await requireHouseholdSession()
 
   const { year: yearStr } = await params
   const year = parseInt(yearStr)
   if (isNaN(year)) redirect("/rekap")
-
-  if (year === new Date().getFullYear()) {
-    await ensureYearlyCategories(userId, year)
-  }
 
   const isActive = true
   const sp       = await searchParams
@@ -87,31 +82,19 @@ export default async function YearDetailPage({
   const showReport = sp.report === "1" && tab === "pengeluaran"
   const stat       = sp.stat === "wealth_growth" ? "wealth_growth" : sp.stat === "saving_rate" ? "saving_rate" : null
 
-  // Best-year helper
-  const bestYearCTE = (table: string) => `
-    WITH best_year AS (
-      SELECT COALESCE(
-        (SELECT MAX(year) FROM ${table} WHERE user_id = ? AND year = ?),
-        (SELECT MAX(year) FROM ${table} WHERE user_id = ? AND year < ?),
-        (SELECT MAX(year) FROM ${table} WHERE user_id = ?)
-      ) AS y
-    )`
-
   const incomeCats = await db.prepare<unknown[], IncomeCatRow>(
-    `${bestYearCTE("income_categories")}
-     SELECT id, name FROM income_categories, best_year
-     WHERE user_id = ? AND is_hidden = 0 AND year = best_year.y
+    `SELECT id, name FROM income_categories
+     WHERE household_id = ? AND is_hidden = 0
      ORDER BY sort_order`
-  ).all(userId, year, userId, year, userId, userId) as IncomeCatRow[]
+  ).all(householdId) as IncomeCatRow[]
 
   const expenseCats = await db.prepare<unknown[], ExpenseCatRow>(
-    `${bestYearCTE("expense_categories")}
-     SELECT ec.id, ec.name, ec.type_id, et.name AS type_name, ec.default_percentage
+    `SELECT ec.id, ec.name, ec.type_id, et.name AS type_name, ec.default_percentage
      FROM expense_categories ec
-     JOIN expense_types et ON et.id = ec.type_id, best_year
-     WHERE ec.user_id = ? AND ec.is_hidden = 0 AND ec.year = best_year.y
+     JOIN expense_types et ON et.id = ec.type_id
+     WHERE ec.household_id = ? AND ec.is_hidden = 0
      ORDER BY et.sort_order, ec.sort_order`
-  ).all(userId, year, userId, year, userId, userId) as ExpenseCatRow[]
+  ).all(householdId) as ExpenseCatRow[]
 
   const wallets = await db.prepare<[string], { id: string; name: string }>(
     "SELECT id, name FROM wallets WHERE user_id = ? AND is_active = 1 ORDER BY sort_order"
@@ -130,7 +113,7 @@ export default async function YearDetailPage({
 
   const expenses = await db.prepare<[string, number, number], ExpenseRow>(
     `SELECT e.id, e.date, e.name, e.wallet_id, w.name AS wallet_name,
-            e.category_id, ec.name AS category_name, e.needs_type, e.amount, e.is_initial
+            e.category_id, ec.name AS category_name, e.needs_type, e.amount, e.is_initial, e.is_family_expense
      FROM expenses e
      LEFT JOIN expense_categories ec ON ec.id = e.category_id
      LEFT JOIN wallets w ON w.id = e.wallet_id
@@ -140,13 +123,13 @@ export default async function YearDetailPage({
 
   // ── Yearly aggregate data (replaces yearly_recap table) ───────────────────────
   const totalIncomeRow  = await db.prepare<[string, number]>("SELECT COALESCE(SUM(amount), 0) AS total FROM incomes  WHERE user_id=? AND year=?").get(userId, year) as { total: number }
-  const totalExpenseRow = await db.prepare<[string, number]>("SELECT COALESCE(SUM(amount), 0) AS total FROM expenses WHERE user_id=? AND year=?").get(userId, year) as { total: number }
+  const totalExpenseRow = await db.prepare<[string, number]>("SELECT COALESCE(SUM(amount), 0) AS total FROM expenses WHERE user_id=? AND year=? AND is_family_expense=0").get(userId, year) as { total: number }
   const totalIncome  = totalIncomeRow.total
   const totalExpense = totalExpenseRow.total
   const hasData      = totalIncome > 0 || totalExpense > 0
 
   const incomeMoRows  = await db.prepare<[string, number]>("SELECT month, COALESCE(SUM(amount),0) AS total FROM incomes  WHERE user_id=? AND year=? GROUP BY month").all(userId, year)  as { month: number; total: number }[]
-  const expenseMoRows = await db.prepare<[string, number]>("SELECT month, COALESCE(SUM(amount),0) AS total FROM expenses WHERE user_id=? AND year=? GROUP BY month").all(userId, year) as { month: number; total: number }[]
+  const expenseMoRows = await db.prepare<[string, number]>("SELECT month, COALESCE(SUM(amount),0) AS total FROM expenses WHERE user_id=? AND year=? AND is_family_expense=0 GROUP BY month").all(userId, year) as { month: number; total: number }[]
   const incomeMo: Record<string, number>  = {}
   const expenseMo: Record<string, number> = {}
   for (const r of incomeMoRows)  incomeMo[String(r.month)]  = r.total
@@ -156,7 +139,7 @@ export default async function YearDetailPage({
 
   // expense breakdown by category & month
   const expByCatMonthRows = await db.prepare<[string, number]>(
-    "SELECT category_id, month, COALESCE(SUM(amount),0) AS total FROM expenses WHERE user_id=? AND year=? AND category_id IS NOT NULL GROUP BY category_id, month"
+    "SELECT category_id, month, COALESCE(SUM(amount),0) AS total FROM expenses WHERE user_id=? AND year=? AND is_family_expense=0 AND category_id IS NOT NULL GROUP BY category_id, month"
   ).all(userId, year) as { category_id: string; month: number; total: number }[]
   const expBdSpendMap = new Map<string, Record<string, number>>()
   for (const r of expByCatMonthRows) {
@@ -172,13 +155,13 @@ export default async function YearDetailPage({
 
   // ── Report charts ─────────────────────────────────────────────────────────────
   const needsChartRows = await db.prepare<[string, number, number]>(
-    "SELECT needs_type AS label, COALESCE(SUM(amount),0) AS total FROM expenses WHERE user_id=? AND year=? AND month=? GROUP BY needs_type"
+    "SELECT needs_type AS label, COALESCE(SUM(amount),0) AS total FROM expenses WHERE user_id=? AND year=? AND month=? AND is_family_expense=0 GROUP BY needs_type"
   ).all(userId, year, month) as { label: string; total: number }[]
 
   const catChartRows = await db.prepare<[string, number, number]>(
     `SELECT COALESCE(ec.name, 'Lainnya') AS label, COALESCE(SUM(e.amount),0) AS total
      FROM expenses e LEFT JOIN expense_categories ec ON ec.id = e.category_id
-     WHERE e.user_id=? AND e.year=? AND e.month=?
+     WHERE e.user_id=? AND e.year=? AND e.month=? AND e.is_family_expense=0
      GROUP BY ec.name ORDER BY SUM(e.amount) DESC`
   ).all(userId, year, month) as { label: string; total: number }[]
 
@@ -186,14 +169,13 @@ export default async function YearDetailPage({
   let incomeBdRaw: { category_name: string; sort_order: number; month: number | null; total: number }[] = []
   if (view === "report" && detail === "pendapatan") {
     incomeBdRaw = await db.prepare<unknown[]>(
-      `${bestYearCTE("income_categories")}
-       SELECT ic.name AS category_name, ic.sort_order, i.month, COALESCE(SUM(i.amount),0) AS total
-       FROM income_categories ic, best_year
+      `SELECT ic.name AS category_name, ic.sort_order, i.month, COALESCE(SUM(i.amount),0) AS total
+       FROM income_categories ic
        LEFT JOIN incomes i ON i.category_id = ic.id AND i.year = ? AND i.user_id = ?
-       WHERE ic.user_id = ? AND ic.is_hidden = 0 AND ic.year = best_year.y
+       WHERE ic.household_id = ? AND ic.is_hidden = 0
        GROUP BY ic.name, ic.sort_order, i.month
        ORDER BY ic.sort_order, ic.name, i.month`
-    ).all(userId, year, userId, year, userId, year, userId, userId) as { category_name: string; sort_order: number; month: number | null; total: number }[]
+    ).all(year, userId, householdId) as { category_name: string; sort_order: number; month: number | null; total: number }[]
   }
 
   // ── Budget % per category per month ───────────────────────────────────────────
@@ -211,13 +193,14 @@ export default async function YearDetailPage({
     ).get(userId, year) as { max_expense_pct: number } | undefined
     maxExpensePct = yearBudgetRow?.max_expense_pct ?? 100
 
-    typeAllocRows = await db.prepare<[string, number, string, number]>(
+    typeAllocRows = await db.prepare<[string, string, number, string]>(
       `SELECT et.id, et.name, COALESCE(ta.percentage, 0) AS allocation
        FROM expense_types et
-       LEFT JOIN type_allocations ta ON ta.type_id = et.id AND ta.user_id = ? AND ta.year = ?
-       WHERE et.user_id = ? AND et.year = ?
+       LEFT JOIN type_allocations ta ON ta.type_id = et.id AND ta.user_id = ?
+         AND ta.year = (SELECT MAX(t2.year) FROM type_allocations t2 WHERE t2.user_id = ? AND t2.type_id = et.id AND t2.year <= ?)
+       WHERE et.household_id = ?
        ORDER BY et.sort_order`
-    ).all(userId, year, userId, year) as { id: string; name: string; allocation: number }[]
+    ).all(userId, userId, year, householdId) as { id: string; name: string; allocation: number }[]
 
     nominalRows = await db.prepare<[string, number]>(
       "SELECT category_id, nominal FROM category_nominal_budgets WHERE user_id=? AND year=?"
@@ -757,7 +740,7 @@ export default async function YearDetailPage({
                     )}
                     {expenseRow && (
                       <ExpenseForm action={updateExpense.bind(null, editId)} year={year} month={month} categories={expenseCats} wallets={wallets}
-                        defaultValues={{ date: expenseRow.date, name: expenseRow.name, walletId: expenseRow.wallet_id, categoryId: expenseRow.category_id, needsType: expenseRow.needs_type, amount: expenseRow.amount, isInitial: !!expenseRow.is_initial }}
+                        defaultValues={{ date: expenseRow.date, name: expenseRow.name, walletId: expenseRow.wallet_id, categoryId: expenseRow.category_id, needsType: expenseRow.needs_type, amount: expenseRow.amount, isInitial: !!expenseRow.is_initial, isFamilyExpense: !!expenseRow.is_family_expense }}
                         submitLabel="Simpan Perubahan" />
                     )}
                   </CardContent>
@@ -862,6 +845,7 @@ export default async function YearDetailPage({
                                     <div className="flex items-center gap-2">
                                       {row.name}
                                       {!!row.is_initial && <span className="rounded px-1.5 py-0.5 text-[10px] font-bold bg-amber-100 text-amber-700">AWAL</span>}
+                                      {!!row.is_family_expense && <span className="rounded px-1.5 py-0.5 text-[10px] font-bold bg-emerald-100 text-emerald-700">KELUARGA</span>}
                                     </div>
                                   </td>
                                   <td className="px-4 py-3 text-muted-foreground">{row.wallet_name ?? "—"}</td>

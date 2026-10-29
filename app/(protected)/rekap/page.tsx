@@ -1,5 +1,5 @@
 import { db } from "@/lib/db"
-import { LOCAL_USER_ID } from "@/lib/auth-simple"
+import { requireScope } from "@/lib/scope"
 import { Plus } from "lucide-react"
 import Link from "next/link"
 import { RekapTabs, type YearChartEntry } from "./_components/rekap-tabs"
@@ -18,14 +18,16 @@ function formatRupiah(amount: number) {
 }
 
 export default async function RekapPage() {
-  const userId = LOCAL_USER_ID
+  const scope  = await requireScope()
+  const userId = scope.userIds
+  const selfId = scope.targetUserId
 
-  const incomeRows = await db.prepare<[string], { year: number; total: number }>(
-    "SELECT year, COALESCE(SUM(amount), 0) AS total FROM incomes WHERE user_id = ? GROUP BY year"
+  const incomeRows = await db.prepare<[string[]], { year: number; total: number }>(
+    "SELECT year, COALESCE(SUM(amount), 0) AS total FROM incomes WHERE user_id = ANY(?) GROUP BY year"
   ).all(userId) as { year: number; total: number }[]
 
-  const expenseRows = await db.prepare<[string], { year: number; total: number }>(
-    "SELECT year, COALESCE(SUM(amount), 0) AS total FROM expenses WHERE user_id = ? GROUP BY year"
+  const expenseRows = await db.prepare<[string[]], { year: number; total: number }>(
+    `SELECT year, COALESCE(SUM(amount), 0) AS total FROM expenses WHERE user_id = ANY(?)${scope.mode === 'personal' ? " AND is_family_expense = 0" : ""} GROUP BY year`
   ).all(userId) as { year: number; total: number }[]
 
   // Merge into year map
@@ -66,7 +68,9 @@ export default async function RekapPage() {
   return (
     <div className="max-w-2xl space-y-6">
       <div>
-        <h1 className="text-xl font-semibold">Cashflow</h1>
+        <h1 className="text-xl font-semibold">
+          {scope.mode === "family" ? "Report Utama Keluarga" : "Report Personal"}
+        </h1>
       </div>
 
       <RekapTabs chartData={chartData}>

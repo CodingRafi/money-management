@@ -2,13 +2,13 @@
 
 import { revalidatePath } from "next/cache"
 import { db } from "@/lib/db"
-import { requireUserIdAction } from "@/lib/session"
+import { requireWritableUserId } from "@/lib/scope"
 import crypto from "crypto"
 
 function uuid() { return crypto.randomUUID() }
 
 export async function createGoal(formData: FormData) {
-  const userId       = await requireUserIdAction()
+  const userId       = await requireWritableUserId()
   const name         = (formData.get("name") as string)?.trim()
   const targetAmount = formData.get("target_amount") ? parseFloat(formData.get("target_amount") as string) : null
   const targetDate   = (formData.get("target_date") as string) || null
@@ -18,14 +18,14 @@ export async function createGoal(formData: FormData) {
   if (targetAmount !== null && (isNaN(targetAmount) || targetAmount <= 0)) throw new Error("Target nominal tidak valid")
 
   await db.prepare(
-    "INSERT INTO investment_goals (id, user_id, name, target_amount, target_date, color) VALUES (?, ?, ?, ?, ?, ?)"
-  ).run(uuid(), userId, name, targetAmount, targetDate, color)
+    "INSERT INTO investment_goals (id, user_id, recorded_by, name, target_amount, target_date, color) VALUES (?, ?, ?, ?, ?, ?, ?)"
+  ).run(uuid(), userId, userId, name, targetAmount, targetDate, color)
 
   revalidatePath("/investasi")
 }
 
 export async function updateGoal(id: string, formData: FormData) {
-  const userId       = await requireUserIdAction()
+  const userId       = await requireWritableUserId()
   const name         = (formData.get("name") as string)?.trim()
   const targetAmount = formData.get("target_amount") ? parseFloat(formData.get("target_amount") as string) : null
   const targetDate   = (formData.get("target_date") as string) || null
@@ -42,7 +42,7 @@ export async function updateGoal(id: string, formData: FormData) {
 }
 
 export async function deleteGoal(id: string) {
-  const userId = await requireUserIdAction()
+  const userId = await requireWritableUserId()
 
   const txRow = await db.prepare(
     "SELECT COUNT(*) AS cnt FROM investment_transactions WHERE goal_id=?"

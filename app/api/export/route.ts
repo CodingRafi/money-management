@@ -1,17 +1,27 @@
 import { NextResponse } from "next/server"
 import { db } from "@/lib/db"
-import { LOCAL_USER_ID } from "@/lib/auth-simple"
-import { validateSession } from "@/lib/auth-simple"
-import { cookies } from "next/headers"
+import { getSession } from "@/lib/session"
 
 // Urutan dump — mengikuti dependensi foreign key (parent ditulis duluan),
 // supaya hasil dump bisa langsung di-import ke database kosong.
 const DUMP_ORDER: { table: string; userScoped: boolean; join?: string }[] = [
   { table: "wallet_categories", userScoped: false },
   { table: "investment_categories", userScoped: false },
-  { table: "income_categories", userScoped: true },
-  { table: "expense_types", userScoped: true },
-  { table: "expense_categories", userScoped: true },
+  {
+    table: "income_categories",
+    userScoped: false,
+    join: "JOIN household_members hm ON hm.household_id = income_categories.household_id WHERE hm.user_id = ?",
+  },
+  {
+    table: "expense_types",
+    userScoped: false,
+    join: "JOIN household_members hm ON hm.household_id = expense_types.household_id WHERE hm.user_id = ?",
+  },
+  {
+    table: "expense_categories",
+    userScoped: false,
+    join: "JOIN household_members hm ON hm.household_id = expense_categories.household_id WHERE hm.user_id = ?",
+  },
   { table: "type_allocations", userScoped: true },
   { table: "budgets", userScoped: true },
   { table: "category_nominal_budgets", userScoped: true },
@@ -68,13 +78,12 @@ function tableToInserts(table: string, rows: Record<string, unknown>[]): string 
 }
 
 export async function GET() {
-  const cookieStore = await cookies()
-  const token = cookieStore.get("session_token")?.value
-  if (!token || !(await validateSession(token))) {
+  const session = await getSession()
+  if (!session) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
   }
 
-  const userId = LOCAL_USER_ID
+  const userId = session.userId
   const lines: string[] = [
     `-- Money Management SQL Dump (PostgreSQL)`,
     `-- Exported: ${new Date().toISOString()}`,

@@ -1,5 +1,5 @@
 import { db } from "@/lib/db"
-import { LOCAL_USER_ID } from "@/lib/auth-simple"
+import { requireScope } from "@/lib/scope"
 import { Card, CardContent, CardHeader } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
@@ -43,14 +43,16 @@ export default async function PinjamanPage({
 }: {
   searchParams: Promise<Record<string, string | string[] | undefined>>
 }) {
-  const userId = LOCAL_USER_ID
+  const scope  = await requireScope()
+  const userId = scope.userIds
+  const selfId = scope.targetUserId
   const sp               = await searchParams
   const showNew          = sp.new === "1"
   const typeFilter       = typeof sp.type === "string"       ? sp.type       : "all"
   const statusFilter     = typeof sp.status === "string"     ? sp.status     : "all"
   const likelihoodFilter = typeof sp.likelihood === "string" ? sp.likelihood : "all"
 
-  const allLoans = await db.prepare<[string], LoanRow>(
+  const allLoans = await db.prepare<[string[]], LoanRow>(
     `SELECT l.id, l.type, l.name, l.description,
             l.principal_amount, l.interest_rate, l.interest_type,
             l.start_date, l.due_date, l.status, l.payment_likelihood, w.name AS wallet_name,
@@ -58,13 +60,13 @@ export default async function PinjamanPage({
      FROM loans l
      JOIN wallets w ON w.id = l.wallet_id
      LEFT JOIN loan_payments lp ON lp.loan_id = l.id
-     WHERE l.user_id = ? AND l.is_active = 1
+     WHERE l.user_id = ANY(?) AND l.is_active = 1
      GROUP BY l.id, w.name ORDER BY l.created_at DESC`
   ).all(userId) as LoanRow[]
 
   const wallets = await db.prepare<[string], WalletRow>(
     "SELECT id, name FROM wallets WHERE user_id=? AND is_active=1 AND is_liquid=1 ORDER BY sort_order"
-  ).all(userId) as WalletRow[]
+  ).all(selfId) as WalletRow[]
 
   const loans = allLoans
     .map((l) => {

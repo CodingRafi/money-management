@@ -4,14 +4,16 @@ import { Card, CardContent } from "@/components/ui/card"
 
 export async function CategorySection({
   userId,
+  excludeFamily = false,
   month,
   year,
 }: {
-  userId: string
+  userId: string | string[]
+  excludeFamily?: boolean
   month: number
   year: number
 }) {
-  const data = await getCategoryBreakdown(userId, month, year)
+  const data = await getCategoryBreakdown(userId, month, year, excludeFamily)
   if (data.expenses.length === 0 && data.incomes.length === 0) return null
   return <CategoryPieCharts data={data} />
 }

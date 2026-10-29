@@ -48,7 +48,7 @@ function formatRp(n: number) {
   }).format(n)
 }
 
-export async function NetWorthSection({ userId, year }: { userId: string; year: number }) {
+export async function NetWorthSection({ userId, year }: { userId: string | string[]; year: number }) {
   const data = await getWealthOverview(userId, year)
 
   const totalKekayaanDenganPiutang = data.totalKekayaan + data.piutangSisa

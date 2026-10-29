@@ -1,13 +1,15 @@
 import { NextResponse } from "next/server"
-import { validateSession } from "@/lib/auth-simple"
-import { cookies } from "next/headers"
+import { getSession } from "@/lib/session"
 
 /** Info koneksi database (tanpa password) untuk ditampilkan di halaman pengaturan. */
 export async function GET() {
-  const cookieStore = await cookies()
-  const token = cookieStore.get("session_token")?.value
-  if (!token || !(await validateSession(token))) {
+  const session = await getSession()
+  if (!session) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
+  }
+  // Import menimpa seluruh tabel dan db-info membuka host DB: hanya pemilik SaaS.
+  if (session.role !== "super_admin") {
+    return NextResponse.json({ error: "Forbidden" }, { status: 403 })
   }
 
   const url = process.env.DATABASE_URL

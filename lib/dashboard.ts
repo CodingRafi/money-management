@@ -24,7 +24,7 @@ export type WealthOverviewData = {
   avgMonthlyExpense: number
 }
 export type CashflowData    = { totalIncome: number; totalExpense: number; investGain: number; totalEfektif: number; remaining: number; expenseRatio: number; savingRatio: number; incomeCount: number; expenseCount: number }
-export type WalletItem      = { id: string; name: string; balance: number; color: string | null; isLiquid: boolean }
+export type WalletItem      = { id: string; name: string; color: string | null; isLiquid: boolean }
 export type WalletData      = { activeCount: number; items: WalletItem[] }
 export type GoalItem        = { id: string; name: string; totalModal: number; targetAmount: number | null; progress: number | null; status: "ON_TRACK" | "BEHIND" | "COMPLETED" | "NO_TARGET" }
 export type InvestmentData  = { totalModal: number; totalSell: number; totalProfit: number; totalLoss: number; netProfitLoss: number; goals: GoalItem[] }
@@ -32,14 +32,37 @@ export type LoanItem        = { id: string; name: string; total: number; sisa: n
 export type LoanData        = { piutang: { totalSisa: number; items: LoanItem[] }; hutang: { totalSisa: number; items: LoanItem[] }; terlambatCount: number }
 export type RecentTransaction = { id: string; type: "INCOME" | "EXPENSE" | "TRANSFER" | "INVESTMENT"; label: string; sublabel: string; amount: number; isCredit: boolean; date: Date }
 
-export async function getWealthOverview(userId: string, year: number): Promise<WealthOverviewData> {
-  const walletRow = await db.prepare(`
+/** Satu user (mode personal) atau banyak user (mode laporan keluarga). */
+function toIds(v: string | string[]): string[] {
+  return Array.isArray(v) ? v : [v]
+}
+
+/**
+ * Dompet tidak punya saldo tersimpan. Posisi kas diturunkan dari arus kas:
+ * pemasukan − pengeluaran − BUY + SELL/DIVIDEND ± arus pinjaman (tanpa data is_initial).
+ */
+async function getCashPosition(userIdOrIds: string | string[]): Promise<{ total: number; liquid: number; non_liquid: number }> {
+  const userId = toIds(userIdOrIds)
+  const row = await db.prepare(`
     SELECT
-      COALESCE(SUM(balance), 0)                                              AS total,
-      COALESCE(SUM(CASE WHEN is_liquid = 1 THEN balance ELSE 0 END), 0)     AS liquid,
-      COALESCE(SUM(CASE WHEN is_liquid = 0 THEN balance ELSE 0 END), 0)     AS non_liquid
-    FROM wallets WHERE user_id = ? AND is_active = 1
-  `).get(userId) as { total: number; liquid: number; non_liquid: number }
+      COALESCE((SELECT SUM(amount) FROM incomes  WHERE user_id = ANY(?) AND is_initial = 0), 0)
+    - COALESCE((SELECT SUM(amount) FROM expenses WHERE user_id = ANY(?) AND is_initial = 0), 0)
+    - COALESCE((SELECT SUM(it.total_amount) FROM investment_transactions it JOIN investments i ON i.id = it.investment_id
+                WHERE i.user_id = ANY(?) AND it.type = 'BUY' AND it.is_initial = 0), 0)
+    + COALESCE((SELECT SUM(it.total_amount) FROM investment_transactions it JOIN investments i ON i.id = it.investment_id
+                WHERE i.user_id = ANY(?) AND it.type IN ('SELL','DIVIDEND') AND it.is_initial = 0), 0)
+    + COALESCE((SELECT SUM(CASE WHEN type = 'HUTANG' THEN principal_amount ELSE -principal_amount END)
+                FROM loans WHERE user_id = ANY(?) AND is_active = 1 AND is_initial = 0), 0)
+    + COALESCE((SELECT SUM(CASE WHEN l.type = 'PIUTANG' THEN lp.total_paid ELSE -lp.total_paid END)
+                FROM loan_payments lp JOIN loans l ON l.id = lp.loan_id
+                WHERE l.user_id = ANY(?) AND l.is_active = 1 AND lp.is_initial = 0), 0) AS cash
+  `).get(userId, userId, userId, userId, userId, userId) as { cash: number }
+  return { total: row.cash, liquid: row.cash, non_liquid: 0 }
+}
+
+export async function getWealthOverview(userIdOrIds: string | string[], year: number): Promise<WealthOverviewData> {
+  const userId = toIds(userIdOrIds)
+  const walletRow = await getCashPosition(userId)
 
   const investRows = await db.prepare(`
     SELECT i.is_liquid,
@@ -47,7 +70,7 @@ export async function getWealthOverview(userId: string, year: number): Promise<W
       COALESCE(SUM(CASE WHEN it.type = 'SELL' THEN it.total_amount ELSE 0 END), 0) AS total_sell
     FROM investments i
     LEFT JOIN investment_transactions it ON it.investment_id = i.id
-    WHERE i.user_id = ? AND i.is_active = 1 AND i.is_closed = 0
+    WHERE i.user_id = ANY(?) AND i.is_active = 1 AND i.is_closed = 0
     GROUP BY i.is_liquid
   `).all(userId) as { is_liquid: number; total_buy: number; total_sell: number }[]
 
@@ -65,7 +88,7 @@ export async function getWealthOverview(userId: string, year: number): Promise<W
     LEFT JOIN (
       SELECT loan_id, SUM(principal_paid) AS total_pp FROM loan_payments GROUP BY loan_id
     ) pp ON pp.loan_id = l.id
-    WHERE l.user_id = ? AND l.type = 'PIUTANG' AND l.is_active = 1
+    WHERE l.user_id = ANY(?) AND l.type = 'PIUTANG' AND l.is_active = 1
   `).get(userId) as { sisa: number }
 
   const hutangRow = await db.prepare(`
@@ -74,7 +97,7 @@ export async function getWealthOverview(userId: string, year: number): Promise<W
     LEFT JOIN (
       SELECT loan_id, SUM(principal_paid) AS total_pp FROM loan_payments GROUP BY loan_id
     ) pp ON pp.loan_id = l.id
-    WHERE l.user_id = ? AND l.type = 'HUTANG' AND l.is_active = 1
+    WHERE l.user_id = ANY(?) AND l.type = 'HUTANG' AND l.is_active = 1
   `).get(userId) as { sisa: number }
 
   const piutangMacetRow = await db.prepare(`
@@ -83,7 +106,7 @@ export async function getWealthOverview(userId: string, year: number): Promise<W
     LEFT JOIN (
       SELECT loan_id, SUM(principal_paid) AS total_pp FROM loan_payments GROUP BY loan_id
     ) pp ON pp.loan_id = l.id
-    WHERE l.user_id = ? AND l.type = 'PIUTANG' AND l.is_active = 1 AND l.payment_likelihood = 'MACET'
+    WHERE l.user_id = ANY(?) AND l.type = 'PIUTANG' AND l.is_active = 1 AND l.payment_likelihood = 'MACET'
   `).get(userId) as { sisa: number }
 
   const monthlyRows = await db.prepare(`
@@ -91,9 +114,9 @@ export async function getWealthOverview(userId: string, year: number): Promise<W
       COALESCE(SUM(CASE WHEN src = 'i' THEN amount ELSE 0 END), 0) AS income,
       COALESCE(SUM(CASE WHEN src = 'e' THEN amount ELSE 0 END), 0) AS expense
     FROM (
-      SELECT month, 'i' AS src, amount FROM incomes  WHERE user_id = ? AND year = ?
+      SELECT month, 'i' AS src, amount FROM incomes  WHERE user_id = ANY(?) AND year = ?
       UNION ALL
-      SELECT month, 'e',        amount FROM expenses WHERE user_id = ? AND year = ?
+      SELECT month, 'e',        amount FROM expenses WHERE user_id = ANY(?) AND year = ?
     ) t
     GROUP BY month ORDER BY month
   `).all(userId, year, userId, year) as { month: number; income: number; expense: number }[]
@@ -105,7 +128,7 @@ export async function getWealthOverview(userId: string, year: number): Promise<W
       COALESCE(SUM(CASE WHEN it.type='BUY'  THEN it.total_amount ELSE 0 END), 0) AS capital_gain
     FROM investment_transactions it
     JOIN investments i ON i.id = it.investment_id
-    WHERE i.user_id = ? AND i.is_closed = 1
+    WHERE i.user_id = ANY(?) AND i.is_closed = 1
       AND EXTRACT(YEAR FROM i.closed_at)::int = ?
     GROUP BY EXTRACT(MONTH FROM i.closed_at)::int
   `).all(userId, year) as { month: number; capital_gain: number }[]
@@ -116,7 +139,7 @@ export async function getWealthOverview(userId: string, year: number): Promise<W
       COALESCE(SUM(it.total_amount), 0) AS dividen
     FROM investment_transactions it
     JOIN investments i ON i.id = it.investment_id
-    WHERE i.user_id = ? AND it.type = 'DIVIDEND'
+    WHERE i.user_id = ANY(?) AND it.type = 'DIVIDEND'
       AND EXTRACT(YEAR FROM it.date::date)::int = ?
     GROUP BY EXTRACT(MONTH FROM it.date::date)::int
   `).all(userId, year) as { month: number; dividen: number }[]
@@ -126,9 +149,9 @@ export async function getWealthOverview(userId: string, year: number): Promise<W
       COALESCE(SUM(CASE WHEN src = 'i' THEN amount ELSE 0 END), 0) AS income,
       COALESCE(SUM(CASE WHEN src = 'e' THEN amount ELSE 0 END), 0) AS expense
     FROM (
-      SELECT year, 'i' AS src, amount FROM incomes  WHERE user_id = ?
+      SELECT year, 'i' AS src, amount FROM incomes  WHERE user_id = ANY(?)
       UNION ALL
-      SELECT year, 'e',        amount FROM expenses WHERE user_id = ?
+      SELECT year, 'e',        amount FROM expenses WHERE user_id = ANY(?)
     ) t
     GROUP BY year ORDER BY year
   `).all(userId, userId) as { year: number; income: number; expense: number }[]
@@ -139,7 +162,7 @@ export async function getWealthOverview(userId: string, year: number): Promise<W
       COALESCE(SUM(CASE WHEN it.type='BUY'  THEN it.total_amount ELSE 0 END), 0) AS capital_gain
     FROM investment_transactions it
     JOIN investments i ON i.id = it.investment_id
-    WHERE i.user_id = ? AND i.is_closed = 1
+    WHERE i.user_id = ANY(?) AND i.is_closed = 1
     GROUP BY EXTRACT(YEAR FROM i.closed_at)::int
   `).all(userId) as { year: number; capital_gain: number }[]
 
@@ -148,7 +171,7 @@ export async function getWealthOverview(userId: string, year: number): Promise<W
       COALESCE(SUM(it.total_amount), 0) AS dividen
     FROM investment_transactions it
     JOIN investments i ON i.id = it.investment_id
-    WHERE i.user_id = ? AND it.type = 'DIVIDEND'
+    WHERE i.user_id = ANY(?) AND it.type = 'DIVIDEND'
     GROUP BY EXTRACT(YEAR FROM it.date::date)::int
   `).all(userId) as { year: number; dividen: number }[]
 
@@ -171,7 +194,7 @@ export async function getWealthOverview(userId: string, year: number): Promise<W
   const expRow = await db.prepare(`
     SELECT COALESCE(SUM(amount), 0) AS total
     FROM expenses
-    WHERE user_id = ?
+    WHERE user_id = ANY(?)
       AND (year * 12 + month) >= ? AND (year * 12 + month) <= ?
   `).get(userId, nowYM - 3, nowYM - 1) as { total: number }
   const avgMonthlyExpense = expRow.total / 3
@@ -208,14 +231,10 @@ export async function getWealthOverview(userId: string, year: number): Promise<W
   }
 }
 
-export async function getNetWorth(userId: string): Promise<NetWorthData> {
-  const walletRow = await db.prepare(`
-    SELECT
-      COALESCE(SUM(balance), 0)                                      AS total_all,
-      COALESCE(SUM(CASE WHEN is_liquid THEN balance ELSE 0 END), 0)  AS liquid,
-      COALESCE(SUM(CASE WHEN NOT is_liquid THEN balance ELSE 0 END), 0) AS non_liquid
-    FROM wallets WHERE user_id = ? AND is_active = 1
-  `).get(userId) as { total_all: number; liquid: number; non_liquid: number }
+export async function getNetWorth(userIdOrIds: string | string[]): Promise<NetWorthData> {
+  const userId = toIds(userIdOrIds)
+  const cash = await getCashPosition(userId)
+  const walletRow = { total_all: cash.total, liquid: cash.liquid, non_liquid: cash.non_liquid }
 
   const loanRow = await db.prepare(`
     SELECT COALESCE(SUM(
@@ -223,7 +242,7 @@ export async function getNetWorth(userId: string): Promise<NetWorthData> {
     ), 0) AS total_hutang_sisa
     FROM loans l
     LEFT JOIN (SELECT loan_id, SUM(principal_paid) AS total_pp FROM loan_payments GROUP BY loan_id) pp ON pp.loan_id = l.id
-    WHERE l.user_id = ? AND l.type = 'HUTANG' AND l.is_active = 1
+    WHERE l.user_id = ANY(?) AND l.type = 'HUTANG' AND l.is_active = 1
   `).get(userId) as { total_hutang_sisa: number }
 
   const liquid    = walletRow.liquid
@@ -231,7 +250,9 @@ export async function getNetWorth(userId: string): Promise<NetWorthData> {
   return { total: walletRow.total_all - loanRow.total_hutang_sisa, liquid, nonLiquid, changePercent: null }
 }
 
-export async function getCashflow(userId: string, month: number, year: number): Promise<CashflowData> {
+export async function getCashflow(userIdOrIds: string | string[], month: number, year: number, excludeFamilyExpense = false): Promise<CashflowData> {
+  const userId = toIds(userIdOrIds)
+  const famClause = excludeFamilyExpense ? " AND is_family_expense = 0" : ""
   const row = await db.prepare(`
     SELECT
       COALESCE(SUM(CASE WHEN src='i' THEN amount ELSE 0 END), 0) AS total_income,
@@ -239,9 +260,9 @@ export async function getCashflow(userId: string, month: number, year: number): 
       COUNT(CASE WHEN src='i' THEN 1 END) AS income_count,
       COUNT(CASE WHEN src='e' THEN 1 END) AS expense_count
     FROM (
-      SELECT 'i' AS src, amount FROM incomes  WHERE user_id=? AND month=? AND year=?
+      SELECT 'i' AS src, amount FROM incomes  WHERE user_id = ANY(?) AND month=? AND year=?
       UNION ALL
-      SELECT 'e', amount         FROM expenses WHERE user_id=? AND month=? AND year=?
+      SELECT 'e', amount         FROM expenses WHERE user_id = ANY(?) AND month=? AND year=?${famClause}
     ) t
   `).get(userId, month, year, userId, month, year) as { total_income: number; total_expense: number; income_count: number; expense_count: number }
 
@@ -252,7 +273,7 @@ export async function getCashflow(userId: string, month: number, year: number): 
       COALESCE(SUM(CASE WHEN it.type='BUY'  THEN it.total_amount ELSE 0 END), 0) AS capital_gain
     FROM investment_transactions it
     JOIN investments i ON i.id = it.investment_id
-    WHERE i.user_id = ? AND i.is_closed = 1
+    WHERE i.user_id = ANY(?) AND i.is_closed = 1
       AND EXTRACT(MONTH FROM i.closed_at)::int = ?
       AND EXTRACT(YEAR FROM i.closed_at)::int = ?
   `).get(userId, month, year) as { capital_gain: number }
@@ -262,7 +283,7 @@ export async function getCashflow(userId: string, month: number, year: number): 
     SELECT COALESCE(SUM(it.total_amount), 0) AS dividen
     FROM investment_transactions it
     JOIN investments i ON i.id = it.investment_id
-    WHERE i.user_id = ? AND it.type = 'DIVIDEND'
+    WHERE i.user_id = ANY(?) AND it.type = 'DIVIDEND'
       AND EXTRACT(MONTH FROM it.date::date)::int = ?
       AND EXTRACT(YEAR FROM it.date::date)::int = ?
   `).get(userId, month, year) as { dividen: number }
@@ -285,26 +306,28 @@ export async function getCashflow(userId: string, month: number, year: number): 
   }
 }
 
-export async function getWallets(userId: string): Promise<WalletData> {
+export async function getWallets(userIdOrIds: string | string[]): Promise<WalletData> {
+  const userId = toIds(userIdOrIds)
   const rows = await db.prepare(`
-    SELECT id, name, balance, color, is_liquid
-    FROM wallets WHERE user_id=? AND is_active=1 ORDER BY balance DESC
-  `).all(userId) as { id: string; name: string; balance: number; color: string | null; is_liquid: number }[]
+    SELECT id, name, color, is_liquid
+    FROM wallets WHERE user_id = ANY(?) AND is_active=1 ORDER BY sort_order, name
+  `).all(userId) as { id: string; name: string; color: string | null; is_liquid: number }[]
 
   return {
     activeCount: rows.length,
-    items: rows.slice(0, 5).map((r) => ({ id: r.id, name: r.name, balance: r.balance, color: r.color, isLiquid: !!r.is_liquid })),
+    items: rows.slice(0, 5).map((r) => ({ id: r.id, name: r.name, color: r.color, isLiquid: !!r.is_liquid })),
   }
 }
 
-export async function getInvestment(userId: string): Promise<InvestmentData> {
+export async function getInvestment(userIdOrIds: string | string[]): Promise<InvestmentData> {
+  const userId = toIds(userIdOrIds)
   const summaryRow = await db.prepare(`
     SELECT
       COALESCE(SUM(CASE WHEN it.type='BUY'  THEN it.total_amount ELSE 0 END), 0) AS total_buy,
       COALESCE(SUM(CASE WHEN it.type='SELL' THEN it.total_amount ELSE 0 END), 0) AS total_sell
     FROM investment_transactions it
     JOIN investments i ON i.id = it.investment_id
-    WHERE i.user_id = ? AND i.is_closed = 0
+    WHERE i.user_id = ANY(?) AND i.is_closed = 0
   `).get(userId) as { total_buy: number; total_sell: number }
 
   const goalsRows = await db.prepare(`
@@ -312,7 +335,7 @@ export async function getInvestment(userId: string): Promise<InvestmentData> {
            COALESCE(SUM(CASE WHEN it.type='BUY' THEN it.total_amount ELSE -it.total_amount END), 0) AS total_modal
     FROM investment_goals g
     LEFT JOIN investment_transactions it ON it.goal_id = g.id
-    WHERE g.user_id = ? AND g.is_active = 1
+    WHERE g.user_id = ANY(?) AND g.is_active = 1
     GROUP BY g.id, g.name, g.target_amount
     ORDER BY g.sort_order
   `).all(userId) as { id: string; name: string; target_amount: number | null; total_modal: number }[]
@@ -340,13 +363,14 @@ export async function getInvestment(userId: string): Promise<InvestmentData> {
   }
 }
 
-export async function getLoans(userId: string): Promise<LoanData> {
+export async function getLoans(userIdOrIds: string | string[]): Promise<LoanData> {
+  const userId = toIds(userIdOrIds)
   const rows = await db.prepare(`
     SELECT l.id, l.type, l.name, l.principal_amount, l.due_date, l.status,
            COALESCE(SUM(lp.principal_paid), 0) AS total_pp
     FROM loans l
     LEFT JOIN loan_payments lp ON lp.loan_id = l.id
-    WHERE l.user_id = ? AND l.is_active = 1
+    WHERE l.user_id = ANY(?) AND l.is_active = 1
     GROUP BY l.id, l.type, l.name, l.principal_amount, l.due_date, l.status
     ORDER BY l.created_at DESC
   `).all(userId) as { id: string; type: string; name: string; principal_amount: number; due_date: string | null; status: string; total_pp: number }[]
@@ -378,12 +402,13 @@ export type CategoryBreakdownData = {
   incomes:  CategoryBreakdownItem[]
 }
 
-export async function getCategoryBreakdown(userId: string, month: number, year: number): Promise<CategoryBreakdownData> {
+export async function getCategoryBreakdown(userIdOrIds: string | string[], month: number, year: number, excludeFamilyExpense = false): Promise<CategoryBreakdownData> {
+  const userId = toIds(userIdOrIds)
   const expRows = await db.prepare(`
     SELECT COALESCE(ec.name, 'Lainnya') AS name, COALESCE(SUM(e.amount), 0) AS total
     FROM expenses e
     LEFT JOIN expense_categories ec ON ec.id = e.category_id
-    WHERE e.user_id = ? AND e.month = ? AND e.year = ?
+    WHERE e.user_id = ANY(?) AND e.month = ? AND e.year = ?${excludeFamilyExpense ? " AND e.is_family_expense = 0" : ""}
     GROUP BY ec.name
     ORDER BY total DESC
   `).all(userId, month, year) as CategoryBreakdownItem[]
@@ -392,7 +417,7 @@ export async function getCategoryBreakdown(userId: string, month: number, year: 
     SELECT COALESCE(ic.name, 'Lainnya') AS name, COALESCE(SUM(i.amount), 0) AS total
     FROM incomes i
     LEFT JOIN income_categories ic ON ic.id = i.category_id
-    WHERE i.user_id = ? AND i.month = ? AND i.year = ?
+    WHERE i.user_id = ANY(?) AND i.month = ? AND i.year = ?
     GROUP BY ic.name
     ORDER BY total DESC
   `).all(userId, month, year) as CategoryBreakdownItem[]
@@ -439,20 +464,21 @@ function dateCutoff(days: number): string {
   return d.toISOString().slice(0, 10)
 }
 
-export async function getRecentCashflowTx(userId: string, days = 30, limit = 10): Promise<RecentCashflowTx[]> {
+export async function getRecentCashflowTx(userIdOrIds: string | string[], days = 30, limit = 10): Promise<RecentCashflowTx[]> {
+  const userId = toIds(userIdOrIds)
   const cutoff = dateCutoff(days)
 
   const incomes = await db.prepare(`
     SELECT i.id, i.date, i.name, c.name AS cat, i.amount
     FROM incomes i LEFT JOIN income_categories c ON c.id = i.category_id
-    WHERE i.user_id = ? AND i.date >= ?
+    WHERE i.user_id = ANY(?) AND i.date >= ?
     ORDER BY i.date DESC, i.created_at DESC LIMIT ?
   `).all(userId, cutoff, limit) as { id: string; date: string; name: string; cat: string | null; amount: number }[]
 
   const expenses = await db.prepare(`
     SELECT e.id, e.date, e.name, c.name AS cat, e.amount
     FROM expenses e LEFT JOIN expense_categories c ON c.id = e.category_id
-    WHERE e.user_id = ? AND e.date >= ?
+    WHERE e.user_id = ANY(?) AND e.date >= ?
     ORDER BY e.date DESC, e.created_at DESC LIMIT ?
   `).all(userId, cutoff, limit) as { id: string; date: string; name: string; cat: string | null; amount: number }[]
 
@@ -461,7 +487,7 @@ export async function getRecentCashflowTx(userId: string, days = 30, limit = 10)
     FROM transfers t
     JOIN wallets fw ON fw.id = t.from_wallet_id
     JOIN wallets tw ON tw.id = t.to_wallet_id
-    WHERE t.user_id = ? AND t.date >= ?
+    WHERE t.user_id = ANY(?) AND t.date >= ?
     ORDER BY t.date DESC, t.created_at DESC LIMIT ?
   `).all(userId, cutoff, limit) as { id: string; date: string; amount: number; from_name: string; to_name: string }[]
 
@@ -473,14 +499,15 @@ export async function getRecentCashflowTx(userId: string, days = 30, limit = 10)
   return rows.sort((a, b) => b.dateStr.localeCompare(a.dateStr)).slice(0, limit)
 }
 
-export async function getRecentInvestmentTx(userId: string, days = 30, limit = 10): Promise<RecentInvestmentTx[]> {
+export async function getRecentInvestmentTx(userIdOrIds: string | string[], days = 30, limit = 10): Promise<RecentInvestmentTx[]> {
+  const userId = toIds(userIdOrIds)
   const cutoff = dateCutoff(days)
   const rows = await db.prepare(`
     SELECT it.id, it.date, it.type, i.name AS investment_name, g.name AS goal_name, it.total_amount
     FROM investment_transactions it
     JOIN investments i ON i.id = it.investment_id
     LEFT JOIN investment_goals g ON g.id = it.goal_id
-    WHERE i.user_id = ? AND it.date >= ?
+    WHERE i.user_id = ANY(?) AND it.date >= ?
     ORDER BY it.date DESC, it.created_at DESC LIMIT ?
   `).all(userId, cutoff, limit) as { id: string; date: string; type: string; investment_name: string; goal_name: string | null; total_amount: number }[]
 
@@ -494,13 +521,14 @@ export async function getRecentInvestmentTx(userId: string, days = 30, limit = 1
   }))
 }
 
-export async function getRecentLoanTx(userId: string, days = 30, limit = 10): Promise<RecentLoanTx[]> {
+export async function getRecentLoanTx(userIdOrIds: string | string[], days = 30, limit = 10): Promise<RecentLoanTx[]> {
+  const userId = toIds(userIdOrIds)
   const cutoff = dateCutoff(days)
   const rows = await db.prepare(`
     SELECT lp.id, lp.date, lp.total_paid, lp.notes, l.name AS loan_name, l.type AS loan_type
     FROM loan_payments lp
     JOIN loans l ON l.id = lp.loan_id
-    WHERE l.user_id = ? AND lp.date >= ?
+    WHERE l.user_id = ANY(?) AND lp.date >= ?
     ORDER BY lp.date DESC, lp.created_at DESC LIMIT ?
   `).all(userId, cutoff, limit) as { id: string; date: string; total_paid: number; notes: string | null; loan_name: string; loan_type: string }[]
 
@@ -516,12 +544,13 @@ export async function getRecentLoanTx(userId: string, days = 30, limit = 10): Pr
 
 // ── Legacy combined recent transactions ──────────────────────────────────────
 
-export async function getRecentTransactions(userId: string, limit = 10): Promise<RecentTransaction[]> {
+export async function getRecentTransactions(userIdOrIds: string | string[], limit = 10): Promise<RecentTransaction[]> {
+  const userId = toIds(userIdOrIds)
   const incomes = await db.prepare(`
     SELECT i.id, i.date, i.name, c.name AS category_name, i.amount
     FROM incomes i
     LEFT JOIN income_categories c ON c.id = i.category_id
-    WHERE i.user_id = ?
+    WHERE i.user_id = ANY(?)
     ORDER BY i.date DESC, i.created_at DESC LIMIT ?
   `).all(userId, limit) as { id: string; date: string; name: string; category_name: string | null; amount: number }[]
 
@@ -529,7 +558,7 @@ export async function getRecentTransactions(userId: string, limit = 10): Promise
     SELECT e.id, e.date, e.name, c.name AS category_name, e.amount
     FROM expenses e
     LEFT JOIN expense_categories c ON c.id = e.category_id
-    WHERE e.user_id = ?
+    WHERE e.user_id = ANY(?)
     ORDER BY e.date DESC, e.created_at DESC LIMIT ?
   `).all(userId, limit) as { id: string; date: string; name: string; category_name: string | null; amount: number }[]
 
@@ -538,7 +567,7 @@ export async function getRecentTransactions(userId: string, limit = 10): Promise
     FROM transfers t
     JOIN wallets fw ON fw.id = t.from_wallet_id
     JOIN wallets tw ON tw.id = t.to_wallet_id
-    WHERE t.user_id = ?
+    WHERE t.user_id = ANY(?)
     ORDER BY t.date DESC, t.created_at DESC LIMIT ?
   `).all(userId, limit) as { id: string; date: string; amount: number; from_wallet_name: string; to_wallet_name: string }[]
 
@@ -547,7 +576,7 @@ export async function getRecentTransactions(userId: string, limit = 10): Promise
     FROM investment_transactions it
     JOIN investments i ON i.id = it.investment_id
     LEFT JOIN investment_goals g ON g.id = it.goal_id
-    WHERE i.user_id = ?
+    WHERE i.user_id = ANY(?)
     ORDER BY it.date DESC, it.created_at DESC LIMIT ?
   `).all(userId, limit) as { id: string; date: string; type: string; investment_name: string; goal_name: string | null; total_amount: number }[]
 

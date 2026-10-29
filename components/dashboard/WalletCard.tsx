@@ -49,9 +49,6 @@ export async function WalletSection({ userId }: { userId: string }) {
                 <div className="flex-1 min-w-0">
                   <div className="flex justify-between items-center">
                     <p className="text-sm font-medium truncate">{w.name}</p>
-                    <p className="text-sm font-semibold tabular-nums ml-2 shrink-0">
-                      {formatRp(w.balance)}
-                    </p>
                   </div>
                   <p className="text-xs text-muted-foreground">
                     {w.isLiquid ? "Liquid" : "Non-liquid"}

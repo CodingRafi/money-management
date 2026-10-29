@@ -3,14 +3,13 @@
 import { revalidatePath } from "next/cache"
 import { redirect } from "next/navigation"
 import { db } from "@/lib/db"
-import { requireUserIdAction } from "@/lib/session"
+import { requireWritableUserId } from "@/lib/scope"
 import crypto from "crypto"
 
 function uuid() { return crypto.randomUUID() }
-function formatRupiah(n: number) { return new Intl.NumberFormat("id-ID", { style: "currency", currency: "IDR", maximumFractionDigits: 0 }).format(n) }
 
 export async function addTransfer(formData: FormData) {
-  const userId       = await requireUserIdAction()
+  const userId       = await requireWritableUserId()
   const fromWalletId = formData.get("from_wallet_id") as string
   const toWalletId   = formData.get("to_wallet_id")   as string
   const amount       = parseFloat(formData.get("amount") as string)
@@ -26,26 +25,17 @@ export async function addTransfer(formData: FormData) {
 
   await db.transaction(async () => {
     const fromWallet = await db.prepare(
-      "SELECT id, balance FROM wallets WHERE id = ? AND user_id = ? AND is_active = 1"
-    ).get(fromWalletId, userId) as { id: string; balance: number } | undefined
+      "SELECT id FROM wallets WHERE id = ? AND user_id = ? AND is_active = 1"
+    ).get(fromWalletId, userId) as { id: string } | undefined
     const toWallet = await db.prepare(
       "SELECT id FROM wallets WHERE id = ? AND user_id = ? AND is_active = 1"
     ).get(toWalletId, userId) as { id: string } | undefined
 
     if (!fromWallet || !toWallet) throw new Error("Dompet tidak valid")
 
-    if (!isInitial && fromWallet.balance < amount) {
-      throw new Error(`Saldo tidak mencukupi. Tersedia: ${formatRupiah(fromWallet.balance)}`)
-    }
-
     await db.prepare(
-      "INSERT INTO transfers (id, user_id, from_wallet_id, to_wallet_id, amount, date, month, year, notes, is_initial) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
-    ).run(uuid(), userId, fromWalletId, toWalletId, amount, date, month, year, notes, isInitial)
-
-    if (!isInitial) {
-      await db.prepare("UPDATE wallets SET balance = balance - ? WHERE id = ?").run(amount, fromWalletId)
-      await db.prepare("UPDATE wallets SET balance = balance + ? WHERE id = ?").run(amount, toWalletId)
-    }
+      "INSERT INTO transfers (id, user_id, recorded_by, from_wallet_id, to_wallet_id, amount, date, month, year, notes, is_initial) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
+    ).run(uuid(), userId, userId, fromWalletId, toWalletId, amount, date, month, year, notes, isInitial)
   })
 
   revalidatePath("/dashboard")
@@ -53,20 +43,8 @@ export async function addTransfer(formData: FormData) {
 }
 
 export async function deleteTransfer(id: string, year: string, month: string) {
-  const userId = await requireUserIdAction()
-
-  await db.transaction(async () => {
-    const row = await db.prepare(
-      "SELECT from_wallet_id, to_wallet_id, amount, is_initial FROM transfers WHERE id=? AND user_id=?"
-    ).get(id, userId) as { from_wallet_id: string; to_wallet_id: string; amount: number; is_initial: number } | undefined
-    if (!row) throw new Error("Transfer tidak ditemukan")
-
-    await db.prepare("DELETE FROM transfers WHERE id=? AND user_id=?").run(id, userId)
-    if (!row.is_initial) {
-      await db.prepare("UPDATE wallets SET balance = balance + ? WHERE id = ?").run(row.amount, row.from_wallet_id)
-      await db.prepare("UPDATE wallets SET balance = balance - ? WHERE id = ?").run(row.amount, row.to_wallet_id)
-    }
-  })
+  const userId = await requireWritableUserId()
+  await db.prepare("DELETE FROM transfers WHERE id=? AND user_id=?").run(id, userId)
 
   revalidatePath(`/rekap/${year}`)
   revalidatePath("/dompet")

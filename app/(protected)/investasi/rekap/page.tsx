@@ -1,5 +1,5 @@
 import { db } from "@/lib/db"
-import { LOCAL_USER_ID } from "@/lib/auth-simple"
+import { requireScope } from "@/lib/scope"
 import { Button } from "@/components/ui/button"
 import { ArrowLeft } from "lucide-react"
 import Link from "next/link"
@@ -10,26 +10,28 @@ type CategoryRow = { category_name: string; total_buy: number; total_sell: numbe
 type LiquidRow   = { is_liquid: number; total_buy: number; total_sell: number }
 
 export default async function InvestasiRekapPage() {
-  const userId = LOCAL_USER_ID
+  const scope  = await requireScope()
+  const userId = scope.userIds
+  const selfId = scope.targetUserId
 
-  const categoryRows = await db.prepare<[string], CategoryRow>(
+  const categoryRows = await db.prepare<[string[]], CategoryRow>(
     `SELECT ic.name AS category_name,
             COALESCE(SUM(CASE WHEN it.type='BUY'  THEN it.total_amount ELSE 0 END),0) AS total_buy,
             COALESCE(SUM(CASE WHEN it.type='SELL' THEN it.total_amount ELSE 0 END),0) AS total_sell
      FROM investment_categories ic
-     LEFT JOIN investments i   ON i.category_id = ic.id AND i.user_id = ? AND i.is_active = 1
+     LEFT JOIN investments i   ON i.category_id = ic.id AND i.user_id = ANY(?) AND i.is_active = 1
      LEFT JOIN investment_transactions it ON it.investment_id = i.id
      GROUP BY ic.id, ic.name, ic.sort_order
      ORDER BY ic.sort_order`
   ).all(userId) as CategoryRow[]
 
-  const liquidRows = await db.prepare<[string], LiquidRow>(
+  const liquidRows = await db.prepare<[string[]], LiquidRow>(
     `SELECT i.is_liquid,
             COALESCE(SUM(CASE WHEN it.type='BUY'  THEN it.total_amount ELSE 0 END),0) AS total_buy,
             COALESCE(SUM(CASE WHEN it.type='SELL' THEN it.total_amount ELSE 0 END),0) AS total_sell
      FROM investments i
      LEFT JOIN investment_transactions it ON it.investment_id = i.id
-     WHERE i.user_id = ? AND i.is_active = 1
+     WHERE i.user_id = ANY(?) AND i.is_active = 1
      GROUP BY i.is_liquid`
   ).all(userId) as LiquidRow[]
 
