@@ -6,6 +6,7 @@ import { revalidatePath } from "next/cache"
 import { z } from "zod"
 import {
   verifyPassword,
+  isPasswordUnset,
   createSession,
   deleteSession,
   changeCredentials,
@@ -50,17 +51,21 @@ export async function login(_prev: unknown, formData: FormData) {
     return { error: "Terlalu banyak percobaan gagal. Coba lagi dalam 15 menit." }
   }
 
-  const userId = await verifyPassword(username, password)
-  if (!userId) {
+  const user = await verifyPassword(username, password)
+  if (!user) {
+    if (await isPasswordUnset(username)) {
+      return { error: "Akun ini belum memiliki password. Hubungi Super Admin untuk menetapkannya." }
+    }
     await recordFailedLogin(ids)
     return { error: "Username atau password salah" }
   }
   await clearFailedLogins([ids[1]])
 
-  const token = await createSession(userId)
+  const token = await createSession(user.id)
   const cookieStore = await cookies()
   cookieStore.set(SESSION_COOKIE, token, SESSION_COOKIE_OPTIONS)
-  redirect("/dashboard")
+  // Super Admin mendarat di portal Super Admin, bukan dashboard keluarga.
+  redirect(user.role === "super_admin" ? "/super-admin" : "/dashboard")
 }
 
 export async function logout() {

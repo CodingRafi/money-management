@@ -2,6 +2,7 @@ import { cache } from "react"
 import { cookies } from "next/headers"
 import { redirect } from "next/navigation"
 import { validateSession, LOCAL_USER_ID, type SessionData, type UserRole } from "./auth-simple"
+import { hasPermission, type Permission } from "./permissions"
 
 export { LOCAL_USER_ID }
 export type { SessionData }
@@ -48,6 +49,52 @@ export async function requireRole(...roles: UserRole[]): Promise<SessionData> {
 export async function requireRoleAction(...roles: UserRole[]): Promise<SessionData> {
   const session = await requireSessionAction()
   if (!roles.includes(session.role)) throw new Error("Forbidden")
+  return session
+}
+
+// ── Guard berbasis permission ───────────────────────────────────────────────
+//
+// Halaman (Server Component) → redirect bila tidak punya akses.
+// Server Action → throw "Forbidden" bila tidak punya akses.
+
+export function sessionHasPermission(session: SessionData, permission: Permission): boolean {
+  return hasPermission(session.role, permission)
+}
+
+export async function requirePermission(permission: Permission): Promise<SessionData> {
+  const session = await requireSession()
+  if (!hasPermission(session.role, permission)) redirect("/dashboard")
+  return session
+}
+
+export async function requirePermissionAction(permission: Permission): Promise<SessionData> {
+  const session = await requireSessionAction()
+  if (!hasPermission(session.role, permission)) throw new Error("Forbidden")
+  return session
+}
+
+/**
+ * Halaman & aksi khusus Super Admin: butuh role `super_admin` **dan** izinnya.
+ *
+ * Resource `monitoring` / `license` / `family` hanya dipegang super_admin,
+ * tapi `member` dipakai juga oleh Admin Keluarga (untuk anggota household-nya
+ * sendiri). Karena itu modul Super Admin tidak boleh cukup_andalkan izin
+ * `member.*` — role-nya wajib dicek eksplisit agar tidak ada kebocoran
+ * lintas keluarga.
+ */
+export async function requireSuperAdmin(permission: Permission): Promise<SessionData> {
+  const session = await requireSession()
+  if (session.role !== "super_admin" || !hasPermission(session.role, permission)) {
+    redirect("/dashboard")
+  }
+  return session
+}
+
+export async function requireSuperAdminAction(permission: Permission): Promise<SessionData> {
+  const session = await requireSessionAction()
+  if (session.role !== "super_admin" || !hasPermission(session.role, permission)) {
+    throw new Error("Forbidden")
+  }
   return session
 }
 

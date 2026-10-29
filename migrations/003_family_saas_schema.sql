@@ -80,9 +80,13 @@ CREATE INDEX IF NOT EXISTS idx_user_sessions_user ON user_sessions (user_id);
 
 -- ── Keluarga bawaan untuk data yang sudah ada ───────────────────────────────
 
+-- Super Admin BUKAN anggota keluarga. Keluarga bawaan hanya dibuat kalau
+-- user lokal bukan super_admin; kalau iya, Super Admin membuat keluarga
+-- sendiri lewat portal /super-admin.
+
 INSERT INTO households (id, name)
 SELECT 'household-default', 'Keluarga TONAS'
-WHERE EXISTS (SELECT 1 FROM "user" WHERE id = 'local-user')
+WHERE EXISTS (SELECT 1 FROM "user" WHERE id = 'local-user' AND role <> 'super_admin')
 ON CONFLICT (id) DO NOTHING;
 
 INSERT INTO licenses (id, household_id, plan_type, status, max_members, expires_at)
@@ -92,7 +96,7 @@ ON CONFLICT (id) DO NOTHING;
 
 INSERT INTO household_members (household_id, user_id, role, relation)
 SELECT 'household-default', 'local-user', 'admin', 'suami'
-WHERE EXISTS (SELECT 1 FROM households WHERE id = 'household-default')
+WHERE EXISTS (SELECT 1 FROM "user" WHERE id = 'local-user' AND role <> 'super_admin')
 ON CONFLICT (household_id, user_id) DO NOTHING;
 
 -- ── Jejak input & penanda pengeluaran keluarga ──────────────────────────────

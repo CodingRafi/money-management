@@ -18,7 +18,7 @@ export default async function LicenseExpiredPage() {
 
   // Lisensi sudah aktif lagi (atau super admin) → tidak perlu di halaman ini.
   let reason: keyof typeof MESSAGES = "missing"
-  if (session.role === "super_admin") redirect("/dashboard")
+  if (session.role === "super_admin") redirect("/super-admin")
   if (session.householdId) {
     const state = await licenseService.getState(session.householdId)
     if (state.ok) redirect("/dashboard")

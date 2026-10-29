@@ -1,5 +1,6 @@
 import { redirect } from "next/navigation"
-import { requireSession } from "@/lib/session"
+import { requirePermission, requireSession } from "@/lib/session"
+import { PERMISSION } from "@/lib/permissions"
 import { memberRepository } from "@/repositories/member.repository"
 import { licenseService } from "@/services/license.service"
 import { removeMember } from "@/app/actions/members"
@@ -9,6 +10,8 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { AddMemberForm } from "./_components/add-member-form"
 
 export default async function AnggotaPage() {
+  // Menu "Anggota" di navbar muncul bila punya izin member.view.
+  await requirePermission(PERMISSION.MEMBER.VIEW)
   const session = await requireSession()
   // Hanya Admin Keluarga; household_id dibaca dari sesi.
   if (session.householdRole !== "admin" || !session.householdId) redirect("/dashboard")

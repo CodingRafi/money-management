@@ -1,7 +1,7 @@
 import { NextResponse, type NextRequest } from "next/server"
 
-// Meneruskan pathname ke Server Component (layout) agar route guard role `child`
-// dijalankan di server, bukan hanya di client.
+// Meneruskan pathname ke Server Component (layout) agar route guard role
+// `child` & `super_admin` dijalankan di server, bukan hanya di client.
 export function proxy(request: NextRequest) {
   const headers = new Headers(request.headers)
   headers.set("x-pathname", request.nextUrl.pathname)
@@ -9,5 +9,5 @@ export function proxy(request: NextRequest) {
 }
 
 export const config = {
-  matcher: ["/((?!_next/static|_next/image|favicon.ico|.*\..*).*)"],
+  matcher: ["/((?!_next/static|_next/image|favicon.ico|.*\\..*).*)"],
 }

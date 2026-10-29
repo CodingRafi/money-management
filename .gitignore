@@ -26,6 +26,9 @@
 *.db-shm
 *.db-wal
 
+# backup dump database (jangan di-commit)
+backups/
+
 # misc
 .DS_Store
 *.pem

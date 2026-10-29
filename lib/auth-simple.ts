@@ -1,6 +1,9 @@
 import { db } from "./db"
 import bcryptjs from "bcryptjs"
 import crypto from "crypto"
+import type { UserRole } from "./permissions"
+
+export type { UserRole }
 
 export const LOCAL_USER_ID = "local-user"
 export const SESSION_TTL_MS = 30 * 24 * 60 * 60 * 1000
@@ -9,7 +12,6 @@ export const BCRYPT_COST = 12
 export const MAX_LOGIN_ATTEMPTS = 5
 export const LOGIN_WINDOW_MINUTES = 15
 
-export type UserRole = "super_admin" | "admin" | "member" | "child"
 export type HouseholdRole = "admin" | "member" | "child"
 
 export interface SessionData {
@@ -27,15 +29,33 @@ export async function hashPassword(password: string): Promise<string> {
   return bcryptjs.hash(password, BCRYPT_COST)
 }
 
-/** Mengembalikan userId jika kredensial benar, selain itu null. */
-export async function verifyPassword(username: string, password: string): Promise<string | null> {
-  const row = await db.prepare("SELECT id, password_hash FROM \"user\" WHERE username = ?").get(username) as
-    | { id: string; password_hash: string | null }
+/**
+ * Verifikasi kredensial.
+ * Mengembalikan `null` bila username/password salah.
+ * `password_hash` NULL = akun belum punya password (mis. akun admin keluarga
+ * yang dibuat migrasi, password-nya nanti ditetapkan Super Admin).
+ */
+export async function verifyPassword(
+  username: string,
+  password: string,
+): Promise<{ id: string; role: UserRole } | null> {
+  const row = await db.prepare(
+    'SELECT id, password_hash, role FROM "user" WHERE username = ?'
+  ).get(username) as
+    | { id: string; password_hash: string | null; role: UserRole }
     | undefined
   // Tetap jalankan compare agar waktu respons tidak membocorkan keberadaan username.
   const hash = row?.password_hash ?? "$2a$12$invalidinvalidinvalidinvalidinvalidinvalidinvalidinvalidinva"
   const ok = await bcryptjs.compare(password, hash)
-  return ok && row ? row.id : null
+  return ok && row ? { id: row.id, role: row.role } : null
+}
+
+/** Akun ada tapi belum punya password (menunggu Super Admin menetapkannya). */
+export async function isPasswordUnset(username: string): Promise<boolean> {
+  const row = await db.prepare(
+    'SELECT 1 FROM "user" WHERE username = ? AND password_hash IS NULL'
+  ).get(username)
+  return !!row
 }
 
 // ── Rate limiting ────────────────────────────────────────────────────────────

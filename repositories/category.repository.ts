@@ -7,10 +7,13 @@ export const categoryRepository = {
   /**
    * Menyalin template global (household_id IS NULL, is_default = 1) menjadi
    * kategori milik keluarga baru. Harus dipanggil di dalam db.transaction().
+   *
+   * Catatan: kolom `user_id` sudah dihapus pada migrasi 004 (kategori kini
+   * milik keluarga, bukan per-user) — jangan filter dengan kolom itu lagi.
    */
   async seedHouseholdFromTemplate(householdId: string): Promise<void> {
     const incomes = await db.prepare(
-      "SELECT name, color, sort_order FROM income_categories WHERE is_default = 1 AND household_id IS NULL AND user_id IS NULL ORDER BY sort_order"
+      "SELECT name, color, sort_order FROM income_categories WHERE is_default = 1 AND household_id IS NULL ORDER BY sort_order"
     ).all() as { name: string; color: string | null; sort_order: number }[]
     for (const r of incomes) {
       await db.prepare(
@@ -19,7 +22,7 @@ export const categoryRepository = {
     }
 
     const types = await db.prepare(
-      "SELECT id, name, sort_order FROM expense_types WHERE is_default = 1 AND household_id IS NULL AND user_id IS NULL ORDER BY sort_order"
+      "SELECT id, name, sort_order FROM expense_types WHERE is_default = 1 AND household_id IS NULL ORDER BY sort_order"
     ).all() as { id: string; name: string; sort_order: number }[]
     for (const t of types) {
       const typeId = uuid()
@@ -28,7 +31,7 @@ export const categoryRepository = {
       ).run(typeId, t.name, householdId, t.sort_order)
 
       const cats = await db.prepare(
-        "SELECT name, sort_order, default_percentage FROM expense_categories WHERE type_id = ? AND is_default = 1 AND household_id IS NULL AND user_id IS NULL ORDER BY sort_order"
+        "SELECT name, sort_order, default_percentage FROM expense_categories WHERE type_id = ? AND is_default = 1 AND household_id IS NULL ORDER BY sort_order"
       ).all(t.id) as { name: string; sort_order: number; default_percentage: number }[]
       for (const c of cats) {
         await db.prepare(

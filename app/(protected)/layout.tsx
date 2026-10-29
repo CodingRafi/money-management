@@ -6,27 +6,43 @@ import { licenseService } from "@/services/license.service"
 import { headers } from "next/headers"
 import type { ContextOption } from "@/components/context-switcher"
 
+/**
+ * Rute yang boleh dibuka Super Admin.
+ *
+ * Super Admin = pengelola SaaS, bukan anggota keluarga. Ia tidak boleh
+ * membuka halaman data keluarga (/dashboard, /rekap, /dompet, /investasi,
+ * /pinjaman, /saya, ...). Yang boleh: portal Super Admin + pengaturan akun
+ * miliknya sendiri.
+ */
+const SUPER_ADMIN_ALLOWED = ["/super-admin", "/settings/account", "/settings/devices"]
+
 export default async function ProtectedLayout({ children }: { children: React.ReactNode }) {
   const session = await getSession()
   if (!session) redirect("/login")
+
+  const pathname = (await headers()).get("x-pathname") ?? ""
 
   // Super admin tidak terikat lisensi; user lain wajib punya lisensi keluarga aktif.
   if (session.role !== "super_admin") {
     const state = session.householdId ? await licenseService.getState(session.householdId) : { ok: false }
     if (!state.ok) redirect("/license-expired")
+  } else {
+    const allowed = SUPER_ADMIN_ALLOWED.some(
+      (p) => pathname === p || pathname.startsWith(p + "/"),
+    )
+    if (!allowed) redirect("/super-admin")
   }
 
   // Anak hanya boleh /dashboard, /saya dan pengaturan akun (dicek di server).
   if (session.householdRole === "child") {
-    const pathname = (await headers()).get("x-pathname") ?? ""
     const allowed = ["/dashboard", "/saya", "/settings/account"]
     if (!allowed.some((p) => pathname === p || pathname.startsWith(p + "/"))) redirect("/saya")
   }
 
-  // Context switcher hanya untuk Admin Keluarga.
+  // Context switcher hanya untuk Admin Keluarga (bukan Super Admin).
   const scope = await resolveScope()
   let context: { current: string; options: ContextOption[] } | null = null
-  if (scope?.canSwitch) {
+  if (scope?.canSwitch && session.role !== "super_admin") {
     const current = scope.mode === "family" ? "family" : `user:${scope.targetUserId}`
     context = {
       current,
@@ -42,7 +58,9 @@ export default async function ProtectedLayout({ children }: { children: React.Re
     }
   }
 
-  const familyMode = scope?.mode === "family"
+  // Super admin bekerja di seluruh SaaS, bukan satu keluarga.
+  const isSuperAdmin = session.role === "super_admin"
+  const familyMode = !isSuperAdmin && scope?.mode === "family"
 
   return (
     <div className="min-h-screen bg-background">

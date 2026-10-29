@@ -7,6 +7,13 @@ export interface MemberRow {
   role: "admin" | "member" | "child"
   relation: string | null
   spending_limit: number | null
+  /** false = akun belum punya password, harus diset Super Admin. */
+  has_password: boolean
+}
+
+export interface MemberWithHouseholdRow extends MemberRow {
+  household_id: string
+  household_name: string
 }
 
 export const memberRepository = {
@@ -36,19 +43,41 @@ export const memberRepository = {
 
   async list(householdId: string): Promise<MemberRow[]> {
     return await db.prepare(
-      `SELECT m.user_id, u.username, u.name, m.role, m.relation, m.spending_limit
+      `SELECT m.user_id, u.username, u.name, m.role, m.relation, m.spending_limit,
+              (u.password_hash IS NOT NULL) AS has_password
        FROM household_members m JOIN "user" u ON u.id = m.user_id
        WHERE m.household_id = ? ORDER BY m.created_at`
     ).all(householdId) as MemberRow[]
   },
 
+  /** Semua anggota lintas keluarga — untuk halaman anggota milik Super Admin. */
+  async listAllWithHousehold(): Promise<MemberWithHouseholdRow[]> {
+    return await db.prepare(
+      `SELECT m.user_id, u.username, u.name, m.role, m.relation, m.spending_limit,
+              (u.password_hash IS NOT NULL) AS has_password,
+              m.household_id, h.name AS household_name
+       FROM household_members m
+       JOIN "user" u ON u.id = m.user_id
+       JOIN households h ON h.id = m.household_id
+       ORDER BY h.name, m.created_at`
+    ).all() as MemberWithHouseholdRow[]
+  },
+
   /** Hanya mengembalikan baris bila user memang anggota keluarga tsb (anti-IDOR). */
   async find(householdId: string, userId: string): Promise<MemberRow | undefined> {
     return await db.prepare(
-      `SELECT m.user_id, u.username, u.name, m.role, m.relation, m.spending_limit
+      `SELECT m.user_id, u.username, u.name, m.role, m.relation, m.spending_limit,
+              (u.password_hash IS NOT NULL) AS has_password
        FROM household_members m JOIN "user" u ON u.id = m.user_id
        WHERE m.household_id = ? AND m.user_id = ?`
     ).get(householdId, userId) as MemberRow | undefined
+  },
+
+  async setPassword(userId: string, passwordHash: string): Promise<number> {
+    const res = await db.prepare(
+      'UPDATE "user" SET password_hash = ? WHERE id = ?'
+    ).run(passwordHash, userId)
+    return res.changes
   },
 
   async deleteUser(userId: string): Promise<void> {
