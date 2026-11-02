@@ -136,6 +136,10 @@ export function TransactionForm({ wallets, goals, unit, action, cancelHref }: Pr
               <option key={w.id} value={w.id}>{w.name}</option>
             ))}
           </select>
+          <p className="text-xs text-muted-foreground">
+            Kas berkurang otomatis saat transaksi ini disimpan — tidak perlu dicatat ulang sebagai
+            pengeluaran.
+          </p>
         </div>
       )}
 
@@ -167,7 +171,7 @@ export function TransactionForm({ wallets, goals, unit, action, cancelHref }: Pr
           className="h-4 w-4 accent-primary"
         />
         <label htmlFor="is_initial_inv" className="text-sm text-muted-foreground">
-          Data awal (tidak mempengaruhi saldo dompet)
+          Data awal (tidak dihitung dalam kas)
         </label>
       </div>
 

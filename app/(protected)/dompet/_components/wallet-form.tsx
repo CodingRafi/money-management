@@ -63,7 +63,7 @@ export function WalletForm({
       )}
 
       <div className="flex flex-col gap-1">
-        <label className="text-sm font-medium">Saldo Awal (Rp)</label>
+        <label className="text-sm font-medium">Saldo Awal / Modal (Rp)</label>
         <Input
           name="initial_balance"
           type="number"
@@ -72,7 +72,8 @@ export function WalletForm({
           placeholder="0"
         />
         <p className="text-xs text-muted-foreground">
-          Saldo dompet sebelum transaksi yang tercatat. Boleh minus.
+          Modal dompet saat mulai dipakai. Boleh minus. Tidak perlu diubah saat uang dipindah ke
+          dompet lain — total kas dihitung otomatis dari semua transaksi.
         </p>
       </div>
 

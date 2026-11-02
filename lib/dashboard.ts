@@ -40,8 +40,12 @@ function toIds(v: string | string[]): string[] {
 /**
  * Dompet tidak punya saldo tersimpan. Posisi kas diturunkan dari arus kas:
  * saldo awal dompet + pemasukan − pengeluaran − BUY + SELL/DIVIDEND ± arus pinjaman (tanpa data is_initial).
+ *
+ * Tidak ada komponen transfer: memindahkan uang antar dompet hanya menggeser posisi,
+ * sehingga tidak memengaruhi total kas. Ini yang membuat dompet bisa diperlakukan
+ * sebagai label sumber kas tanpa perlu fitur transfer.
  */
-async function getCashPosition(userIdOrIds: string | string[]): Promise<{ total: number; liquid: number; non_liquid: number }> {
+export async function getCashPosition(userIdOrIds: string | string[]): Promise<{ total: number; liquid: number; non_liquid: number }> {
   const userId = toIds(userIdOrIds)
   const row = await db.prepare(`
     SELECT
@@ -318,6 +322,53 @@ export async function getWallets(userIdOrIds: string | string[]): Promise<Wallet
     activeCount: rows.length,
     items: rows.slice(0, 5).map((r) => ({ id: r.id, name: r.name, color: r.color, isLiquid: !!r.is_liquid })),
   }
+}
+
+/**
+ * Dompet = label sumber kas, bukan rekening yang menyimpan saldo.
+ * Yang ditampilkan per dompet: modal awal (input manual) + arus kas yang
+ * dicatat lewat dompet tersebut (pemasukan, pengeluaran, dan investasi).
+ *
+ * Tidak ada komponen transfer: memindahkan uang antar dompet hanya menggeser
+ * posisi sehingga tidak memengaruhi total kas.
+ */
+export type WalletLedgerRow = {
+  id: string
+  category_id: string
+  category_name: string
+  name: string
+  color: string | null
+  initial_balance: number
+  income_total: number
+  expense_total: number
+  invest_out: number
+  invest_in: number
+}
+
+export async function getWalletLedger(userIdOrIds: string | string[]): Promise<WalletLedgerRow[]> {
+  const userId = toIds(userIdOrIds)
+  return await db.prepare<
+    [string[], string[], string[], string[], string[]],
+    WalletLedgerRow
+  >(
+    `SELECT w.id, w.category_id, wc.name AS category_name, w.name, w.color, w.initial_balance,
+            COALESCE((SELECT SUM(amount) FROM incomes
+                       WHERE user_id = ANY(?) AND wallet_id = w.id AND is_initial = 0), 0) AS income_total,
+            COALESCE((SELECT SUM(amount) FROM expenses
+                       WHERE user_id = ANY(?) AND wallet_id = w.id AND is_initial = 0), 0) AS expense_total,
+            COALESCE((SELECT SUM(it.total_amount) FROM investment_transactions it
+                        JOIN investments i ON i.id = it.investment_id
+                       WHERE i.user_id = ANY(?) AND it.from_wallet_id = w.id
+                         AND it.type = 'BUY' AND it.is_initial = 0), 0) AS invest_out,
+            COALESCE((SELECT SUM(it.total_amount) FROM investment_transactions it
+                        JOIN investments i ON i.id = it.investment_id
+                       WHERE i.user_id = ANY(?) AND it.to_wallet_id = w.id
+                         AND it.type IN ('SELL','DIVIDEND') AND it.is_initial = 0), 0) AS invest_in
+       FROM wallets w
+       JOIN wallet_categories wc ON wc.id = w.category_id
+      WHERE w.user_id = ANY(?) AND w.is_active = 1
+      ORDER BY wc.sort_order, w.sort_order, w.name`
+  ).all(userId, userId, userId, userId, userId)
 }
 
 export async function getInvestment(userIdOrIds: string | string[]): Promise<InvestmentData> {

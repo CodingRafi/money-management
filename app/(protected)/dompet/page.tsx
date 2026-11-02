@@ -1,5 +1,6 @@
 import { db } from "@/lib/db"
 import { requireUserId } from "@/lib/session"
+import { getWalletLedger, type WalletLedgerRow } from "@/lib/dashboard"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Plus, Pencil, Trash2, X, Wallet } from "lucide-react"
@@ -8,15 +9,6 @@ import { WalletForm } from "./_components/wallet-form"
 import { createWallet, updateWallet, deleteWallet } from "@/app/actions/wallets"
 
 type WalletCategory = { id: string; name: string }
-type WalletRow = {
-  id: string
-  category_id: string
-  category_name: string
-  name: string
-  color: string | null
-  initial_balance: number
-  balance: number
-}
 
 function formatRp(n: number) {
   return new Intl.NumberFormat("id-ID", { style: "currency", currency: "IDR", maximumFractionDigits: 0 }).format(n)
@@ -33,39 +25,29 @@ export default async function DompetPage({
   const showNew  = sp.new === "1"
   const editId   = typeof sp.edit === "string" ? sp.edit : null
 
-  const categories = await db.prepare<[], WalletCategory>(
-    "SELECT id, name FROM wallet_categories ORDER BY sort_order, name"
-  ).all() as WalletCategory[]
+  const [categories, wallets] = await Promise.all([
+    db.prepare<[], WalletCategory>(
+      "SELECT id, name FROM wallet_categories ORDER BY sort_order, name"
+    ).all() as Promise<WalletCategory[]>,
+    getWalletLedger(userId),
+  ])
 
-  const wallets = await db.prepare<[string], WalletRow>(
-    `SELECT w.id, w.category_id, wc.name AS category_name,
-            w.name, w.color, w.initial_balance,
-            w.initial_balance
-              + COALESCE((SELECT SUM(amount) FROM incomes   WHERE wallet_id = w.id AND is_initial = 0), 0)
-              - COALESCE((SELECT SUM(amount) FROM expenses  WHERE wallet_id = w.id AND is_initial = 0), 0)
-              + COALESCE((SELECT SUM(amount) FROM transfers WHERE to_wallet_id   = w.id AND is_initial = 0), 0)
-              - COALESCE((SELECT SUM(amount) FROM transfers WHERE from_wallet_id = w.id AND is_initial = 0), 0)
-              AS balance
-     FROM wallets w
-     JOIN wallet_categories wc ON wc.id = w.category_id
-     WHERE w.user_id = ? AND w.is_active = 1
-     ORDER BY wc.sort_order, w.sort_order, w.name`
-  ).all(userId) as WalletRow[]
-
-  const byCategory = wallets.reduce<Record<string, WalletRow[]>>((acc, w) => {
+  const byCategory = wallets.reduce<Record<string, WalletLedgerRow[]>>((acc, w) => {
     acc[w.category_id] ??= []
     acc[w.category_id].push(w)
     return acc
   }, {})
 
-  const usedCats     = categories.filter((c) => byCategory[c.id]?.length)
+  const usedCats = categories.filter((c) => byCategory[c.id]?.length)
 
   return (
     <div className="space-y-6 max-w-3xl">
       <div className="flex items-start justify-between">
         <div>
           <h1 className="text-2xl font-bold">Dompet</h1>
-          <p className="text-sm text-muted-foreground">Dompet pribadimu — hanya sebagai label sumber arus kas</p>
+          <p className="text-sm text-muted-foreground">
+            Dompet sebagai label sumber kas — saldo kas dihitung otomatis dari seluruh transaksi
+          </p>
         </div>
         {!showNew && (
           <Button asChild size="sm">
@@ -138,22 +120,18 @@ export default async function DompetPage({
                         <p className="text-xs text-muted-foreground tabular-nums">
                           Saldo awal {formatRp(Number(w.initial_balance))}
                         </p>
+                        <WalletFlowNote row={w} />
                       </div>
                     </div>
-                    <div className="flex shrink-0 items-center gap-3">
-                      <p className={`text-sm font-semibold tabular-nums ${Number(w.balance) < 0 ? "text-red-600" : ""}`}>
-                        {formatRp(Number(w.balance))}
-                      </p>
-                      <div className="flex items-center gap-1">
-                        <Button asChild variant="ghost" size="icon" className="h-8 w-8">
-                          <Link href={`?edit=${w.id}`}><Pencil className="h-4 w-4" /></Link>
+                    <div className="flex shrink-0 items-center gap-1">
+                      <Button asChild variant="ghost" size="icon" className="h-8 w-8">
+                        <Link href={`?edit=${w.id}`}><Pencil className="h-4 w-4" /></Link>
+                      </Button>
+                      <form action={deleteWallet.bind(null, w.id)}>
+                        <Button type="submit" variant="ghost" size="icon" className="h-8 w-8 text-destructive hover:text-destructive">
+                          <Trash2 className="h-4 w-4" />
                         </Button>
-                        <form action={deleteWallet.bind(null, w.id)}>
-                          <Button type="submit" variant="ghost" size="icon" className="h-8 w-8 text-destructive hover:text-destructive">
-                            <Trash2 className="h-4 w-4" />
-                          </Button>
-                        </form>
-                      </div>
+                      </form>
                     </div>
                   </div>
                 )
@@ -163,5 +141,22 @@ export default async function DompetPage({
         )
       })}
     </div>
+  )
+}
+
+/** Ringkasan arus kas yang dicatat lewat dompet ini (bukan saldo berjalan). */
+function WalletFlowNote({ row }: { row: WalletLedgerRow }) {
+  const parts: string[] = []
+  if (Number(row.income_total) > 0)   parts.push(`Masuk ${formatRp(Number(row.income_total))}`)
+  if (Number(row.expense_total) > 0)  parts.push(`Keluar ${formatRp(Number(row.expense_total))}`)
+  if (Number(row.invest_out) > 0)     parts.push(`Investasi ${formatRp(Number(row.invest_out))}`)
+  if (Number(row.invest_in) > 0)      parts.push(`Hasil jual ${formatRp(Number(row.invest_in))}`)
+
+  if (parts.length === 0) return null
+
+  return (
+    <p className="text-xs text-muted-foreground/80 tabular-nums">
+      {parts.join(" · ")}
+    </p>
   )
 }

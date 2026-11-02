@@ -281,7 +281,9 @@ Seluruh logika aplikasi wajib dibagi secara ketat ke dalam 4 layer terpisah:
 * [ ] Tambahkan logika perubahan warna/badge indikator mode aktif (Keluarga vs Personal).
 
 ### Fase 6: Halaman Dompet Privat & Transaksi Interaktif
-* [ ] Refactor `app/(protected)/dompet/page.tsx`: Hapus kalkulasi & komponen visual `balance` (saldo).
+* [x] Refactor `app/(protected)/dompet/page.tsx`: Hapus kalkulasi & komponen visual `balance` (saldo).
+      → Dompet kini label sumber kas + modal awal. Total kas dihitung otomatis di `lib/dashboard.ts`
+      (`getCashPosition`) tanpa komponen transfer. Lihat `migrations/009_wallet_label_semantics.sql`.
 * [ ] Perbarui form transaksi pengeluaran: Tambahkan dropdown dompet privat & checkbox `[ ] Catat sebagai Pengeluaran Keluarga` (`is_family_expense`).
 
 ### Fase 7: Visualisasi Dashboard & Laporan Agregat
