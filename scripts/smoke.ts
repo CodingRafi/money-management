@@ -44,10 +44,6 @@ async function main() {
   ).run(uid(), USER, date, "Makan", 750_000, month, year)
 
   await db.prepare(
-    "INSERT INTO transfers (id, user_id, from_wallet_id, to_wallet_id, amount, date, month, year, is_initial) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0)",
-  ).run(uid(), USER, walletId, walletId, 100_000, date, month, year)
-
-  await db.prepare(
     "INSERT INTO investments (id, user_id, category_id, name, is_liquid, is_active, is_closed) VALUES (?, ?, ?, ?, 1, 1, 0)",
   ).run(uid(), USER, (await db.prepare("SELECT id FROM investment_categories LIMIT 1").get() as { id: string }).id, "Saham Smoke")
 
@@ -102,21 +98,6 @@ async function main() {
   })
   let w = await db.prepare("SELECT balance FROM wallets WHERE id = ?").get(walletId) as { balance: number }
   console.log("   saldo setelah income:", w.balance)
-
-  // Transfer antar dompet
-  const w2 = uid()
-  await db.prepare(
-    "INSERT INTO wallets (id, user_id, category_id, name, is_liquid, is_active, sort_order) VALUES (?, ?, ?, ?, 1, 1, 2)",
-  ).run(w2, USER, catRow.id, "Smoke Wallet 2")
-  await db.transaction(async () => {
-    await db.prepare(
-      "INSERT INTO transfers (id, user_id, from_wallet_id, to_wallet_id, amount, date, month, year, is_initial) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0)",
-    ).run(uid(), USER, walletId, w2, 500_000, date, month, year)
-    await db.prepare("UPDATE wallets SET balance = balance - ? WHERE id = ? AND user_id = ?").run(500_000, walletId, USER)
-    await db.prepare("UPDATE wallets SET balance = balance + ? WHERE id = ? AND user_id = ?").run(500_000, w2, USER)
-  })
-  const bal = await db.prepare("SELECT id, balance FROM wallets WHERE id IN (?, ?) ORDER BY id").all(walletId, w2) as { id: string; balance: number }[]
-  console.log("   saldo setelah transfer:", bal.map((b) => b.balance).join(" / "))
 
   // Beli investasi (saldo dompet berkurang)
   await db.transaction(async () => {

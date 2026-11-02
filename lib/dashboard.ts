@@ -30,7 +30,7 @@ export type GoalItem        = { id: string; name: string; totalModal: number; ta
 export type InvestmentData  = { totalModal: number; totalSell: number; totalProfit: number; totalLoss: number; netProfitLoss: number; goals: GoalItem[] }
 export type LoanItem        = { id: string; name: string; total: number; sisa: number; dueDate: string | null; status: "ONGOING" | "TERLAMBAT"; cicilanPerBulan: number | null }
 export type LoanData        = { piutang: { totalSisa: number; items: LoanItem[] }; hutang: { totalSisa: number; items: LoanItem[] }; terlambatCount: number }
-export type RecentTransaction = { id: string; type: "INCOME" | "EXPENSE" | "TRANSFER" | "INVESTMENT"; label: string; sublabel: string; amount: number; isCredit: boolean; date: Date }
+export type RecentTransaction = { id: string; type: "INCOME" | "EXPENSE" | "INVESTMENT"; label: string; sublabel: string; amount: number; isCredit: boolean; date: Date }
 
 /** Satu user (mode personal) atau banyak user (mode laporan keluarga). */
 function toIds(v: string | string[]): string[] {
@@ -432,7 +432,7 @@ export async function getCategoryBreakdown(userIdOrIds: string | string[], month
 
 export type RecentCashflowTx = {
   id: string
-  type: "INCOME" | "EXPENSE" | "TRANSFER"
+  type: "INCOME" | "EXPENSE"
   label: string
   sublabel: string
   amount: number
@@ -482,19 +482,9 @@ export async function getRecentCashflowTx(userIdOrIds: string | string[], days =
     ORDER BY e.date DESC, e.created_at DESC LIMIT ?
   `).all(userId, cutoff, limit) as { id: string; date: string; name: string; cat: string | null; amount: number }[]
 
-  const transfers = await db.prepare(`
-    SELECT t.id, t.date, t.amount, fw.name AS from_name, tw.name AS to_name
-    FROM transfers t
-    JOIN wallets fw ON fw.id = t.from_wallet_id
-    JOIN wallets tw ON tw.id = t.to_wallet_id
-    WHERE t.user_id = ANY(?) AND t.date >= ?
-    ORDER BY t.date DESC, t.created_at DESC LIMIT ?
-  `).all(userId, cutoff, limit) as { id: string; date: string; amount: number; from_name: string; to_name: string }[]
-
   const rows: RecentCashflowTx[] = [
     ...incomes.map(t => ({ id: `i-${t.id}`, type: "INCOME" as const, label: t.name, sublabel: t.cat ?? "-", amount: t.amount, isCredit: true, dateStr: t.date })),
     ...expenses.map(t => ({ id: `e-${t.id}`, type: "EXPENSE" as const, label: t.name, sublabel: t.cat ?? "-", amount: t.amount, isCredit: false, dateStr: t.date })),
-    ...transfers.map(t => ({ id: `t-${t.id}`, type: "TRANSFER" as const, label: `Transfer ke ${t.to_name}`, sublabel: `dari ${t.from_name}`, amount: t.amount, isCredit: false, dateStr: t.date })),
   ]
   return rows.sort((a, b) => b.dateStr.localeCompare(a.dateStr)).slice(0, limit)
 }
@@ -562,15 +552,6 @@ export async function getRecentTransactions(userIdOrIds: string | string[], limi
     ORDER BY e.date DESC, e.created_at DESC LIMIT ?
   `).all(userId, limit) as { id: string; date: string; name: string; category_name: string | null; amount: number }[]
 
-  const transfers = await db.prepare(`
-    SELECT t.id, t.date, t.amount, fw.name AS from_wallet_name, tw.name AS to_wallet_name
-    FROM transfers t
-    JOIN wallets fw ON fw.id = t.from_wallet_id
-    JOIN wallets tw ON tw.id = t.to_wallet_id
-    WHERE t.user_id = ANY(?)
-    ORDER BY t.date DESC, t.created_at DESC LIMIT ?
-  `).all(userId, limit) as { id: string; date: string; amount: number; from_wallet_name: string; to_wallet_name: string }[]
-
   const invests = await db.prepare(`
     SELECT it.id, it.date, it.type, i.name AS investment_name, g.name AS goal_name, it.total_amount
     FROM investment_transactions it
@@ -583,7 +564,6 @@ export async function getRecentTransactions(userIdOrIds: string | string[], limi
   const rows: RecentTransaction[] = [
     ...incomes.map((t) => ({ id: `i-${t.id}`, type: "INCOME" as const, label: t.name, sublabel: `${fmtDateShort(t.date)} • ${t.category_name ?? "-"}`, amount: t.amount, isCredit: true,  date: new Date(t.date) })),
     ...expenses.map((t) => ({ id: `e-${t.id}`, type: "EXPENSE" as const, label: t.name, sublabel: `${fmtDateShort(t.date)} • ${t.category_name ?? "-"}`, amount: t.amount, isCredit: false, date: new Date(t.date) })),
-    ...transfers.map((t) => ({ id: `t-${t.id}`, type: "TRANSFER" as const, label: `Transfer ke ${t.to_wallet_name}`, sublabel: `${fmtDateShort(t.date)} • dari ${t.from_wallet_name}`, amount: t.amount, isCredit: false, date: new Date(t.date) })),
     ...invests.map((t) => ({ id: `v-${t.id}`, type: "INVESTMENT" as const, label: `${t.type} ${t.investment_name}`, sublabel: `${fmtDateShort(t.date)} • Investasi${t.goal_name ? ` • ${t.goal_name}` : ""}`, amount: t.total_amount, isCredit: t.type === "SELL", date: new Date(t.date) })),
   ]
 

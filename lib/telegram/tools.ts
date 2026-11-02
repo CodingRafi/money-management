@@ -14,7 +14,6 @@ import {
   loanPaymentCard,
   loadExpenseView,
   loadIncomeView,
-  transferCard,
 } from "./cards"
 import { REVISI_HINT } from "./format"
 import { reviseExpense, reviseIncome } from "./revision"
@@ -85,16 +84,6 @@ const incomeArgs = z.object({
   category_name: z.string().trim().optional(),
   wallet_id: idSchema("ID dompet").optional(),
   wallet_name: z.string().trim().optional(),
-})
-
-const transferArgs = z.object({
-  from_wallet_id: idSchema("ID dompet asal").optional(),
-  from_wallet_name: z.string().trim().optional(),
-  to_wallet_id: idSchema("ID dompet tujuan").optional(),
-  to_wallet_name: z.string().trim().optional(),
-  amount: amountSchema,
-  date: dateSchema.optional(),
-  notes: z.string().trim().optional(),
 })
 
 const loanArgs = z.object({
@@ -289,22 +278,6 @@ export const telegramTool: GeminiTool = {
           wallet_name: S("Nama dompet bila id tidak diketahui"),
         },
         ["name", "amount"],
-      ),
-    },
-    {
-      name: "create_transfer",
-      description: "Mencatat perpindahan uang antar dompet milik pengguna (bukan pengeluaran).",
-      parameters: OBJ(
-        {
-          from_wallet_id: S("ID dompet asal"),
-          from_wallet_name: S("Nama dompet asal bila id tidak diketahui"),
-          to_wallet_id: S("ID dompet tujuan"),
-          to_wallet_name: S("Nama dompet tujuan bila id tidak diketahui"),
-          amount: N("Nominal dalam rupiah"),
-          date: S("Tanggal format YYYY-MM-DD. Kosongkan untuk hari ini"),
-          notes: S("Catatan singkat"),
-        },
-        ["amount"],
       ),
     },
     {
@@ -605,45 +578,6 @@ const handlers: Record<string, Handler> = {
       message: card?.title ?? `Pemasukan "${a.name}" ${fmt(a.amount)} tanggal ${date} berhasil dicatat.`,
       data: { id, name: a.name, amount: a.amount, date, month, year },
       card: card ?? undefined,
-    }
-  },
-
-  async create_transfer(raw, ctx) {
-    const a = transferArgs.parse(raw)
-    const date = a.date ?? ctx.today
-    const { month, year } = monthYear(date)
-    const fromId = await resolveWallet(ctx, a.from_wallet_id, a.from_wallet_name)
-    const toId = await resolveWallet(ctx, a.to_wallet_id, a.to_wallet_name)
-    if (!fromId || !toId) throw new Error("Dompet asal/tujuan belum bisa dikenali. Panggil list_wallets dulu.")
-
-    const id = await financeService.createTransfer(ctx.session.userId, {
-      fromWalletId: fromId,
-      toWalletId: toId,
-      amount: a.amount,
-      date,
-      notes: a.notes ?? null,
-      month,
-      year,
-    })
-
-    const names = await db.prepare(
-      `SELECT
-         (SELECT name FROM wallets WHERE id = ?) AS from_wallet_name,
-         (SELECT name FROM wallets WHERE id = ?) AS to_wallet_name`
-    ).get(fromId, toId) as { from_wallet_name: string | null; to_wallet_name: string | null }
-
-    const card = transferCard({
-      id, date, amount: a.amount,
-      from_wallet_name: names.from_wallet_name,
-      to_wallet_name: names.to_wallet_name,
-      notes: a.notes ?? null,
-    })
-
-    return {
-      ok: true,
-      message: card.title,
-      data: { id, amount: a.amount, date, from_wallet_id: fromId, to_wallet_id: toId },
-      card,
     }
   },
 

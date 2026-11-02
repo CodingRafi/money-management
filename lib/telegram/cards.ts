@@ -85,27 +85,6 @@ export function incomeCard(view: IncomeView, title = "Pendapatan berhasil ditamb
   }
 }
 
-export function transferCard(v: {
-  id: string
-  date: string
-  amount: number
-  from_wallet_name: string | null
-  to_wallet_name: string | null
-  notes: string | null
-}): TxnCard {
-  return {
-    title: "Transfer berhasil ditambahkan",
-    id: v.id,
-    fields: [
-      { label: "Tanggal", value: v.date },
-      { label: "Jumlah", value: formatAmount(Number(v.amount)) },
-      { label: "Dari Dompet", value: orDash(v.from_wallet_name ? escapeHtml(v.from_wallet_name) : null) },
-      { label: "Ke Dompet", value: orDash(v.to_wallet_name ? escapeHtml(v.to_wallet_name) : null) },
-      { label: "Catatan", value: orDash(v.notes ? escapeHtml(v.notes) : null) },
-    ],
-  }
-}
-
 export function loanCard(v: {
   id: string
   name: string

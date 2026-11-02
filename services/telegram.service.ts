@@ -100,7 +100,6 @@ function helpText(linked: boolean): string {
     "• <code>makan siang 25rb</code>",
     "• <code>beli bensin 100rb di Pertamina</code>",
     "• <code>gaji 5jt</code>",
-    "• <code>transfer 500rb dari bca ke gopay</code>",
     "• <code>pinjam 2jt ke budi</code>",
     "• kirim <b>foto struk</b> — nominal &amp; merchant-nya saya baca sendiri",
     "• <code>berapa pengeluaran bulan ini?</code>",

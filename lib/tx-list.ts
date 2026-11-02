@@ -9,11 +9,11 @@ type ListOpts = {
   limit?: number
 }
 
-// ── Cashflow (income + expense + transfer) ──────────────────────────────────
+// ── Cashflow (income + expense) ──────────────────────────────────
 
 export type CashflowTxItem = {
   id: string
-  txType: "INCOME" | "EXPENSE" | "TRANSFER"
+  txType: "INCOME" | "EXPENSE"
   name: string
   cat: string | null
   amount: number
@@ -54,22 +54,6 @@ export async function getCashflowTxList(
        WHERE ${c.join(" AND ")} ORDER BY e.date DESC, e.created_at DESC`
     ).all(...p) as { id: string; date: string; name: string; cat: string | null; amount: number }[]
     all.push(...rows.map(r => ({ id: `e-${r.id}`, txType: "EXPENSE" as const, name: r.name, cat: r.cat, amount: r.amount, isCredit: false, date: r.date })))
-  }
-
-  if (type === "all" || type === "TRANSFER") {
-    const c = ["t.user_id = ANY(?)"]
-    const p: (string | string[] | null)[] = [Array.isArray(userId) ? userId : [userId]]
-    if (from) { c.push("t.date >= ?"); p.push(from) }
-    if (to)   { c.push("t.date <= ?"); p.push(to) }
-    if (like) { c.push("(fw.name ILIKE ? OR tw.name ILIKE ?)"); p.push(like, like) }
-    const rows = await db.prepare(
-      `SELECT t.id, t.date, t.amount, fw.name AS from_name, tw.name AS to_name
-       FROM transfers t
-       JOIN wallets fw ON fw.id = t.from_wallet_id
-       JOIN wallets tw ON tw.id = t.to_wallet_id
-       WHERE ${c.join(" AND ")} ORDER BY t.date DESC, t.created_at DESC`
-    ).all(...p) as { id: string; date: string; amount: number; from_name: string; to_name: string }[]
-    all.push(...rows.map(r => ({ id: `t-${r.id}`, txType: "TRANSFER" as const, name: `Transfer ke ${r.to_name}`, cat: `dari ${r.from_name}`, amount: r.amount, isCredit: false, date: r.date })))
   }
 
   all.sort((a, b) => b.date.localeCompare(a.date))

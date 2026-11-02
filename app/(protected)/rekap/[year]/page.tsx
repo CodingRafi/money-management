@@ -13,12 +13,10 @@ import { ReportTab } from "./_components/report-tab"
 import { StatChart } from "./_components/stat-chart"
 import { IncomeDetailTabs } from "./_components/income-detail-tabs"
 import { ExpenseDetailTabs } from "./_components/expense-detail-tabs"
-import { TransferForm } from "./_components/transfer-form"
 import {
   addIncome, deleteIncome, updateIncome,
   addExpense, deleteExpense, updateExpense,
 } from "@/app/actions/transactions"
-import { addTransfer, deleteTransfer } from "@/app/actions/transfers"
 
 const MONTHS = [
   "Januari", "Februari", "Maret", "April", "Mei", "Juni",
@@ -28,7 +26,6 @@ const MONTHS = [
 const TABS = [
   { key: "pendapatan",  label: "Pendapatan" },
   { key: "pengeluaran", label: "Pengeluaran" },
-  { key: "transfer",    label: "Transfer" },
 ]
 
 function formatRupiah(amount: number | string) {
@@ -51,8 +48,6 @@ function expenseStatus(pct: number, max: number, spent: number): "DANGER" | "WAR
 
 type IncomeRow      = { id: string; user_id: string; date: string; name: string; category_id: string | null; category_name: string | null; wallet_id: string | null; wallet_name: string | null; amount: number; is_initial: number }
 type ExpenseRow     = { id: string; user_id: string; date: string; name: string; wallet_id: string | null; wallet_name: string | null; category_id: string | null; category_name: string | null; needs_type: string; amount: number; is_initial: number; is_family_expense: number }
-type TransferRow    = { id: string; user_id: string; date: string; amount: number; notes: string | null; from_wallet_name: string; from_wallet_color: string | null; to_wallet_name: string; to_wallet_color: string | null }
-type LiquidWallet   = { id: string; name: string; color: string | null }
 type IncomeCatRow   = { id: string; name: string }
 type ExpenseCatRow  = { id: string; name: string; type_id: string; type_name: string; default_percentage: number }
 
@@ -86,7 +81,7 @@ export default async function YearDetailPage({
   const detail   = sp.detail === "pendapatan" ? "pendapatan" : sp.detail === "pengeluaran" ? "pengeluaran" : null
   const rawMonth = typeof sp.bulan === "string" ? parseInt(sp.bulan) : new Date().getMonth() + 1
   const month    = Math.max(1, Math.min(12, isNaN(rawMonth) ? 1 : rawMonth))
-  const tab      = ["pendapatan", "pengeluaran", "transfer"].includes(sp.tab as string)
+  const tab      = ["pendapatan", "pengeluaran"].includes(sp.tab as string)
     ? (sp.tab as string) : "pendapatan"
   const showNew    = sp.new === "1" && isActive
   const editId     = typeof sp.edit === "string" && isActive ? sp.edit as string : null
@@ -223,26 +218,6 @@ export default async function YearDetailPage({
     ).all(readIds, year) as { category_id: string; nominal: number }[]
   }
 
-  // ── Transfers ─────────────────────────────────────────────────────────────────
-  let transfers: TransferRow[]  = []
-  let liquidWallets: LiquidWallet[] = []
-  if (tab === "transfer") {
-    transfers = await db.prepare<[string[], number, number]>(
-      `SELECT t.id, t.user_id, t.date, t.amount, t.notes,
-              fw.name AS from_wallet_name, fw.color AS from_wallet_color,
-              tw.name AS to_wallet_name,   tw.color AS to_wallet_color
-       FROM transfers t
-       JOIN wallets fw ON fw.id = t.from_wallet_id
-       JOIN wallets tw ON tw.id = t.to_wallet_id
-       WHERE t.user_id=ANY(?) AND t.year=? AND t.month=?
-       ORDER BY t.date DESC, t.created_at DESC`
-    ).all(readIds, year, month) as TransferRow[]
-
-    liquidWallets = await db.prepare<[string]>(
-      "SELECT id, name, color FROM wallets WHERE user_id=? AND is_active=1 AND is_liquid=1 ORDER BY sort_order"
-    ).all(userId) as LiquidWallet[]
-  }
-
   // ── Build computed structures ─────────────────────────────────────────────────
   const bdMonths = [1,2,3,4,5,6,7,8,9,10,11,12]
 
@@ -358,7 +333,7 @@ export default async function YearDetailPage({
   const tambahHref = `${cancelHref}&new=1`
 
   const tabLabel: Record<string, string> = {
-    pendapatan: "Pendapatan", pengeluaran: "Pengeluaran", transfer: "Transfer",
+    pendapatan: "Pendapatan", pengeluaran: "Pengeluaran",
   }
 
   return (
@@ -734,7 +709,6 @@ export default async function YearDetailPage({
                 <CardContent className="px-4 pb-4">
                   {tab === "pendapatan"  && <IncomeForm   action={addIncome}   year={year} month={month} categories={incomeCats}  wallets={wallets} />}
                   {tab === "pengeluaran" && <ExpenseForm  action={addExpense}  year={year} month={month} categories={expenseCats} wallets={wallets} />}
-                  {tab === "transfer"    && <TransferForm wallets={liquidWallets} action={addTransfer} year={year} month={month} />}
                 </CardContent>
               </Card>
             )}
@@ -929,73 +903,6 @@ export default async function YearDetailPage({
               </>
             )}
 
-            {/* Transfer tab */}
-            {tab === "transfer" && (
-              <Card>
-                <CardContent className="p-0">
-                  {transfers.length === 0 ? (
-                    <p className="py-10 text-center text-sm text-muted-foreground">Belum ada transfer bulan ini.</p>
-                  ) : (
-                    <div className="overflow-x-auto">
-                      <table className="w-full text-sm">
-                        <thead>
-                          <tr className="border-b bg-muted/40 text-muted-foreground">
-                            <th className="px-4 py-3 text-left font-medium">Tanggal</th>
-                            <th className="px-4 py-3 text-left font-medium">Dari</th>
-                            <th className="px-4 py-3 text-left font-medium">Ke</th>
-                            <th className="px-4 py-3 text-right font-medium">Jumlah</th>
-                            <th className="px-4 py-3 text-left font-medium">Catatan</th>
-                            <th className="px-4 py-3" />
-                          </tr>
-                        </thead>
-                        <tbody>
-                          {transfers.map((row) => (
-                            <tr key={row.id} className="border-b hover:bg-muted/30 transition-colors">
-                              <td className="px-4 py-3 tabular-nums text-muted-foreground whitespace-nowrap">{formatDate(row.date)}</td>
-                              <td className="px-4 py-3">
-                                <div className="flex items-center gap-2">
-                                  {row.from_wallet_color && <span className="h-2.5 w-2.5 shrink-0 rounded-full border" style={{ backgroundColor: row.from_wallet_color }} />}
-                                  <span className="font-medium">{row.from_wallet_name}</span>
-                                </div>
-                              </td>
-                              <td className="px-4 py-3">
-                                <div className="flex items-center gap-2">
-                                  {row.to_wallet_color && <span className="h-2.5 w-2.5 shrink-0 rounded-full border" style={{ backgroundColor: row.to_wallet_color }} />}
-                                  <span className="font-medium">{row.to_wallet_name}</span>
-                                </div>
-                              </td>
-                              <td className="px-4 py-3 text-right tabular-nums font-medium text-blue-600">{formatRupiah(row.amount)}</td>
-                              <td className="px-4 py-3 text-muted-foreground">
-                                {row.notes ?? "—"}
-                                {isFamilyScope && row.user_id !== userId && (
-                                  <span className="ml-2 rounded px-1.5 py-0.5 text-[10px] font-bold bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-300">
-                                    {memberNames.get(row.user_id) ?? "Anggota"}
-                                  </span>
-                                )}
-                              </td>
-                              <td className="px-3 py-3 text-right">
-                                {row.user_id === userId && (
-                                  <form action={deleteTransfer.bind(null, row.id, yearStr, String(month))}>
-                                    <Button type="submit" variant="ghost" size="icon" className="h-7 w-7 text-destructive hover:text-destructive"><Trash2 className="h-3.5 w-3.5" /></Button>
-                                  </form>
-                                )}
-                              </td>
-                            </tr>
-                          ))}
-                        </tbody>
-                        <tfoot>
-                          <tr className="bg-muted/20">
-                            <td colSpan={3} className="px-4 py-3 text-right text-sm font-medium text-muted-foreground">Total</td>
-                            <td className="px-4 py-3 text-right tabular-nums font-bold text-blue-600">{formatRupiah(transfers.reduce((s, r) => s + r.amount, 0))}</td>
-                            <td colSpan={2} />
-                          </tr>
-                        </tfoot>
-                      </table>
-                    </div>
-                  )}
-                </CardContent>
-              </Card>
-            )}
           </div>
         </div>
       )}

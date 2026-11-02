@@ -5,7 +5,7 @@ import type { ElementType } from "react"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import Link from "next/link"
 import {
-  ArrowDown, ArrowUp, ArrowLeftRight, TrendingUp, TrendingDown,
+  ArrowDown, ArrowUp, TrendingUp, TrendingDown,
   HandCoins, ChevronRight, Wallet,
 } from "lucide-react"
 import type { RecentCashflowTx, RecentInvestmentTx, RecentLoanTx } from "@/lib/dashboard"
@@ -56,7 +56,6 @@ function EmptyState({ label }: { label: string }) {
 const CASHFLOW_CFG: Record<RecentCashflowTx["type"], { icon: ElementType; iconBg: string; iconColor: string }> = {
   INCOME:   { icon: ArrowDown,      iconBg: "bg-primary/10",     iconColor: "text-primary" },
   EXPENSE:  { icon: ArrowUp,        iconBg: "bg-destructive/10", iconColor: "text-destructive" },
-  TRANSFER: { icon: ArrowLeftRight, iconBg: "bg-muted",          iconColor: "text-muted-foreground" },
 }
 
 function CashflowList({ data, pending }: { data: RecentCashflowTx[]; pending: boolean }) {
@@ -75,9 +74,9 @@ function CashflowList({ data, pending }: { data: RecentCashflowTx[]; pending: bo
               <p className="text-[11px] text-muted-foreground truncate">{fmtDate(t.dateStr)} · {t.sublabel}</p>
             </div>
             <p className={`text-xs font-semibold tabular-nums shrink-0 ${
-              t.type === "TRANSFER" ? "text-foreground" : t.isCredit ? "text-primary" : "text-destructive"
+              t.isCredit ? "text-primary" : "text-destructive"
             }`}>
-              {t.type !== "TRANSFER" && (t.isCredit ? "+" : "-")}{formatRp(t.amount)}
+              {t.isCredit ? "+" : "-"}{formatRp(t.amount)}
             </p>
           </li>
         )

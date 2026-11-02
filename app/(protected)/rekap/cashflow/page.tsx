@@ -9,7 +9,7 @@ import { SearchInput } from "@/components/ui/search-input"
 import { LimitSelect } from "@/components/ui/limit-select"
 import { PaginationBar } from "@/components/ui/pagination-bar"
 import { TxFilterBar } from "@/components/ui/tx-filter-bar"
-import { ArrowDown, ArrowUp, ArrowLeftRight, ArrowLeft } from "lucide-react"
+import { ArrowDown, ArrowUp, ArrowLeft } from "lucide-react"
 import Link from "next/link"
 
 function formatRp(n: number) {
@@ -27,19 +27,17 @@ function fmtDate(d: string) {
 const TYPE_OPTIONS = [
   { value: "INCOME",   label: "Pemasukan" },
   { value: "EXPENSE",  label: "Pengeluaran" },
-  { value: "TRANSFER", label: "Transfer" },
 ]
 
 const TYPE_ICON = {
   INCOME:   { icon: ArrowDown,      bg: "bg-primary/10",     color: "text-primary" },
   EXPENSE:  { icon: ArrowUp,        bg: "bg-destructive/10", color: "text-destructive" },
-  TRANSFER: { icon: ArrowLeftRight, bg: "bg-muted",          color: "text-muted-foreground" },
 }
 
 const TYPE_BADGE: Record<string, "default" | "success" | "destructive"> = {
-  INCOME: "success", EXPENSE: "destructive", TRANSFER: "default",
+  INCOME: "success", EXPENSE: "destructive",
 }
-const TYPE_LABEL = { INCOME: "Pemasukan", EXPENSE: "Pengeluaran", TRANSFER: "Transfer" }
+const TYPE_LABEL = { INCOME: "Pemasukan", EXPENSE: "Pengeluaran" }
 
 export default async function CashflowListPage({
   searchParams,
@@ -112,11 +110,9 @@ export default async function CashflowListPage({
                       </p>
                     </div>
                     <p className={`text-sm font-semibold tabular-nums shrink-0 ${
-                      t.txType === "TRANSFER"
-                        ? "text-foreground"
-                        : t.isCredit ? "text-primary" : "text-destructive"
+                      t.isCredit ? "text-primary" : "text-destructive"
                     }`}>
-                      {t.txType !== "TRANSFER" && (t.isCredit ? "+" : "-")}{formatRp(t.amount)}
+                      {t.isCredit ? "+" : "-"}{formatRp(t.amount)}
                     </p>
                   </li>
                 )

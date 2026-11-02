@@ -16,43 +16,7 @@ export function formatRupiah(n: number): string {
   }).format(n)
 }
 
-// ── Transfer antar dompet ───────────────────────────────────────────────────
-
-export interface TransferInput {
-  fromWalletId: string
-  toWalletId: string
-  amount: number
-  date: string
-  notes?: string | null
-  month: number
-  year: number
-  isInitial?: boolean
-}
-
 export const financeService = {
-  async createTransfer(userId: string, v: TransferInput): Promise<string> {
-    if (!v.fromWalletId || !v.toWalletId || !v.date) throw new FinanceError("Data tidak valid")
-    if (!Number.isFinite(v.amount) || v.amount <= 0) throw new FinanceError("Jumlah transfer harus lebih dari 0")
-    if (v.fromWalletId === v.toWalletId) throw new FinanceError("Dompet asal dan tujuan tidak boleh sama")
-
-    const id = uuid()
-    await db.transaction(async () => {
-      const fromWallet = await db.prepare(
-        "SELECT id FROM wallets WHERE id = ? AND user_id = ? AND is_active = 1"
-      ).get(v.fromWalletId, userId) as { id: string } | undefined
-      const toWallet = await db.prepare(
-        "SELECT id FROM wallets WHERE id = ? AND user_id = ? AND is_active = 1"
-      ).get(v.toWalletId, userId) as { id: string } | undefined
-      if (!fromWallet || !toWallet) throw new FinanceError("Dompet tidak valid")
-
-      await db.prepare(
-        `INSERT INTO transfers (id, user_id, recorded_by, from_wallet_id, to_wallet_id, amount, date, month, year, notes, is_initial)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
-      ).run(id, userId, userId, v.fromWalletId, v.toWalletId, v.amount, v.date, v.month, v.year, v.notes ?? null, v.isInitial ? 1 : 0)
-    })
-    return id
-  },
-
   // ── Pinjaman ───────────────────────────────────────────────────────────────
 
   async createLoan(

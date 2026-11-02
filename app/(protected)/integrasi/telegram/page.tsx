@@ -15,7 +15,7 @@ export default async function TelegramSettingsPage() {
       <div>
         <h1 className="text-2xl font-bold">Integrasi Telegram</h1>
         <p className="text-sm text-muted-foreground">
-          Catat pengeluaran, pemasukan, transfer, pinjaman, dan investasi lewat chat.
+          Catat pengeluaran, pemasukan, pinjaman, dan investasi lewat chat.
         </p>
       </div>
 
@@ -40,7 +40,6 @@ export default async function TelegramSettingsPage() {
           <ul className="space-y-1 text-sm text-muted-foreground">
             <li><span className="font-mono">makan siang 25rb</span> — catat pengeluaran</li>
             <li><span className="font-mono">gaji 5jt kategori TETAP</span> — catat pemasukan</li>
-            <li><span className="font-mono">transfer 500rb dari bca ke gopay</span> — pindah dana</li>
             <li><span className="font-mono">pinjam 2jt ke budi</span> — catat piutang</li>
             <li><span className="font-mono">berapa pengeluaran bulan ini?</span> — ringkasan</li>
             <li>Kirim <strong>foto struk</strong> — nominal & merchant dibaca otomatis</li>
