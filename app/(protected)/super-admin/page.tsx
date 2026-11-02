@@ -6,6 +6,7 @@ import { Badge } from "@/components/ui/badge"
 import { rupiah, formatTanggal, daysUntil } from "@/lib/utils"
 import { LicenseStatusBadge } from "./_components/status-badge"
 import { RenewLicenseForm } from "./_components/license-forms"
+import { BaseDataCard } from "./_components/base-data-card"
 
 const EVENT_LABEL: Record<string, string> = {
   sale: "Penjualan",
@@ -267,6 +268,8 @@ export default async function SuperAdminMonitoringPage() {
           </CardContent>
         </Card>
       </div>
+
+      <BaseDataCard />
     </div>
   )
 }
