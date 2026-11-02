@@ -86,6 +86,7 @@ Perintah yang tersedia:
 | `/unlink` | Putuskan hubungan akun |
 | `/riwayat` | 10 transaksi terakhir (beserta kode revisi) |
 | `/revisi` | Perbaiki transaksi yang salah catat |
+| `/hapus` | Hapus transaksi (dengan konfirmasi) |
 | `/status` | Status koneksi akun |
 | `/help` | Bantuan |
 
@@ -143,6 +144,18 @@ kategori, dan sebaliknya.
 
 `kebutuhan` dan `keluarga` hanya berlaku untuk pengeluaran; `revisi` pada
 pendapatan dengan field itu akan ditolak.
+
+## Perintah hapus
+
+Memakai kode yang sama dengan `/revisi`. Ada dua langkah supaya tidak salah hapus:
+
+```
+/hapus                → daftar kode terbaru
+/hapus 592C67         → tampilkan transaksi + minta konfirmasi
+/hapus 592C67 ya      → hapus permanen
+```
+
+Berlaku untuk pengeluaran dan pendapatan milik akun yang tertaut.
 
 ### Revisi lewat bahasa alami
 
