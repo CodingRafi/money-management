@@ -11,6 +11,7 @@ import { NetWorthSection, NetWorthSkeleton } from "@/components/dashboard/NetWor
 import { CashflowSection, CashflowSkeleton } from "@/components/dashboard/CashflowCards"
 import { WalletSection, WalletSkeleton } from "@/components/dashboard/WalletCard"
 import { CategorySection, CategorySkeleton } from "@/components/dashboard/CategorySection"
+import { FamilyMemberRecap, FamilyMemberRecapSkeleton } from "@/components/dashboard/FamilyMemberRecap"
 
 const MONTHS = [
   "Januari", "Februari", "Maret", "April", "Mei", "Juni",
@@ -55,13 +56,72 @@ export default async function DashboardPage({
 
   const isCurrentMonth = month === now.getMonth() + 1 && year === now.getFullYear()
 
+  // ── Dashboard Keluarga: rekap keseluruhan seluruh anggota ──
+  if (familyMode) {
+    return (
+      <div className="space-y-5">
+        <div>
+          <h1 className="text-2xl font-bold">{getGreeting()}, {firstName}!</h1>
+          <p className="text-sm text-muted-foreground">
+            Rekap keuangan keluarga · gabungan {scope.members.length} anggota
+          </p>
+        </div>
+
+        {/* Total kekayaan, piutang, dan grafik tahunan seluruh keluarga */}
+        <Suspense fallback={<NetWorthSkeleton />}>
+          <NetWorthSection userId={userId} year={chartYear} />
+        </Suspense>
+
+        <div className="space-y-4">
+          <div className="sticky top-14 z-10 -mx-4 px-4 py-2 bg-background/95 backdrop-blur border-b flex items-center justify-between">
+            <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+              Rekap Bulanan Keluarga
+            </p>
+            <div className="flex items-center gap-0.5">
+              <Button variant="ghost" size="icon" className="h-7 w-7" asChild>
+                <Link href={prevMonthHref(month, year)} scroll={false}><ChevronLeft className="h-3.5 w-3.5" /></Link>
+              </Button>
+              <span className="min-w-[110px] text-center text-sm font-medium">
+                {MONTHS[month - 1]} {year}
+              </span>
+              <Button variant="ghost" size="icon" className="h-7 w-7" disabled={isCurrentMonth} asChild={!isCurrentMonth}>
+                {isCurrentMonth ? (
+                  <span><ChevronRight className="h-3.5 w-3.5" /></span>
+                ) : (
+                  <Link href={nextMonthHref(month, year)} scroll={false}><ChevronRight className="h-3.5 w-3.5" /></Link>
+                )}
+              </Button>
+            </div>
+          </div>
+
+          <Suspense fallback={<CashflowSkeleton />}>
+            <CashflowSection userId={userId} month={month} year={year} />
+          </Suspense>
+
+          <Suspense fallback={<FamilyMemberRecapSkeleton />}>
+            <FamilyMemberRecap members={scope.members} month={month} year={year} />
+          </Suspense>
+
+          <Suspense fallback={null}>
+            <FamilySpendingSection members={scope.members} year={year} month={month} />
+          </Suspense>
+
+          <Suspense fallback={<CategorySkeleton />}>
+            <CategorySection userId={userId} month={month} year={year} />
+          </Suspense>
+        </div>
+      </div>
+    )
+  }
+
+  // ── Dashboard Saya (personal) ──
   return (
     <div className="space-y-5">
       {/* Greeting — tanpa filter */}
       <div>
         <h1 className="text-2xl font-bold">{getGreeting()}, {firstName}!</h1>
         <p className="text-sm text-muted-foreground">
-          {familyMode ? "Laporan keuangan keluarga (gabungan seluruh anggota)" : scope.readOnly ? "Ringkasan keuangan anggota (read-only)" : "Ringkasan keuangan kamu"}
+          {scope.readOnly ? "Ringkasan keuangan anggota (read-only)" : "Ringkasan keuangan kamu"}
         </p>
       </div>
 
@@ -71,11 +131,9 @@ export default async function DashboardPage({
       </Suspense>
 
       {/* ── Dompet — tidak ikut filter bulan ── */}
-      {!familyMode && (
-        <Suspense fallback={<WalletSkeleton />}>
-          <WalletSection userId={scope.targetUserId} />
-        </Suspense>
-      )}
+      <Suspense fallback={<WalletSkeleton />}>
+        <WalletSection userId={scope.targetUserId} />
+      </Suspense>
 
       {/* ── Cashflow — pakai filter bulan ── */}
       <div className="space-y-4">
@@ -101,17 +159,11 @@ export default async function DashboardPage({
         </div>
 
         <Suspense fallback={<CashflowSkeleton />}>
-          <CashflowSection userId={userId} month={month} year={year} excludeFamily={!familyMode} />
+          <CashflowSection userId={userId} month={month} year={year} excludeFamily />
         </Suspense>
 
-        {familyMode && (
-          <Suspense fallback={null}>
-            <FamilySpendingSection members={scope.members} year={year} month={month} />
-          </Suspense>
-        )}
-
         <Suspense fallback={<CategorySkeleton />}>
-          <CategorySection userId={userId} month={month} year={year} excludeFamily={!familyMode} />
+          <CategorySection userId={userId} month={month} year={year} excludeFamily />
         </Suspense>
 
       </div>

@@ -39,8 +39,16 @@ export default async function ProtectedLayout({ children }: { children: React.Re
     if (!allowed.some((p) => pathname === p || pathname.startsWith(p + "/"))) redirect("/saya")
   }
 
-  // Context switcher hanya untuk Admin Keluarga (bukan Super Admin).
   const scope = await resolveScope()
+
+  // Mode Keluarga hanya menampilkan rekap: Dashboard & Anggota. Rute data pribadi
+  // (cashflow, dompet, investasi, pinjaman) diarahkan ke dashboard.
+  if (scope?.mode === "family" && session.role !== "super_admin") {
+    const allowed = ["/dashboard", "/pengaturan/anggota", "/integrasi/telegram", "/settings", "/licence"]
+    if (!allowed.some((p) => pathname === p || pathname.startsWith(p + "/"))) redirect("/dashboard")
+  }
+
+  // Context switcher hanya untuk Admin Keluarga (bukan Super Admin).
   let context: { current: string; options: ContextOption[] } | null = null
   if (scope?.canSwitch && session.role !== "super_admin") {
     const current = scope.mode === "family" ? "family" : `user:${scope.targetUserId}`

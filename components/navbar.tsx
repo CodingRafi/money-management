@@ -71,10 +71,13 @@ const CHILD_LINKS: NavLink[] = [
   { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard, permission: PERMISSION.DASHBOARD.VIEW },
 ]
 
-function linksForRole(role: UserRole): NavLink[] {
+/** Mode Keluarga: hanya Dashboard (rekap) dan Anggota. Data pribadi disembunyikan. */
+const FAMILY_MODE_LINKS: NavLink[] = [CHILD_LINKS[0], ...ADMIN_EXTRA_LINKS]
+
+function linksForRole(role: UserRole, familyMode: boolean): NavLink[] {
   if (role === "super_admin") return SUPER_ADMIN_LINKS
   if (role === "child") return CHILD_LINKS
-  if (role === "admin") return [...NAV_LINKS, ...ADMIN_EXTRA_LINKS]
+  if (role === "admin") return familyMode ? FAMILY_MODE_LINKS : [...NAV_LINKS, ...ADMIN_EXTRA_LINKS]
   return NAV_LINKS
 }
 
@@ -83,9 +86,10 @@ export function Navbar({ username, role, context }: NavbarProps) {
   const router = useRouter()
 
   const initials = username.slice(0, 2).toUpperCase()
+  const familyMode = context?.current === "family"
 
   // Menu muncul bila user punya izin `view` untuk resource-nya.
-  const visibleLinks = linksForRole(role).filter((l) => hasPermission(role, l.permission))
+  const visibleLinks = linksForRole(role, familyMode).filter((l) => hasPermission(role, l.permission))
 
   const handleSignOut = async () => {
     await logout()

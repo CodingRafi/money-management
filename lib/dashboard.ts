@@ -396,6 +396,40 @@ export async function getLoans(userIdOrIds: string | string[]): Promise<LoanData
   }
 }
 
+export type MemberRecapRow = {
+  userId: string
+  income: number
+  expense: number
+  /** Pengeluaran yang ditandai sebagai pengeluaran keluarga (bagian dari `expense`). */
+  familyExpense: number
+}
+
+/** Rekap pemasukan & pengeluaran per anggota untuk satu bulan (Dashboard Keluarga). */
+export async function getMemberRecap(userIds: string[], month: number, year: number): Promise<MemberRecapRow[]> {
+  if (userIds.length === 0) return []
+  const rows = await db.prepare(`
+    SELECT user_id,
+      COALESCE(SUM(CASE WHEN src = 'i' THEN amount ELSE 0 END), 0) AS income,
+      COALESCE(SUM(CASE WHEN src = 'e' THEN amount ELSE 0 END), 0) AS expense,
+      COALESCE(SUM(CASE WHEN src = 'e' AND fam = 1 THEN amount ELSE 0 END), 0) AS family_expense
+    FROM (
+      SELECT user_id, 'i' AS src, amount, 0 AS fam FROM incomes
+        WHERE user_id = ANY(?) AND month = ? AND year = ?
+      UNION ALL
+      SELECT user_id, 'e', amount, is_family_expense AS fam FROM expenses
+        WHERE user_id = ANY(?) AND month = ? AND year = ?
+    ) t
+    GROUP BY user_id
+  `).all(userIds, month, year, userIds, month, year) as { user_id: string; income: number; expense: number; family_expense: number }[]
+
+  return rows.map((r) => ({
+    userId: r.user_id,
+    income: Number(r.income),
+    expense: Number(r.expense),
+    familyExpense: Number(r.family_expense),
+  }))
+}
+
 export type CategoryBreakdownItem = { name: string; total: number }
 export type CategoryBreakdownData = {
   expenses: CategoryBreakdownItem[]
