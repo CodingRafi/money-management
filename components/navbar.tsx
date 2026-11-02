@@ -161,14 +161,6 @@ export function Navbar({ username, role, context }: NavbarProps) {
                   Pengaturan Akun
                 </Link>
               </DropdownMenuItem>
-              {role === "admin" && (
-                <DropdownMenuItem asChild className="cursor-pointer">
-                  <Link href="/pengaturan/anggota">
-                    <Users className="h-4 w-4" />
-                    Anggota Keluarga
-                  </Link>
-                </DropdownMenuItem>
-              )}
               <DropdownMenuSeparator />
               <DropdownMenuItem onSelect={handleSignOut} className="cursor-pointer text-destructive focus:text-destructive">
                 <LogOut className="h-4 w-4" />
