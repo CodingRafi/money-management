@@ -84,7 +84,7 @@ Perintah yang tersedia:
 | `/start` | Bantuan & cara pakai |
 | `/link KODE` | Hubungkan akun dengan kode koneksi |
 | `/unlink` | Putuskan hubungan akun |
-| `/riwayat` | 10 transaksi terakhir (beserta kode revisi) |
+| `/riwayat` | 10 transaksi terakhir (beserta kode transaksi) |
 | `/revisi` | Perbaiki transaksi yang salah catat |
 | `/hapus` | Hapus transaksi (dengan konfirmasi) |
 | `/status` | Status koneksi akun |
@@ -96,7 +96,7 @@ Untuk menambah/mengubah perintah, edit konstanta `BOT_COMMANDS` di
 ## Format output transaksi
 
 Balasan pencatatan **dibentuk dari data server**, bukan kalimat bebas dari AI.
-Jadi formatnya konsisten, lengkap, dan selalu menampilkan ID + kode revisi:
+Jadi formatnya konsisten, lengkap, dan selalu menampilkan ID + kode transaksi:
 
 ```
 Pengeluaran berhasil ditambahkan:
@@ -108,7 +108,7 @@ Jenis Kebutuhan : PRIMER
 Kategori : HIBURAN/JAJAN
 Catat sebagai pengeluaran keluarga : N
 ID : 730ad12c-df3b-4970-8da8-80cf79592c67
-Kode revisi : 592C67
+Kode transaksi : 592C67
 Salah? kirim: /revisi <kode> <field> <nilai>
 ```
 

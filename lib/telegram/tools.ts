@@ -377,7 +377,7 @@ export const telegramTool: GeminiTool = {
         "Memperbaiki pengeluaran yang sudah tercatat (nominal, nama, tanggal, kategori, dompet, jenis kebutuhan, atau flag keluarga). Gunakan kode 6 karakter dari pesan pencatatan atau /riwayat.",
       parameters: OBJ(
         {
-          code: S("Kode revisi (6 karakter) atau ID penuh transaksi"),
+          code: S("Kode transaksi (6 karakter) atau ID penuh transaksi"),
           amount: S("Nominal baru, mis. '30rb'"),
           name: S("Nama/keterangan baru"),
           date: S("Tanggal baru format YYYY-MM-DD"),
@@ -395,7 +395,7 @@ export const telegramTool: GeminiTool = {
         "Memperbaiki pemasukan yang sudah tercatat (nominal, nama, tanggal, kategori, atau dompet). Gunakan kode 6 karakter dari pesan pencatatan atau /riwayat.",
       parameters: OBJ(
         {
-          code: S("Kode revisi (6 karakter) atau ID penuh transaksi"),
+          code: S("Kode transaksi (6 karakter) atau ID penuh transaksi"),
           amount: S("Nominal baru, mis. '30rb'"),
           name: S("Nama/keterangan baru"),
           date: S("Tanggal baru format YYYY-MM-DD"),
