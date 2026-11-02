@@ -13,6 +13,8 @@ import { ReportTab } from "./_components/report-tab"
 import { StatChart } from "./_components/stat-chart"
 import { IncomeDetailTabs } from "./_components/income-detail-tabs"
 import { ExpenseDetailTabs } from "./_components/expense-detail-tabs"
+import { getExpenseByWallet } from "@/lib/dashboard"
+import { WalletExpensePieChart } from "@/components/dashboard/WalletExpensePieChart"
 import {
   addIncome, deleteIncome, updateIncome,
   addExpense, deleteExpense, updateExpense,
@@ -105,6 +107,22 @@ export default async function YearDetailPage({
   const wallets = await db.prepare<[string], { id: string; name: string }>(
     "SELECT id, name FROM wallets WHERE user_id = ? AND is_active = 1 ORDER BY sort_order"
   ).all(userId) as { id: string; name: string }[]
+
+  // ── Pengeluaran per dompet (pie chart) ────────────────────────────────────────
+  // Manage: pengeluaran bulan yang dipilih. Report: pengeluaran sepanjang tahun.
+  const expenseByWallet = await getExpenseByWallet(
+    readIds,
+    year,
+    view === "report" ? null : month,
+    { excludeFamily: !isFamilyScope },
+  )
+  const walletPieItems = expenseByWallet.items.map((w) => ({
+    id: w.id,
+    name: w.name,
+    categoryName: w.category_name,
+    color: w.color,
+    total: w.total,
+  }))
 
   // ── Monthly data ──────────────────────────────────────────────────────────────
   const incomes = await db.prepare<[string[], number, number], IncomeRow>(
@@ -471,6 +489,13 @@ export default async function YearDetailPage({
           {stat === "wealth_growth" && <StatChart type="wealth_growth" data={wealthData} />}
           {stat === "saving_rate"   && <StatChart type="saving_rate"   data={savingRateData} />}
 
+          {walletPieItems.length > 0 && (
+            <WalletExpensePieChart
+              items={walletPieItems}
+              subtitle={`Pengeluaran sepanjang ${year} per dompet`}
+            />
+          )}
+
           {!hasData && (
             <p className="text-sm text-muted-foreground text-center py-6">
               Belum ada data pendapatan atau pengeluaran untuk tahun {year}.
@@ -830,7 +855,12 @@ export default async function YearDetailPage({
                   </Link>
                 </div>
                 {showReport ? (
-                  <ReportTab needsData={needsChart} categoryData={catChart} />
+                  <ReportTab
+                    needsData={needsChart}
+                    categoryData={catChart}
+                    walletItems={walletPieItems}
+                    walletSubtitle={`Pengeluaran ${MONTHS[month - 1]} ${year} per dompet`}
+                  />
                 ) : (
                   <Card>
                     <CardContent className="p-0">

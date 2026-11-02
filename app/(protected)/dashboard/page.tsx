@@ -10,6 +10,7 @@ import { FamilySpendingSection } from "@/components/dashboard/FamilySpendingChar
 import { NetWorthSection, NetWorthSkeleton } from "@/components/dashboard/NetWorthCard"
 import { CashflowSection, CashflowSkeleton } from "@/components/dashboard/CashflowCards"
 import { CategorySection, CategorySkeleton } from "@/components/dashboard/CategorySection"
+import { WalletExpenseSection, WalletExpenseSkeleton } from "@/components/dashboard/WalletExpenseSection"
 import { FamilyMemberRecap, FamilyMemberRecapSkeleton } from "@/components/dashboard/FamilyMemberRecap"
 
 const MONTHS = [
@@ -97,6 +98,10 @@ export default async function DashboardPage({
             <CashflowSection userId={userId} month={month} year={year} />
           </Suspense>
 
+          <Suspense fallback={<WalletExpenseSkeleton />}>
+            <WalletExpenseSection userId={userId} month={month} year={year} />
+          </Suspense>
+
           <Suspense fallback={<FamilyMemberRecapSkeleton />}>
             <FamilyMemberRecap members={scope.members} month={month} year={year} />
           </Suspense>
@@ -154,6 +159,10 @@ export default async function DashboardPage({
 
         <Suspense fallback={<CashflowSkeleton />}>
           <CashflowSection userId={userId} month={month} year={year} excludeFamily />
+        </Suspense>
+
+        <Suspense fallback={<WalletExpenseSkeleton />}>
+          <WalletExpenseSection userId={userId} month={month} year={year} excludeFamily />
         </Suspense>
 
         <Suspense fallback={<CategorySkeleton />}>

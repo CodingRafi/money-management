@@ -371,6 +371,54 @@ export async function getWalletLedger(userIdOrIds: string | string[]): Promise<W
   ).all(userId, userId, userId, userId, userId)
 }
 
+/**
+ * Pengeluaran yang dikelompokkan per dompet — "dari wallet mana uang keluar".
+ *
+ * month = null → seluruh tahun. Pengeluaran tanpa dompet (wallet_id NULL,
+ * mis. dompet yang sudah dihapus) dikelompokkan sebagai "Tanpa Dompet".
+ */
+export type ExpenseByWalletItem = {
+  id: string
+  name: string
+  category_name: string | null
+  color: string | null
+  total: number
+}
+export type ExpenseByWalletData = { items: ExpenseByWalletItem[]; total: number }
+
+export async function getExpenseByWallet(
+  userIdOrIds: string | string[],
+  year: number,
+  month: number | null,
+  opts: { excludeFamily?: boolean } = {},
+): Promise<ExpenseByWalletData> {
+  const userId = toIds(userIdOrIds)
+  // Di mode personal, beban rumah tangga (is_family_expense) tidak dihitung.
+  const famClause = opts.excludeFamily ? " AND e.is_family_expense = 0" : ""
+  const monthClause = month === null ? "" : " AND e.month = ?"
+
+  const rows = await db.prepare<unknown[], ExpenseByWalletItem>(
+    `SELECT COALESCE(w.id, 'no-wallet') AS id,
+            COALESCE(w.name, 'Tanpa Dompet') AS name,
+            wc.name AS category_name,
+            w.color,
+            COALESCE(SUM(e.amount), 0) AS total
+       FROM expenses e
+       LEFT JOIN wallets w ON w.id = e.wallet_id
+       LEFT JOIN wallet_categories wc ON wc.id = w.category_id
+      WHERE e.user_id = ANY(?) AND e.year = ?${monthClause}${famClause}
+      GROUP BY w.id, w.name, wc.name, w.color
+      HAVING SUM(e.amount) > 0
+      ORDER BY total DESC`
+  ).all(...(month === null
+    ? [userId, year]
+    : [userId, year, month]
+  )) as ExpenseByWalletItem[]
+
+  const items = rows.map((r) => ({ ...r, total: Number(r.total) || 0 }))
+  return { items, total: items.reduce((s, i) => s + i.total, 0) }
+}
+
 export async function getInvestment(userIdOrIds: string | string[]): Promise<InvestmentData> {
   const userId = toIds(userIdOrIds)
   const summaryRow = await db.prepare(`

@@ -10,6 +10,10 @@ import {
   ResponsiveContainer,
 } from "recharts"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
+import {
+  WalletExpensePieChart,
+  type WalletExpenseItem,
+} from "@/components/dashboard/WalletExpensePieChart"
 
 type ChartRow = { label: string; total: number }
 
@@ -40,9 +44,12 @@ function CustomTooltip({ active, payload, label }: { active?: boolean; payload?:
 interface Props {
   needsData: ChartRow[]
   categoryData: ChartRow[]
+  /** Pengeluaran per dompet — chart pie di dalam panel Report Pengeluaran. */
+  walletItems?: WalletExpenseItem[]
+  walletSubtitle?: string
 }
 
-export function ReportTab({ needsData, categoryData }: Props) {
+export function ReportTab({ needsData, categoryData, walletItems, walletSubtitle }: Props) {
   const noData = needsData.length === 0 && categoryData.length === 0
 
   if (noData) {
@@ -127,6 +134,11 @@ export function ReportTab({ needsData, categoryData }: Props) {
           </ResponsiveContainer>
         </CardContent>
       </Card>
+
+      {/* Chart 3 — Pengeluaran per dompet */}
+      {walletItems && walletItems.length > 0 && (
+        <WalletExpensePieChart items={walletItems} subtitle={walletSubtitle} />
+      )}
     </div>
   )
 }
