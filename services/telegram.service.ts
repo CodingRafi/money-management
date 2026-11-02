@@ -16,6 +16,8 @@ import { formatCard } from "@/lib/telegram/format"
 import { historyCard } from "@/lib/telegram/cards"
 import {
   REVISION_FIELD_ALIASES,
+  deleteTransactionByCode,
+  previewDeletion,
   findTransactionKind,
   listRecent,
   reviseExpense,
@@ -127,6 +129,7 @@ const COMMAND_HINTS = [
   ["/link", "hubungkan akun dengan kode"],
   ["/riwayat", "10 transaksi terakhir"],
   ["/revisi", "perbaiki transaksi yang salah catat"],
+  ["/hapus", "hapus transaksi (dengan konfirmasi)"],
   ["/status", "status koneksi akun"],
   ["/help", "bantuan"],
   ["/unlink", "putuskan hubungan akun"],
@@ -316,6 +319,52 @@ async function handleRevisi(chatId: string, ctx: Omit<ToolContext, "today">, arg
   await sendTelegramHtml(chatId, formatCard(outcome.card))
 }
 
+// ── Hapus transaksi ──────────────────────────────────────────────────────────
+
+function hapusUsage(): string {
+  return [
+    "Format: <code>/hapus &lt;kode&gt;</code>",
+    "",
+    "Bot akan menampilkan transaksinya dulu, lalu minta konfirmasi:",
+    "<code>/hapus 0AD968</code> → lihat data yang akan dihapus",
+    "<code>/hapus 0AD968 ya</code> → hapus permanen",
+    "",
+    "Lihat daftar kode: <code>/riwayat</code>",
+  ].join("\n")
+}
+
+async function handleHapus(chatId: string, ctx: Omit<ToolContext, "today">, arg: string) {
+  const parts = arg.trim().split(/\s+/).filter(Boolean)
+
+  if (parts.length === 0) {
+    const rows = await listRecent(ctx.session.userId, 10)
+    await sendTelegramHtml(
+      chatId,
+      `<b>Transaksi terbaru (kode hapus)</b>\n\n${historyCard(rows)}\n\n${hapusUsage()}`,
+    )
+    return
+  }
+
+  const code = parts[0]
+  const confirmed = parts.length > 1 && ["ya", "y", "yes", "ok", "hapus"].includes(parts[1].toLowerCase())
+
+  if (!confirmed) {
+    const preview = await previewDeletion(ctx, code)
+    if (!preview.ok) {
+      await sendTelegramHtml(chatId, escapeHtml(preview.message))
+      return
+    }
+    await sendTelegramHtml(
+      chatId,
+      `${formatCard(preview.card)}\n\n⚠️ Penghapusan <b>tidak bisa dibatalkan</b>. Untuk melanjutkan kirim:\n<code>/hapus ${escapeHtml(code)} ya</code>`,
+    )
+    return
+  }
+
+  const result = await deleteTransactionByCode(ctx, code)
+  await sendTelegramHtml(chatId, `${result.ok ? "🗑️" : "❌"} ${escapeHtml(result.message)}`)
+}
+
 // ── Entry point ──────────────────────────────────────────────────────────────
 
 export async function handleTelegramUpdate(update: TelegramUpdate): Promise<void> {
@@ -368,6 +417,20 @@ export async function handleTelegramUpdate(update: TelegramUpdate): Promise<void
           return
         }
         await handleRevisi(chatId, revCtx, arg)
+        return
+      }
+      case "/hapus": {
+        const link = await telegramRepository.findByChatId(chatId)
+        if (!link) {
+          await sendTelegramMessage(chatId, "Belum terhubung. Kirim /link KODE dulu.")
+          return
+        }
+        const delCtx = await loadContext(link.user_id)
+        if (!delCtx) {
+          await sendTelegramMessage(chatId, "Akun ini tidak bisa dipakai lewat Telegram.")
+          return
+        }
+        await handleHapus(chatId, delCtx, arg)
         return
       }
       default:

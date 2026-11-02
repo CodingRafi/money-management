@@ -50,6 +50,7 @@ const BOT_COMMANDS = [
   { command: "unlink", description: "Putuskan hubungan akun" },
   { command: "riwayat", description: "Lihat 10 transaksi terakhir" },
   { command: "revisi", description: "Perbaiki transaksi yang salah catat" },
+  { command: "hapus", description: "Hapus transaksi (dengan konfirmasi)" },
   { command: "status", description: "Lihat status koneksi akun" },
   { command: "help", description: "Bantuan & contoh perintah" },
 ]

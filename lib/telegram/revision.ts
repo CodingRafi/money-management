@@ -382,6 +382,73 @@ export async function findTransactionKind(
   return null
 }
 
+// ── Hapus transaksi (untuk /hapus) ───────────────────────────────────────────
+
+/** Tampilkan transaksi yang akan dihapus (langkah konfirmasi). */
+export async function previewDeletion(ctx: RevisionCtx, code: string): Promise<RevisionOutcome> {
+  const expenseId = await findExpenseId(ctx.session.userId, code.trim())
+  if (expenseId) {
+    const view = await loadExpenseView(expenseId)
+    if (view) {
+      const card = expenseCard(view, "Pengeluaran ini akan dihapus")
+      card.footer = undefined
+      return { ok: true, card, message: card.title }
+    }
+  }
+  const incomeId = await findIncomeId(ctx.session.userId, code.trim())
+  if (incomeId) {
+    const view = await loadIncomeView(incomeId)
+    if (view) {
+      const card = incomeCard(view, "Pendapatan ini akan dihapus")
+      card.footer = undefined
+      return { ok: true, card, message: card.title }
+    }
+  }
+  return {
+    ok: false,
+    message: `Transaksi "${code}" tidak ditemukan. Lihat daftar kode dengan /riwayat.`,
+  }
+}
+
+/** Hapus transaksi (pengeluaran atau pendapatan) milik user berdasarkan kode. */
+export async function deleteTransactionByCode(
+  ctx: RevisionCtx,
+  code: string,
+): Promise<{ ok: true; message: string } | { ok: false; message: string }> {
+  const expenseId = await findExpenseId(ctx.session.userId, code.trim())
+  if (expenseId) {
+    const view = await loadExpenseView(expenseId)
+    try {
+      await expenseService.deleteExpense(ctx.session, expenseId)
+    } catch (err) {
+      return { ok: false, message: err instanceof Error ? err.message : "Gagal menghapus transaksi" }
+    }
+    return {
+      ok: true,
+      message: `Pengeluaran "${view?.name ?? code}" (${shortCode(expenseId)}) berhasil dihapus.`,
+    }
+  }
+
+  const incomeId = await findIncomeId(ctx.session.userId, code.trim())
+  if (incomeId) {
+    const view = await loadIncomeView(incomeId)
+    try {
+      await expenseService.deleteIncome(ctx.session, incomeId)
+    } catch (err) {
+      return { ok: false, message: err instanceof Error ? err.message : "Gagal menghapus transaksi" }
+    }
+    return {
+      ok: true,
+      message: `Pendapatan "${view?.name ?? code}" (${shortCode(incomeId)}) berhasil dihapus.`,
+    }
+  }
+
+  return {
+    ok: false,
+    message: `Transaksi "${code}" tidak ditemukan. Lihat daftar kode dengan /riwayat.`,
+  }
+}
+
 // ── Daftar transaksi terbaru (untuk /riwayat) ────────────────────────────────
 
 export interface HistoryRow {
