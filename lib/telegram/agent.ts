@@ -112,7 +112,7 @@ export async function runTelegramAgent(input: AgentInput): Promise<AgentOutput> 
 
   /*
    * Kalau ada tool yang menghasilkan kartu (mis. pencatatan/revisi transaksi),
-   * kirim kartulah ke user — formatnya konsisten dan memuat kode revisi.
+   * kirim kartulah ke user — formatnya konsisten dan memuat kode transaksi.
    * Kalimat bebas dari AI tidak ikut ditampilkan supaya tidak membingungkan
    * (mis. nominal yang salah ketik AI).
    */

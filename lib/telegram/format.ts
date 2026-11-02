@@ -90,7 +90,7 @@ export const CARD_DIVIDER = "\n\n━━━━━━━━━━━━\n\n"
 /**
  * Kartu transaksi dalam HTML Telegram (kirim dengan parse_mode HTML).
  * Setiap bagian dipisah baris kosong supaya tidak terasa mepet:
- * judul · rincian · kode revisi · petunjuk. Nilai dari user sudah di-escape
+ * judul · rincian · kode transaksi · petunjuk. Nilai dari user sudah di-escape
  * oleh pembuat kartu (cards.ts).
  */
 export function formatCard(card: TxnCard): string {
@@ -100,7 +100,7 @@ export function formatCard(card: TxnCard): string {
   const parts = [
     `✅ <b>${card.title}</b>`,
     details,
-    `🔖 Kode revisi: <code>${shortCode(card.id)}</code>`,
+    `🔖 Kode transaksi: <code>${shortCode(card.id)}</code>`,
   ]
   if (card.footer) parts.push(card.footer)
   return parts.join("\n\n")

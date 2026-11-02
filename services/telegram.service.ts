@@ -250,7 +250,7 @@ async function handleRevisi(chatId: string, ctx: Omit<ToolContext, "today">, arg
     const rows = await listRecent(ctx.session.userId, 10)
     await sendTelegramHtml(
       chatId,
-      `<b>Transaksi terbaru (kode revisi)</b>\n\n${historyCard(rows)}\n\n${revisionHelpText()}`,
+      `<b>Transaksi terbaru (kode transaksi)</b>\n\n${historyCard(rows)}\n\n${revisionHelpText()}`,
     )
     return
   }
@@ -340,7 +340,7 @@ async function handleHapus(chatId: string, ctx: Omit<ToolContext, "today">, arg:
     const rows = await listRecent(ctx.session.userId, 10)
     await sendTelegramHtml(
       chatId,
-      `<b>Transaksi terbaru (kode hapus)</b>\n\n${historyCard(rows)}\n\n${hapusUsage()}`,
+      `<b>Transaksi terbaru (kode transaksi)</b>\n\n${historyCard(rows)}\n\n${hapusUsage()}`,
     )
     return
   }
