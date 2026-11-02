@@ -107,6 +107,9 @@ Wallet sumber : BCA
 Jenis Kebutuhan : PRIMER
 Kategori : HIBURAN/JAJAN
 Catat sebagai pengeluaran keluarga : N
+Batas anggaran : Rp 3.340.320
+Sisa anggaran : Rp 1.340.320
+Status anggaran : NORMAL (aman)
 ID : 730ad12c-df3b-4970-8da8-80cf79592c67
 Kode transaksi : 592C67
 Salah? kirim: /revisi <kode> <field> <nilai>
@@ -114,6 +117,23 @@ Salah? kirim: /revisi <kode> <field> <nilai>
 
 Pendapatan memakai format serupa (tanpa baris "Jenis Kebutuhan" dan
 "Catat sebagai pengeluaran keluarga").
+
+### Status anggaran di balasan
+
+Setiap pencatatan/penyalinan pengeluaran juga menampilkan status anggaran
+kategori untuk bulan berjalan — sama dengan kolom **MAX / SISA / STATUS** di
+tabel "Data" pada halaman Rekap per tahun:
+
+- `Batas anggaran` — batas maksimum kategori (dari anggaran nominal, atau
+  persentase pendapatan × pendapatan bulan itu).
+- `Sisa anggaran` — sisa yang masih aman. Kalau sudah lewat batas, baris ini
+  berubah jadi `Kelebihan anggaran` (nilai positif = kelebihan).
+- `Status anggaran` — `NORMAL (aman)`, `WARNING (mendekati batas)` (< 20% sisa)
+  atau `DANGER (kelebihan)`.
+
+Kategori yang tidak punya anggaran tidak menampilkan baris tambahan ini.
+Hitungannya mengikuti scope yang sama dengan aplikasi: Admin → seluruh data
+keluarga, anggota lain → datanya sendiri.
 
 ## Perintah revisi
 

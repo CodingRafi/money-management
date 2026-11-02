@@ -5,10 +5,12 @@ import {
   incomeCard,
   loadExpenseView,
   loadIncomeView,
+  budgetFields,
   type ExpenseView,
   type IncomeView,
 } from "./cards"
 import { revisiHint, formatAmount, monthYear, orDash, shortCode, type TxnCard } from "./format"
+import { getCategoryBudgetStatus } from "./budget-status"
 import type { ToolContext } from "./tools"
 
 /** Konteks revisi — tidak butuh tanggal hari ini. */
@@ -236,6 +238,9 @@ export async function reviseExpense(
 
   const updated = (await loadExpenseView(id)) ?? current
   const card = expenseCard(updated as ExpenseView, "Pengeluaran berhasil direvisi")
+  // Status anggaran ikut dihitung ulang karena nominal/kategori bisa berubah.
+  const budget = await getCategoryBudgetStatus(ctx.session, updated.category_id, year, month)
+  card.fields.push(...budgetFields(budget))
   card.footer = revisiHint(card.id)
   return { ok: true, card, message: card.title }
 }
@@ -351,6 +356,9 @@ export async function showTransaction(
     const view = await loadExpenseView(expenseId)
     if (view) {
       const card = expenseCard(view, "Data pengeluaran saat ini")
+      const { month, year } = monthYear(view.date)
+      const budget = await getCategoryBudgetStatus(ctx.session, view.category_id, year, month)
+      card.fields.push(...budgetFields(budget))
       card.footer = revisiHint(card.id)
       return { ok: true, card, message: card.title }
     }

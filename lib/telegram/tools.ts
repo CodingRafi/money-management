@@ -14,9 +14,11 @@ import {
   loanPaymentCard,
   loadExpenseView,
   loadIncomeView,
+  budgetFields,
 } from "./cards"
 import { revisiHint } from "./format"
 import { reviseExpense, reviseIncome } from "./revision"
+import { getCategoryBudgetStatus } from "./budget-status"
 
 // ── Konteks eksekusi ─────────────────────────────────────────────────────────
 
@@ -541,12 +543,29 @@ const handlers: Record<string, Handler> = {
 
     const view = await loadExpenseView(id)
     const card = view ? expenseCard(view) : null
-    if (card) card.footer = revisiHint(card.id)
+    let budget: Awaited<ReturnType<typeof getCategoryBudgetStatus>> = null
+    if (card) {
+      // Status anggaran kategori (MAX / SISA / STATUS) — sama seperti di tabel
+      // "Data" Rekap per tahun, supaya user langsung tahu sisa/kelebihannya.
+      budget = await getCategoryBudgetStatus(ctx.session, categoryId, year, month)
+      card.fields.push(...budgetFields(budget))
+      card.footer = revisiHint(card.id)
+    }
 
     return {
       ok: true,
       message: card?.title ?? `Pengeluaran "${a.name}" ${fmt(a.amount)} tanggal ${date} berhasil dicatat.`,
-      data: { id, name: a.name, amount: a.amount, date, month, year },
+      data: {
+        id, name: a.name, amount: a.amount, date, month, year,
+        ...(budget
+          ? {
+              budget_max: budget.max,
+              budget_spent: budget.spent,
+              budget_sisa: budget.sisa,
+              budget_status: budget.status,
+            }
+          : {}),
+      },
       card: card ?? undefined,
     }
   },

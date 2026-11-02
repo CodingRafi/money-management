@@ -1,5 +1,6 @@
 import { db } from "@/lib/db"
-import { escapeHtml, formatAmount, orDash, shortCode, type TxnCard } from "./format"
+import { escapeHtml, formatAmount, orDash, shortCode, type CardField, type TxnCard } from "./format"
+import type { CategoryBudgetStatus } from "./budget-status"
 
 // ── Tampilan transaksi ───────────────────────────────────────────────────────
 
@@ -69,6 +70,31 @@ export function expenseCard(view: ExpenseView, title = "Pengeluaran berhasil dit
       { label: "Catat sebagai pengeluaran keluarga", value: view.is_family_expense ? "Y" : "N" },
     ],
   }
+}
+
+/**
+ * Baris status anggaran untuk kartu pengeluaran — sama dengan kolom
+ * MAX / SISA / STATUS di tabel "Data" Rekap per tahun.
+ * Kalau kategori tidak punya anggaran, tidak ada baris tambahan sama sekali.
+ */
+export function budgetFields(status: CategoryBudgetStatus | null): CardField[] {
+  if (!status || !status.hasBudget || !status.status) return []
+
+  const over = status.sisa < 0
+  const statusText: Record<CategoryBudgetStatus["status"] & string, string> = {
+    NORMAL: "NORMAL (aman)",
+    WARNING: "WARNING (mendekati batas)",
+    DANGER: "DANGER (kelebihan)",
+  }
+
+  return [
+    { label: "Batas anggaran", value: formatAmount(status.max) },
+    {
+      label: over ? "Kelebihan anggaran" : "Sisa anggaran",
+      value: formatAmount(Math.abs(status.sisa)),
+    },
+    { label: "Status anggaran", value: statusText[status.status] ?? status.status },
+  ]
 }
 
 export function incomeCard(view: IncomeView, title = "Pendapatan berhasil ditambahkan"): TxnCard {
