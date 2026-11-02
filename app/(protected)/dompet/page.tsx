@@ -14,6 +14,12 @@ type WalletRow = {
   category_name: string
   name: string
   color: string | null
+  initial_balance: number
+  balance: number
+}
+
+function formatRp(n: number) {
+  return new Intl.NumberFormat("id-ID", { style: "currency", currency: "IDR", maximumFractionDigits: 0 }).format(n)
 }
 
 export default async function DompetPage({
@@ -33,7 +39,13 @@ export default async function DompetPage({
 
   const wallets = await db.prepare<[string], WalletRow>(
     `SELECT w.id, w.category_id, wc.name AS category_name,
-            w.name, w.color
+            w.name, w.color, w.initial_balance,
+            w.initial_balance
+              + COALESCE((SELECT SUM(amount) FROM incomes   WHERE wallet_id = w.id AND is_initial = 0), 0)
+              - COALESCE((SELECT SUM(amount) FROM expenses  WHERE wallet_id = w.id AND is_initial = 0), 0)
+              + COALESCE((SELECT SUM(amount) FROM transfers WHERE to_wallet_id   = w.id AND is_initial = 0), 0)
+              - COALESCE((SELECT SUM(amount) FROM transfers WHERE from_wallet_id = w.id AND is_initial = 0), 0)
+              AS balance
      FROM wallets w
      JOIN wallet_categories wc ON wc.id = w.category_id
      WHERE w.user_id = ? AND w.is_active = 1
@@ -110,7 +122,7 @@ export default async function DompetPage({
                     <WalletForm
                       categories={categories}
                       action={updateWallet.bind(null, w.id)}
-                      defaultValues={{ name: w.name, categoryId: w.category_id, color: w.color ?? undefined }}
+                      defaultValues={{ name: w.name, categoryId: w.category_id, color: w.color ?? undefined, initialBalance: Number(w.initial_balance) }}
                       isEdit
                       cancelHref="/dompet"
                     />
@@ -121,9 +133,17 @@ export default async function DompetPage({
                       {w.color && (
                         <span className="h-3 w-3 shrink-0 rounded-full border" style={{ backgroundColor: w.color }} />
                       )}
-                      <p className="truncate font-medium">{w.name}</p>
+                      <div className="min-w-0">
+                        <p className="truncate font-medium">{w.name}</p>
+                        <p className="text-xs text-muted-foreground tabular-nums">
+                          Saldo awal {formatRp(Number(w.initial_balance))}
+                        </p>
+                      </div>
                     </div>
                     <div className="flex shrink-0 items-center gap-3">
+                      <p className={`text-sm font-semibold tabular-nums ${Number(w.balance) < 0 ? "text-red-600" : ""}`}>
+                        {formatRp(Number(w.balance))}
+                      </p>
                       <div className="flex items-center gap-1">
                         <Button asChild variant="ghost" size="icon" className="h-8 w-8">
                           <Link href={`?edit=${w.id}`}><Pencil className="h-4 w-4" /></Link>

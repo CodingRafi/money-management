@@ -8,11 +8,21 @@ import crypto from "crypto"
 
 function uuid() { return crypto.randomUUID() }
 
+/** Saldo awal boleh negatif (mis. dompet kartu kredit). Kosong = 0. */
+function parseInitialBalance(raw: FormDataEntryValue | null): number {
+  const s = String(raw ?? "").trim()
+  if (s === "") return 0
+  const n = Number(s)
+  if (!Number.isFinite(n)) throw new Error("Saldo awal tidak valid")
+  return n
+}
+
 export async function createWallet(formData: FormData) {
   const userId     = await requireWritableUserId()
   const name       = (formData.get("name") as string)?.trim()
   const categoryId = formData.get("category_id") as string
   const color      = (formData.get("color") as string)?.trim() || null
+  const initial    = parseInitialBalance(formData.get("initial_balance"))
 
   if (!name)       throw new Error("Nama dompet tidak boleh kosong")
   if (!categoryId) throw new Error("Kategori wajib dipilih")
@@ -22,8 +32,8 @@ export async function createWallet(formData: FormData) {
   ).get(userId) as { max: number }
 
   await db.prepare(
-    "INSERT INTO wallets (id, user_id, category_id, name, is_liquid, color, sort_order) VALUES (?, ?, ?, ?, 1, ?, ?)"
-  ).run(uuid(), userId, categoryId, name, color, orderRow.max)
+    "INSERT INTO wallets (id, user_id, category_id, name, is_liquid, color, sort_order, initial_balance) VALUES (?, ?, ?, ?, 1, ?, ?, ?)"
+  ).run(uuid(), userId, categoryId, name, color, orderRow.max, initial)
 
   redirect("/dompet")
 }
@@ -32,12 +42,13 @@ export async function updateWallet(id: string, formData: FormData) {
   const userId = await requireWritableUserId()
   const name   = (formData.get("name") as string)?.trim()
   const color  = (formData.get("color") as string)?.trim() || null
+  const initial = parseInitialBalance(formData.get("initial_balance"))
 
   if (!name) throw new Error("Nama dompet tidak boleh kosong")
 
   await db.prepare(
-    "UPDATE wallets SET name = ?, is_liquid = 1, color = ?, updated_at = datetime('now') WHERE id = ? AND user_id = ? AND is_active = 1"
-  ).run(name, color, id, userId)
+    "UPDATE wallets SET name = ?, is_liquid = 1, color = ?, initial_balance = ?, updated_at = datetime('now') WHERE id = ? AND user_id = ? AND is_active = 1"
+  ).run(name, color, initial, id, userId)
 
   redirect("/dompet")
 }
