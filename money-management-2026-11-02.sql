@@ -1,5 +1,5 @@
 -- Money Management SQL Dump
--- Exported: 2026-11-02T08:04:54.434Z
+-- Exported: 2026-11-02T10:12:21.513Z
 -- User: local-user
 
 PRAGMA foreign_keys = OFF;

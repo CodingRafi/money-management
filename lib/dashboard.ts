@@ -39,13 +39,14 @@ function toIds(v: string | string[]): string[] {
 
 /**
  * Dompet tidak punya saldo tersimpan. Posisi kas diturunkan dari arus kas:
- * pemasukan − pengeluaran − BUY + SELL/DIVIDEND ± arus pinjaman (tanpa data is_initial).
+ * saldo awal dompet + pemasukan − pengeluaran − BUY + SELL/DIVIDEND ± arus pinjaman (tanpa data is_initial).
  */
 async function getCashPosition(userIdOrIds: string | string[]): Promise<{ total: number; liquid: number; non_liquid: number }> {
   const userId = toIds(userIdOrIds)
   const row = await db.prepare(`
     SELECT
-      COALESCE((SELECT SUM(amount) FROM incomes  WHERE user_id = ANY(?) AND is_initial = 0), 0)
+      COALESCE((SELECT SUM(initial_balance) FROM wallets WHERE user_id = ANY(?) AND is_active = 1), 0)
+    + COALESCE((SELECT SUM(amount) FROM incomes  WHERE user_id = ANY(?) AND is_initial = 0), 0)
     - COALESCE((SELECT SUM(amount) FROM expenses WHERE user_id = ANY(?) AND is_initial = 0), 0)
     - COALESCE((SELECT SUM(it.total_amount) FROM investment_transactions it JOIN investments i ON i.id = it.investment_id
                 WHERE i.user_id = ANY(?) AND it.type = 'BUY' AND it.is_initial = 0), 0)
@@ -56,7 +57,7 @@ async function getCashPosition(userIdOrIds: string | string[]): Promise<{ total:
     + COALESCE((SELECT SUM(CASE WHEN l.type = 'PIUTANG' THEN lp.total_paid ELSE -lp.total_paid END)
                 FROM loan_payments lp JOIN loans l ON l.id = lp.loan_id
                 WHERE l.user_id = ANY(?) AND l.is_active = 1 AND lp.is_initial = 0), 0) AS cash
-  `).get(userId, userId, userId, userId, userId, userId) as { cash: number }
+  `).get(userId, userId, userId, userId, userId, userId, userId) as { cash: number }
   return { total: row.cash, liquid: row.cash, non_liquid: 0 }
 }
 

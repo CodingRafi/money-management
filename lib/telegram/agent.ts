@@ -119,6 +119,7 @@ export async function runTelegramAgent(input: AgentInput): Promise<AgentOutput> 
   if (cards.length > 0) {
     return {
       reply: cards.map((card) => formatCard(card)).join("\n\n"),
+      html: true,
       toolsUsed,
     }
   }

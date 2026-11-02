@@ -59,10 +59,33 @@ export function getGeminiModel(): string {
   return process.env.GEMINI_MODEL?.trim() || DEFAULT_GEMINI_MODEL
 }
 
+/**
+ * Daftar API key. `GEMINI_API_KEY` boleh berisi beberapa key dipisah koma
+ * (idealnya dari project Google berbeda, karena kuota dihitung per project).
+ */
+export function getGeminiApiKeys(): string[] {
+  const keys = (process.env.GEMINI_API_KEY ?? "")
+    .split(",")
+    .map((k) => k.trim())
+    .filter(Boolean)
+  if (!keys.length) throw new Error("GEMINI_API_KEY belum diset")
+  return keys
+}
+
 export function getGeminiApiKey(): string {
-  const key = process.env.GEMINI_API_KEY
-  if (!key) throw new Error("GEMINI_API_KEY belum diset")
-  return key
+  return getGeminiApiKeys()[0]
+}
+
+/**
+ * Kombinasi (model, key) yang kuotanya habis → di-skip sampai waktu tertentu.
+ * In-memory: cukup untuk menghindari buang-buang request di instance yang sama.
+ */
+const QUOTA_COOLDOWN_MS = Number(process.env.GEMINI_QUOTA_COOLDOWN_MS ?? 60 * 60 * 1000)
+const exhausted = new Map<string, number>()
+const comboId = (model: string, key: string) => `${model}::${key.slice(-8)}`
+const isExhausted = (model: string, key: string) => {
+  const until = exhausted.get(comboId(model, key))
+  return !!until && until > Date.now()
 }
 
 // ── Tipe payload ─────────────────────────────────────────────────────────────
@@ -127,7 +150,7 @@ export interface GeminiResult {
   finishReason?: string
 }
 
-async function callOnce(model: string, opts: {
+async function callOnce(model: string, apiKey: string, opts: {
   systemInstruction: string
   contents: GeminiContent[]
   tools?: GeminiTool[]
@@ -144,7 +167,7 @@ async function callOnce(model: string, opts: {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
-        "x-goog-api-key": getGeminiApiKey(),
+        "x-goog-api-key": apiKey,
       },
       body: JSON.stringify(body),
       cache: "no-store",
@@ -171,7 +194,7 @@ async function callOnce(model: string, opts: {
     const message = data?.error?.message ?? `HTTP ${res.status}`
 
     if (res.status === 429 || /quota|rate limit|resource_exhausted/i.test(message)) {
-      // Kuota habis → mencoba model lain tidak menolong (semua pakai key yang sama).
+      // Kuota habis untuk kombinasi model+key ini → caller lanjut ke yang lain.
       throw new GeminiRequestError(
         `Kuota API Gemini habis: ${message}`,
         false,
@@ -211,34 +234,55 @@ export async function callGemini(opts: {
   const primary = getGeminiModel()
   const models = [primary, ...FALLBACK_MODELS.filter((m) => m !== primary)]
 
+  const keys = getGeminiApiKeys()
+
   let lastError: GeminiRequestError | undefined
+  let sawQuota = false
+  let tried = 0
 
+  // Kuota free tier dihitung per model per project, jadi saat satu kombinasi
+  // habis kita pindah ke model/key berikutnya secara otomatis.
   for (const model of models) {
-    for (let attempt = 1; attempt <= MAX_ATTEMPTS_PER_MODEL; attempt++) {
-      try {
-        return await callOnce(model, opts)
-      } catch (err) {
-        const e = err instanceof GeminiRequestError
-          ? err
-          : new GeminiRequestError(err instanceof Error ? err.message : String(err), false, "fatal", model)
-        lastError = e
+    for (const apiKey of keys) {
+      if (isExhausted(model, apiKey)) { sawQuota = true; continue }
+      tried++
 
-        // Kuota habis → berhenti di sini. Model lain memakai key yang sama,
-        // jadi tidak akan lebih baik.
-        if (e.kind === "quota") throw new GeminiError(e.message, "quota", model)
+      for (let attempt = 1; attempt <= MAX_ATTEMPTS_PER_MODEL; attempt++) {
+        try {
+          return await callOnce(model, apiKey, opts)
+        } catch (err) {
+          const e = err instanceof GeminiRequestError
+            ? err
+            : new GeminiRequestError(err instanceof Error ? err.message : String(err), false, "fatal", model)
 
-        // Model utama boleh dicoba 2x; model cadangan cukup 1x agar tidak
-        // menunggu terlalu lama.
-        const maxAttempts = model === primary ? MAX_ATTEMPTS_PER_MODEL : 1
-        if (!e.retryable || attempt >= maxAttempts) break
-        await sleep(1500 * attempt)
+          if (e.kind === "quota") {
+            sawQuota = true
+            exhausted.set(comboId(model, apiKey), Date.now() + QUOTA_COOLDOWN_MS)
+            lastError = e
+            break // lanjut ke kombinasi berikutnya
+          }
+          // Jangan biarkan error "busy" menimpa info kuota yang lebih penting.
+          if (!lastError || lastError.kind !== "quota") lastError = e
+
+          // Model utama boleh dicoba 2x; model cadangan cukup 1x agar tidak
+          // menunggu terlalu lama.
+          const maxAttempts = model === primary ? MAX_ATTEMPTS_PER_MODEL : 1
+          if (!e.retryable || attempt >= maxAttempts) break
+          await sleep(1500 * attempt)
+        }
       }
     }
   }
 
+  // Semua kombinasi di-skip karena cooldown kuota → tidak ada yang dicoba.
+  if (tried === 0 && sawQuota) {
+    throw new GeminiError("Kuota semua model Gemini habis", "quota", primary)
+  }
+  // Kalau ada kuota habis dan sisanya error sementara, tetap laporkan kuota
+  // hanya bila memang tidak ada model yang sempat merespons.
   throw new GeminiError(
     lastError?.message ?? "Gemini API gagal",
-    lastError?.kind ?? "busy",
+    sawQuota && lastError?.kind === "quota" ? "quota" : (lastError?.kind ?? "busy"),
     lastError?.model ?? primary,
   )
 }

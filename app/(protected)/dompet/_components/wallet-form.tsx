@@ -13,6 +13,7 @@ interface WalletFormProps {
     name?: string
     categoryId?: string
     color?: string
+    initialBalance?: number
   }
   isEdit?: boolean
   cancelHref: string
@@ -60,6 +61,20 @@ export function WalletForm({
           </select>
         </div>
       )}
+
+      <div className="flex flex-col gap-1">
+        <label className="text-sm font-medium">Saldo Awal (Rp)</label>
+        <Input
+          name="initial_balance"
+          type="number"
+          step="any"
+          defaultValue={defaultValues?.initialBalance ?? 0}
+          placeholder="0"
+        />
+        <p className="text-xs text-muted-foreground">
+          Saldo dompet sebelum transaksi yang tercatat. Boleh minus.
+        </p>
+      </div>
 
       <div className="flex flex-col gap-1">
         <label className="text-sm font-medium">Warna (opsional)</label>
