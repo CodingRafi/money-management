@@ -443,7 +443,7 @@ export async function handleTelegramUpdate(update: TelegramUpdate): Promise<void
     pushHistory(chatId, { role: "user", parts: [{ text }] })
     pushHistory(chatId, { role: "model", parts: [{ text: out.reply }] })
 
-    await sendTelegramMessageLong(chatId, out.reply)
+    await sendTelegramMessageLong(chatId, out.reply, out.html ? { parseMode: "HTML" } : {})
   } catch (err) {
     console.error("[telegram] gagal memproses pesan:", err)
     await sendTelegramMessage(chatId, friendlyErrorMessage(err))

@@ -5,7 +5,7 @@ import {
   type GeminiPart,
 } from "./gemini"
 import { executeTelegramTool, telegramTool, todayFromDb, type ToolContext } from "./tools"
-import { formatCard, type TxnCard } from "./format"
+import { CARD_DIVIDER, formatCard, type TxnCard } from "./format"
 
 /** Batas iterasi function calling per pesan (mencegah loop tak berujung). */
 const MAX_STEPS = 6
@@ -51,6 +51,8 @@ export interface AgentInput {
 
 export interface AgentOutput {
   reply: string
+  /** true = `reply` berupa HTML Telegram (kartu) → kirim dengan parse_mode HTML. */
+  html?: boolean
   /** Daftar tool yang sempat dipanggil (untuk log/audit). */
   toolsUsed: string[]
 }
@@ -110,7 +112,7 @@ export async function runTelegramAgent(input: AgentInput): Promise<AgentOutput> 
 
   /*
    * Kalau ada tool yang menghasilkan kartu (mis. pencatatan/revisi transaksi),
-   * kirim kartulah ke user — formatnya konsisten dan memuat ID + kode revisi.
+   * kirim kartulah ke user — formatnya konsisten dan memuat kode revisi.
    * Kalimat bebas dari AI tidak ikut ditampilkan supaya tidak membingungkan
    * (mis. nominal yang salah ketik AI).
    */

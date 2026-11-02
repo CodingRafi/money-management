@@ -3,7 +3,7 @@
  *
  * Balasan sengaja dibuat dari data server (bukan dari kalimat yang ditulis AI),
  * supaya formatnya konsisten, lengkap, dan bisa langsung dipakai untuk revisi:
- * setiap baris menampilkan ID transaksi + kode singkat yang bisa diketik user.
+ * setiap kartu menampilkan kode singkat yang bisa diketik user.
  */
 
 export interface CardField {
@@ -59,19 +59,66 @@ export function monthYear(date: string): { month: number; year: number } {
   return { month: m, year: y }
 }
 
+/** Ikon per label supaya kartu mudah dipindai; label tak dikenal pakai bullet. */
+const FIELD_ICONS: Record<string, string> = {
+  "Tanggal": "📅",
+  "Tanggal mulai": "📅",
+  "Jatuh tempo": "⏰",
+  "Jumlah": "💰",
+  "Nilai": "💰",
+  "Pokok": "💰",
+  "Pokok dibayar": "💰",
+  "Total dibayar": "💰",
+  "Bunga": "📈",
+  "Nama / Keterangan": "📝",
+  "Wallet sumber": "👛",
+  "Dompet asal": "👛",
+  "Dompet tujuan": "👛",
+  "Kategori": "🏷️",
+  "Jenis Kebutuhan": "🎯",
+  "Catat sebagai pengeluaran keluarga": "👨‍👩‍👧",
+  "Pinjaman": "🤝",
+  "Aset": "📊",
+  "Jenis": "🔁",
+  "Satuan": "📦",
+  "Catatan": "🗒️",
+}
+
+/** Pemisah antar kartu kalau satu balasan memuat lebih dari satu. */
+export const CARD_DIVIDER = "\n\n━━━━━━━━━━━━\n\n"
+
+/**
+ * Kartu transaksi dalam HTML Telegram (kirim dengan parse_mode HTML).
+ * Setiap bagian dipisah baris kosong supaya tidak terasa mepet:
+ * judul · rincian · kode revisi · petunjuk. Nilai dari user sudah di-escape
+ * oleh pembuat kartu (cards.ts).
+ */
 export function formatCard(card: TxnCard): string {
-  const lines = [`${card.title}:`]
-  for (const field of card.fields) {
-    lines.push(`${field.label} : ${field.value}`)
-  }
-  lines.push(`ID : ${card.id}`)
-  lines.push(`Kode revisi : ${shortCode(card.id)}`)
-  if (card.footer) lines.push(card.footer)
-  return lines.join("\n")
+  const details = card.fields
+    .map((f) => `${FIELD_ICONS[f.label] ?? "▫️"} ${f.label}: <b>${f.value}</b>`)
+    .join("\n")
+  const parts = [
+    `✅ <b>${card.title}</b>`,
+    details,
+    `🔖 Kode revisi: <code>${shortCode(card.id)}</code>`,
+  ]
+  if (card.footer) parts.push(card.footer)
+  return parts.join("\n\n")
 }
 
 /**
- * Petunjuk cara memperbaiki transaksi yang keliru.
- * Dipakai di pesan Telegram berformat HTML → tanda kurung sudut harus di-escape.
+ * Petunjuk cara memperbaiki transaksi yang keliru, dengan kode transaksi sudah
+ * terisi. Dibungkus <code> supaya cukup diketuk di Telegram untuk menyalinnya;
+ * user tinggal mengganti <field> dan <nilai>. Dipakai di pesan berformat HTML
+ * → tanda kurung sudut harus di-escape.
  */
-export const REVISI_HINT = "Salah? kirim: /revisi &lt;kode&gt; &lt;field&gt; &lt;nilai&gt;"
+export function revisiHint(id: string): string {
+  const code = shortCode(id)
+  return [
+    "<blockquote>Salah? Ketuk untuk salin, lalu ganti field &amp; nilainya:",
+    `<code>/revisi ${code} &lt;field&gt; &lt;nilai&gt;</code>`,
+    "",
+    "Field: jumlah · nama · tanggal · kategori · wallet",
+    `Contoh: <code>/revisi ${code} jumlah 30rb</code></blockquote>`,
+  ].join("\n")
+}

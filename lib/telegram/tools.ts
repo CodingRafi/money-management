@@ -15,7 +15,7 @@ import {
   loadExpenseView,
   loadIncomeView,
 } from "./cards"
-import { REVISI_HINT } from "./format"
+import { revisiHint } from "./format"
 import { reviseExpense, reviseIncome } from "./revision"
 
 // ── Konteks eksekusi ─────────────────────────────────────────────────────────
@@ -541,7 +541,7 @@ const handlers: Record<string, Handler> = {
 
     const view = await loadExpenseView(id)
     const card = view ? expenseCard(view) : null
-    if (card) card.footer = REVISI_HINT
+    if (card) card.footer = revisiHint(card.id)
 
     return {
       ok: true,
@@ -571,7 +571,7 @@ const handlers: Record<string, Handler> = {
 
     const view = await loadIncomeView(id)
     const card = view ? incomeCard(view) : null
-    if (card) card.footer = REVISI_HINT
+    if (card) card.footer = revisiHint(card.id)
 
     return {
       ok: true,

@@ -8,7 +8,7 @@ import {
   type ExpenseView,
   type IncomeView,
 } from "./cards"
-import { REVISI_HINT, formatAmount, monthYear, orDash, shortCode, type TxnCard } from "./format"
+import { revisiHint, formatAmount, monthYear, orDash, shortCode, type TxnCard } from "./format"
 import type { ToolContext } from "./tools"
 
 /** Konteks revisi — tidak butuh tanggal hari ini. */
@@ -236,7 +236,7 @@ export async function reviseExpense(
 
   const updated = (await loadExpenseView(id)) ?? current
   const card = expenseCard(updated as ExpenseView, "Pengeluaran berhasil direvisi")
-  card.footer = REVISI_HINT
+  card.footer = revisiHint(card.id)
   return { ok: true, card, message: card.title }
 }
 
@@ -336,7 +336,7 @@ export async function reviseIncome(
 
   const updated = (await loadIncomeView(id)) ?? current
   const card = incomeCard(updated as IncomeView, "Pendapatan berhasil direvisi")
-  card.footer = REVISI_HINT
+  card.footer = revisiHint(card.id)
   return { ok: true, card, message: card.title }
 }
 
@@ -351,7 +351,7 @@ export async function showTransaction(
     const view = await loadExpenseView(expenseId)
     if (view) {
       const card = expenseCard(view, "Data pengeluaran saat ini")
-      card.footer = REVISI_HINT
+      card.footer = revisiHint(card.id)
       return { ok: true, card, message: card.title }
     }
   }
@@ -361,7 +361,7 @@ export async function showTransaction(
     const view = await loadIncomeView(incomeId)
     if (view) {
       const card = incomeCard(view, "Data pendapatan saat ini")
-      card.footer = REVISI_HINT
+      card.footer = revisiHint(card.id)
       return { ok: true, card, message: card.title }
     }
   }

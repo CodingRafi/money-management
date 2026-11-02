@@ -9,7 +9,6 @@ import { requireScope } from "@/lib/scope"
 import { FamilySpendingSection } from "@/components/dashboard/FamilySpendingChart"
 import { NetWorthSection, NetWorthSkeleton } from "@/components/dashboard/NetWorthCard"
 import { CashflowSection, CashflowSkeleton } from "@/components/dashboard/CashflowCards"
-import { WalletSection, WalletSkeleton } from "@/components/dashboard/WalletCard"
 import { CategorySection, CategorySkeleton } from "@/components/dashboard/CategorySection"
 import { FamilyMemberRecap, FamilyMemberRecapSkeleton } from "@/components/dashboard/FamilyMemberRecap"
 
@@ -128,11 +127,6 @@ export default async function DashboardPage({
       {/* Wealth section — chartYear mengontrol Cashflow Bulanan */}
       <Suspense fallback={<NetWorthSkeleton />}>
         <NetWorthSection userId={userId} year={chartYear} />
-      </Suspense>
-
-      {/* ── Dompet — tidak ikut filter bulan ── */}
-      <Suspense fallback={<WalletSkeleton />}>
-        <WalletSection userId={scope.targetUserId} />
       </Suspense>
 
       {/* ── Cashflow — pakai filter bulan ── */}
