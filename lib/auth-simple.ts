@@ -127,6 +127,40 @@ export async function validateSession(token: string): Promise<SessionData | null
   }
 }
 
+/**
+ * Membangun SessionData untuk user tanpa token sesi.
+ *
+ * Dipakai oleh jalur non-web (mis. bot Telegram) yang sudah membuktikan
+ * kepemilikan akun lewat mekanisme linking sendiri. Data yang dikembalikan
+ * identik dengan hasil `validateSession`, jadi seluruh aturan BUSINESS
+ * (batas belanja anak, visibilitas kategori, kepemilikan dompet) tetap berlaku.
+ */
+export async function getSessionForUser(userId: string): Promise<SessionData | null> {
+  const row = await db.prepare(
+    `SELECT u.id AS user_id, u.username, u.role,
+            m.household_id, m.role AS household_role
+     FROM "user" u
+     LEFT JOIN household_members m ON m.user_id = u.id
+     WHERE u.id = ?`
+  ).get(userId) as
+    | {
+        user_id: string
+        username: string | null
+        role: UserRole
+        household_id: string | null
+        household_role: HouseholdRole | null
+      }
+    | undefined
+  if (!row) return null
+  return {
+    userId: row.user_id,
+    username: row.username ?? "",
+    role: row.role,
+    householdId: row.household_id,
+    householdRole: row.household_role,
+  }
+}
+
 export async function deleteSession(token: string): Promise<void> {
   await db.prepare("DELETE FROM user_sessions WHERE token = ?").run(token)
 }

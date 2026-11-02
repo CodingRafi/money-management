@@ -133,15 +133,15 @@ export default async function InvestasiPage({
         </div>
       </div>
 
-      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-        <Card className="sm:col-span-1">
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+        <Card>
           <CardContent className="p-4">
             <p className="text-xs text-muted-foreground mb-1">Total Investasi Saat Ini</p>
             <p className="text-xl font-bold text-emerald-600 tabular-nums">{formatRupiah(modalAktif)}</p>
             <p className="text-xs text-muted-foreground mt-1">BUY − SELL (semua waktu)</p>
           </CardContent>
         </Card>
-        <Card className="sm:col-span-1">
+        <Card>
           <CardContent className="p-4">
             <p className="text-xs text-muted-foreground mb-1">Realized P/L Tahun Ini</p>
             {realizedCount === 0 && totalDividenTahun === 0 ? (

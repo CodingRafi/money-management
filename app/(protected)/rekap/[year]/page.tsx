@@ -1,6 +1,7 @@
 import { redirect } from "next/navigation"
 import { db } from "@/lib/db"
 import { requireHouseholdSession } from "@/lib/session"
+import { requireScope } from "@/lib/scope"
 import { Card, CardContent, CardHeader } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
@@ -48,9 +49,9 @@ function expenseStatus(pct: number, max: number, spent: number): "DANGER" | "WAR
   return "NORMAL"
 }
 
-type IncomeRow      = { id: string; date: string; name: string; category_id: string | null; category_name: string | null; wallet_id: string | null; wallet_name: string | null; amount: number; is_initial: number }
-type ExpenseRow     = { id: string; date: string; name: string; wallet_id: string | null; wallet_name: string | null; category_id: string | null; category_name: string | null; needs_type: string; amount: number; is_initial: number; is_family_expense: number }
-type TransferRow    = { id: string; date: string; amount: number; notes: string | null; from_wallet_name: string; from_wallet_color: string | null; to_wallet_name: string; to_wallet_color: string | null }
+type IncomeRow      = { id: string; user_id: string; date: string; name: string; category_id: string | null; category_name: string | null; wallet_id: string | null; wallet_name: string | null; amount: number; is_initial: number }
+type ExpenseRow     = { id: string; user_id: string; date: string; name: string; wallet_id: string | null; wallet_name: string | null; category_id: string | null; category_name: string | null; needs_type: string; amount: number; is_initial: number; is_family_expense: number }
+type TransferRow    = { id: string; user_id: string; date: string; amount: number; notes: string | null; from_wallet_name: string; from_wallet_color: string | null; to_wallet_name: string; to_wallet_color: string | null }
 type LiquidWallet   = { id: string; name: string; color: string | null }
 type IncomeCatRow   = { id: string; name: string }
 type ExpenseCatRow  = { id: string; name: string; type_id: string; type_name: string; default_percentage: number }
@@ -63,6 +64,16 @@ export default async function YearDetailPage({
   searchParams: Promise<Record<string, string | string[] | undefined>>
 }) {
   const { userId, householdId } = await requireHouseholdSession()
+
+  // Scope tampilan: "Keluarga" (gabungan anggota) atau "Personal" per anggota.
+  // Pembacaan data mengikuti scope; penulisan tetap milik user yang login.
+  const scope        = await requireScope()
+  const readIds      = scope.userIds.length > 0 ? scope.userIds : [userId]
+  const isFamilyScope = scope.mode === "family"
+  const readOnly     = scope.readOnly
+  const memberNames  = new Map(scope.members.map((m) => [m.user_id, m.name]))
+  // Di mode personal, beban rumah tangga (is_family_expense) tidak dihitung.
+  const famClause    = isFamilyScope ? "" : " AND is_family_expense = 0"
 
   const { year: yearStr } = await params
   const year = parseInt(yearStr)
@@ -101,35 +112,35 @@ export default async function YearDetailPage({
   ).all(userId) as { id: string; name: string }[]
 
   // ── Monthly data ──────────────────────────────────────────────────────────────
-  const incomes = await db.prepare<[string, number, number], IncomeRow>(
-    `SELECT i.id, i.date, i.name, i.category_id, ic.name AS category_name,
+  const incomes = await db.prepare<[string[], number, number], IncomeRow>(
+    `SELECT i.id, i.user_id, i.date, i.name, i.category_id, ic.name AS category_name,
             i.wallet_id, w.name AS wallet_name, i.amount, i.is_initial
      FROM incomes i
      LEFT JOIN income_categories ic ON ic.id = i.category_id
      LEFT JOIN wallets w ON w.id = i.wallet_id
-     WHERE i.user_id = ? AND i.year = ? AND i.month = ?
+     WHERE i.user_id = ANY(?) AND i.year = ? AND i.month = ?
      ORDER BY i.date DESC, i.created_at DESC`
-  ).all(userId, year, month) as IncomeRow[]
+  ).all(readIds, year, month) as IncomeRow[]
 
-  const expenses = await db.prepare<[string, number, number], ExpenseRow>(
-    `SELECT e.id, e.date, e.name, e.wallet_id, w.name AS wallet_name,
+  const expenses = await db.prepare<[string[], number, number], ExpenseRow>(
+    `SELECT e.id, e.user_id, e.date, e.name, e.wallet_id, w.name AS wallet_name,
             e.category_id, ec.name AS category_name, e.needs_type, e.amount, e.is_initial, e.is_family_expense
      FROM expenses e
      LEFT JOIN expense_categories ec ON ec.id = e.category_id
      LEFT JOIN wallets w ON w.id = e.wallet_id
-     WHERE e.user_id = ? AND e.year = ? AND e.month = ?
+     WHERE e.user_id = ANY(?) AND e.year = ? AND e.month = ?${famClause}
      ORDER BY e.date DESC, e.created_at DESC`
-  ).all(userId, year, month) as ExpenseRow[]
+  ).all(readIds, year, month) as ExpenseRow[]
 
   // ── Yearly aggregate data (replaces yearly_recap table) ───────────────────────
-  const totalIncomeRow  = await db.prepare<[string, number]>("SELECT COALESCE(SUM(amount), 0) AS total FROM incomes  WHERE user_id=? AND year=?").get(userId, year) as { total: number }
-  const totalExpenseRow = await db.prepare<[string, number]>("SELECT COALESCE(SUM(amount), 0) AS total FROM expenses WHERE user_id=? AND year=? AND is_family_expense=0").get(userId, year) as { total: number }
+  const totalIncomeRow  = await db.prepare<[string[], number]>("SELECT COALESCE(SUM(amount), 0) AS total FROM incomes  WHERE user_id=ANY(?) AND year=?").get(readIds, year) as { total: number }
+  const totalExpenseRow = await db.prepare<[string[], number]>(`SELECT COALESCE(SUM(amount), 0) AS total FROM expenses WHERE user_id=ANY(?) AND year=?${famClause}`).get(readIds, year) as { total: number }
   const totalIncome  = totalIncomeRow.total
   const totalExpense = totalExpenseRow.total
   const hasData      = totalIncome > 0 || totalExpense > 0
 
-  const incomeMoRows  = await db.prepare<[string, number]>("SELECT month, COALESCE(SUM(amount),0) AS total FROM incomes  WHERE user_id=? AND year=? GROUP BY month").all(userId, year)  as { month: number; total: number }[]
-  const expenseMoRows = await db.prepare<[string, number]>("SELECT month, COALESCE(SUM(amount),0) AS total FROM expenses WHERE user_id=? AND year=? AND is_family_expense=0 GROUP BY month").all(userId, year) as { month: number; total: number }[]
+  const incomeMoRows  = await db.prepare<[string[], number]>("SELECT month, COALESCE(SUM(amount),0) AS total FROM incomes  WHERE user_id=ANY(?) AND year=? GROUP BY month").all(readIds, year)  as { month: number; total: number }[]
+  const expenseMoRows = await db.prepare<[string[], number]>(`SELECT month, COALESCE(SUM(amount),0) AS total FROM expenses WHERE user_id=ANY(?) AND year=?${famClause} GROUP BY month`).all(readIds, year) as { month: number; total: number }[]
   const incomeMo: Record<string, number>  = {}
   const expenseMo: Record<string, number> = {}
   for (const r of incomeMoRows)  incomeMo[String(r.month)]  = r.total
@@ -138,9 +149,9 @@ export default async function YearDetailPage({
   const avgMonthlyExpense  = expenseMoRows.length > 0 ? totalExpense / expenseMoRows.length : null
 
   // expense breakdown by category & month
-  const expByCatMonthRows = await db.prepare<[string, number]>(
-    "SELECT category_id, month, COALESCE(SUM(amount),0) AS total FROM expenses WHERE user_id=? AND year=? AND is_family_expense=0 AND category_id IS NOT NULL GROUP BY category_id, month"
-  ).all(userId, year) as { category_id: string; month: number; total: number }[]
+  const expByCatMonthRows = await db.prepare<[string[], number]>(
+    `SELECT category_id, month, COALESCE(SUM(amount),0) AS total FROM expenses WHERE user_id=ANY(?) AND year=?${famClause} AND category_id IS NOT NULL GROUP BY category_id, month`
+  ).all(readIds, year) as { category_id: string; month: number; total: number }[]
   const expBdSpendMap = new Map<string, Record<string, number>>()
   for (const r of expByCatMonthRows) {
     if (!expBdSpendMap.has(r.category_id)) expBdSpendMap.set(r.category_id, {})
@@ -148,22 +159,22 @@ export default async function YearDetailPage({
   }
 
   // prev year income_monthly (for income growth Jan vs Dec prev year)
-  const prevIncomeMoRows = await db.prepare<[string, number]>("SELECT month, COALESCE(SUM(amount),0) AS total FROM incomes WHERE user_id=? AND year=? GROUP BY month").all(userId, year - 1) as { month: number; total: number }[]
+  const prevIncomeMoRows = await db.prepare<[string[], number]>("SELECT month, COALESCE(SUM(amount),0) AS total FROM incomes WHERE user_id=ANY(?) AND year=? GROUP BY month").all(readIds, year - 1) as { month: number; total: number }[]
   const prevIncomeMo: Record<string, number> = {}
   for (const r of prevIncomeMoRows) prevIncomeMo[String(r.month)] = r.total
   const hasPrevYear = prevIncomeMoRows.length > 0
 
   // ── Report charts ─────────────────────────────────────────────────────────────
-  const needsChartRows = await db.prepare<[string, number, number]>(
-    "SELECT needs_type AS label, COALESCE(SUM(amount),0) AS total FROM expenses WHERE user_id=? AND year=? AND month=? AND is_family_expense=0 GROUP BY needs_type"
-  ).all(userId, year, month) as { label: string; total: number }[]
+  const needsChartRows = await db.prepare<[string[], number, number]>(
+    `SELECT needs_type AS label, COALESCE(SUM(amount),0) AS total FROM expenses WHERE user_id=ANY(?) AND year=? AND month=?${famClause} GROUP BY needs_type`
+  ).all(readIds, year, month) as { label: string; total: number }[]
 
-  const catChartRows = await db.prepare<[string, number, number]>(
+  const catChartRows = await db.prepare<[string[], number, number]>(
     `SELECT COALESCE(ec.name, 'Lainnya') AS label, COALESCE(SUM(e.amount),0) AS total
      FROM expenses e LEFT JOIN expense_categories ec ON ec.id = e.category_id
-     WHERE e.user_id=? AND e.year=? AND e.month=? AND e.is_family_expense=0
+     WHERE e.user_id=ANY(?) AND e.year=? AND e.month=?${famClause}
      GROUP BY ec.name ORDER BY SUM(e.amount) DESC`
-  ).all(userId, year, month) as { label: string; total: number }[]
+  ).all(readIds, year, month) as { label: string; total: number }[]
 
   // ── Income breakdown (only when detail open) ──────────────────────────────────
   let incomeBdRaw: { category_name: string; sort_order: number; month: number | null; total: number }[] = []
@@ -171,56 +182,61 @@ export default async function YearDetailPage({
     incomeBdRaw = await db.prepare<unknown[]>(
       `SELECT ic.name AS category_name, ic.sort_order, i.month, COALESCE(SUM(i.amount),0) AS total
        FROM income_categories ic
-       LEFT JOIN incomes i ON i.category_id = ic.id AND i.year = ? AND i.user_id = ?
+       LEFT JOIN incomes i ON i.category_id = ic.id AND i.year = ? AND i.user_id = ANY(?)
        WHERE ic.household_id = ? AND ic.is_hidden = 0
        GROUP BY ic.name, ic.sort_order, i.month
        ORDER BY ic.sort_order, ic.name, i.month`
-    ).all(year, userId, householdId) as { category_name: string; sort_order: number; month: number | null; total: number }[]
+    ).all(year, readIds, householdId) as { category_name: string; sort_order: number; month: number | null; total: number }[]
   }
 
   // ── Budget % per category per month ───────────────────────────────────────────
+  // Di mode keluarga, anggaran tiap anggota dijumlahkan (masing-masing % dari
+  // pendapatan anggota → konsisten dengan pendapatan keluarga yang digabung).
   let budgetRows:      { cat_id: string; month: number; pct: number }[] = []
   let typeAllocRows:   { id: string; name: string; allocation: number }[] = []
   let nominalRows:     { category_id: string; nominal: number }[] = []
   let maxExpensePct    = 100
   if (view === "report" && detail === "pengeluaran") {
-    budgetRows = await db.prepare<[string, number]>(
-      "SELECT category_id AS cat_id, month, percentage AS pct FROM budgets WHERE user_id = ? AND year = ?"
-    ).all(userId, year) as { cat_id: string; month: number; pct: number }[]
+    budgetRows = await db.prepare<[string[], number]>(
+      `SELECT category_id AS cat_id, month, SUM(percentage) AS pct FROM budgets
+       WHERE user_id = ANY(?) AND year = ?
+       GROUP BY category_id, month`
+    ).all(readIds, year) as { cat_id: string; month: number; pct: number }[]
 
-    const yearBudgetRow = await db.prepare<[string, number]>(
-      "SELECT max_expense_pct FROM year_budget_settings WHERE user_id=? AND year=?"
-    ).get(userId, year) as { max_expense_pct: number } | undefined
+    const yearBudgetRow = await db.prepare<[string[], number]>(
+      "SELECT MAX(max_expense_pct) AS max_expense_pct FROM year_budget_settings WHERE user_id=ANY(?) AND year=?"
+    ).get(readIds, year) as { max_expense_pct: number } | undefined
     maxExpensePct = yearBudgetRow?.max_expense_pct ?? 100
 
-    typeAllocRows = await db.prepare<[string, string, number, string]>(
-      `SELECT et.id, et.name, COALESCE(ta.percentage, 0) AS allocation
+    typeAllocRows = await db.prepare<[string[], string[], number, string]>(
+      `SELECT et.id, et.name, COALESCE(SUM(ta.percentage), 0) AS allocation
        FROM expense_types et
-       LEFT JOIN type_allocations ta ON ta.type_id = et.id AND ta.user_id = ?
-         AND ta.year = (SELECT MAX(t2.year) FROM type_allocations t2 WHERE t2.user_id = ? AND t2.type_id = et.id AND t2.year <= ?)
+       LEFT JOIN type_allocations ta ON ta.type_id = et.id AND ta.user_id = ANY(?)
+         AND ta.year = (SELECT MAX(t2.year) FROM type_allocations t2 WHERE t2.user_id = ANY(?) AND t2.type_id = et.id AND t2.year <= ?)
        WHERE et.household_id = ?
+       GROUP BY et.id, et.name
        ORDER BY et.sort_order`
-    ).all(userId, userId, year, householdId) as { id: string; name: string; allocation: number }[]
+    ).all(readIds, readIds, year, householdId) as { id: string; name: string; allocation: number }[]
 
-    nominalRows = await db.prepare<[string, number]>(
-      "SELECT category_id, nominal FROM category_nominal_budgets WHERE user_id=? AND year=?"
-    ).all(userId, year) as { category_id: string; nominal: number }[]
+    nominalRows = await db.prepare<[string[], number]>(
+      "SELECT category_id, SUM(nominal) AS nominal FROM category_nominal_budgets WHERE user_id=ANY(?) AND year=? GROUP BY category_id"
+    ).all(readIds, year) as { category_id: string; nominal: number }[]
   }
 
   // ── Transfers ─────────────────────────────────────────────────────────────────
   let transfers: TransferRow[]  = []
   let liquidWallets: LiquidWallet[] = []
   if (tab === "transfer") {
-    transfers = await db.prepare<[string, number, number]>(
-      `SELECT t.id, t.date, t.amount, t.notes,
+    transfers = await db.prepare<[string[], number, number]>(
+      `SELECT t.id, t.user_id, t.date, t.amount, t.notes,
               fw.name AS from_wallet_name, fw.color AS from_wallet_color,
               tw.name AS to_wallet_name,   tw.color AS to_wallet_color
        FROM transfers t
        JOIN wallets fw ON fw.id = t.from_wallet_id
        JOIN wallets tw ON tw.id = t.to_wallet_id
-       WHERE t.user_id=? AND t.year=? AND t.month=?
+       WHERE t.user_id=ANY(?) AND t.year=? AND t.month=?
        ORDER BY t.date DESC, t.created_at DESC`
-    ).all(userId, year, month) as TransferRow[]
+    ).all(readIds, year, month) as TransferRow[]
 
     liquidWallets = await db.prepare<[string]>(
       "SELECT id, name, color FROM wallets WHERE user_id=? AND is_active=1 AND is_liquid=1 ORDER BY sort_order"
@@ -354,7 +370,13 @@ export default async function YearDetailPage({
           </Button>
           <div>
             <h1 className="text-2xl font-bold">Cashflow {year}</h1>
-            <p className="text-sm text-muted-foreground">Detail keuangan per bulan</p>
+            <p className="text-sm text-muted-foreground">
+              {isFamilyScope
+                ? "Detail keuangan gabungan seluruh anggota keluarga"
+                : scope.readOnly
+                  ? "Detail keuangan anggota lain (hanya baca)"
+                  : "Detail keuangan per bulan"}
+            </p>
           </div>
         </div>
         <Button asChild variant="outline" size="sm">
@@ -683,7 +705,7 @@ export default async function YearDetailPage({
           <div className="space-y-4 min-w-0">
             <div className="flex items-center justify-between">
               <h2 className="text-lg font-semibold">{MONTHS[month - 1]} {year}</h2>
-              {!showNew && !showReport && !editId && isActive && (
+              {!showNew && !showReport && !editId && isActive && !readOnly && (
                 <Button asChild size="sm">
                   <Link href={tambahHref}><Plus className="h-4 w-4 mr-1" />Tambah {tabLabel[tab]}</Link>
                 </Button>
@@ -699,7 +721,7 @@ export default async function YearDetailPage({
               ))}
             </div>
 
-            {showNew && !showReport && !editId && (
+            {showNew && !showReport && !editId && !readOnly && (
               <Card>
                 <CardHeader className="pb-2 pt-4 px-4">
                   <div className="flex items-center justify-between">
@@ -722,6 +744,16 @@ export default async function YearDetailPage({
               const expenseRow = tab === "pengeluaran" ? expenses.find((r) => r.id === editId) : null
               const found      = incomeRow ?? expenseRow
               if (!found) return null
+              // Transaksi milik anggota lain hanya bisa dilihat, tidak diedit.
+              if (found.user_id !== userId) {
+                return (
+                  <Card className="border-amber-300/60 bg-amber-50/60 dark:border-amber-500/30 dark:bg-amber-950/20">
+                    <CardContent className="px-4 py-3 text-sm text-amber-900 dark:text-amber-200">
+                      Transaksi ini milik anggota lain — hanya bisa dilihat, tidak dapat diubah.
+                    </CardContent>
+                  </Card>
+                )
+              }
               return (
                 <Card className="border-primary/40">
                   <CardHeader className="pb-2 pt-4 px-4">
@@ -775,20 +807,27 @@ export default async function YearDetailPage({
                                 <div className="flex items-center gap-2">
                                   {row.name}
                                   {!!row.is_initial && <span className="rounded px-1.5 py-0.5 text-[10px] font-bold bg-amber-100 text-amber-700">AWAL</span>}
+                                  {isFamilyScope && row.user_id !== userId && (
+                                    <span className="rounded px-1.5 py-0.5 text-[10px] font-bold bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-300">
+                                      {memberNames.get(row.user_id) ?? "Anggota"}
+                                    </span>
+                                  )}
                                 </div>
                               </td>
                               <td className="px-4 py-3 text-muted-foreground">{row.category_name ?? "—"}</td>
                               <td className="px-4 py-3 text-muted-foreground">{row.wallet_name ?? "—"}</td>
                               <td className="px-4 py-3 text-right tabular-nums font-medium text-emerald-600">{formatRupiah(row.amount)}</td>
                               <td className="px-3 py-3 text-right">
-                                <div className="flex items-center justify-end gap-0.5">
-                                  <Button asChild variant="ghost" size="icon" className="h-7 w-7">
-                                    <Link href={`${base}?bulan=${month}&tab=pendapatan&edit=${row.id}`}><Pencil className="h-3.5 w-3.5" /></Link>
-                                  </Button>
-                                  <form action={deleteIncome.bind(null, row.id, yearStr, String(month))}>
-                                    <Button type="submit" variant="ghost" size="icon" className="h-7 w-7 text-destructive hover:text-destructive"><Trash2 className="h-3.5 w-3.5" /></Button>
-                                  </form>
-                                </div>
+                                {row.user_id === userId && (
+                                  <div className="flex items-center justify-end gap-0.5">
+                                    <Button asChild variant="ghost" size="icon" className="h-7 w-7">
+                                      <Link href={`${base}?bulan=${month}&tab=pendapatan&edit=${row.id}`}><Pencil className="h-3.5 w-3.5" /></Link>
+                                    </Button>
+                                    <form action={deleteIncome.bind(null, row.id, yearStr, String(month))}>
+                                      <Button type="submit" variant="ghost" size="icon" className="h-7 w-7 text-destructive hover:text-destructive"><Trash2 className="h-3.5 w-3.5" /></Button>
+                                    </form>
+                                  </div>
+                                )}
                               </td>
                             </tr>
                           ))}
@@ -846,6 +885,11 @@ export default async function YearDetailPage({
                                       {row.name}
                                       {!!row.is_initial && <span className="rounded px-1.5 py-0.5 text-[10px] font-bold bg-amber-100 text-amber-700">AWAL</span>}
                                       {!!row.is_family_expense && <span className="rounded px-1.5 py-0.5 text-[10px] font-bold bg-emerald-100 text-emerald-700">KELUARGA</span>}
+                                      {isFamilyScope && row.user_id !== userId && (
+                                        <span className="rounded px-1.5 py-0.5 text-[10px] font-bold bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-300">
+                                          {memberNames.get(row.user_id) ?? "Anggota"}
+                                        </span>
+                                      )}
                                     </div>
                                   </td>
                                   <td className="px-4 py-3 text-muted-foreground">{row.wallet_name ?? "—"}</td>
@@ -855,14 +899,16 @@ export default async function YearDetailPage({
                                   </td>
                                   <td className="px-4 py-3 text-right tabular-nums font-medium text-red-600">{formatRupiah(row.amount)}</td>
                                   <td className="px-3 py-3 text-right">
-                                    <div className="flex items-center justify-end gap-0.5">
-                                      <Button asChild variant="ghost" size="icon" className="h-7 w-7">
-                                        <Link href={`${base}?bulan=${month}&tab=pengeluaran&edit=${row.id}`}><Pencil className="h-3.5 w-3.5" /></Link>
-                                      </Button>
-                                      <form action={deleteExpense.bind(null, row.id, yearStr, String(month))}>
-                                        <Button type="submit" variant="ghost" size="icon" className="h-7 w-7 text-destructive hover:text-destructive"><Trash2 className="h-3.5 w-3.5" /></Button>
-                                      </form>
-                                    </div>
+                                    {row.user_id === userId && (
+                                      <div className="flex items-center justify-end gap-0.5">
+                                        <Button asChild variant="ghost" size="icon" className="h-7 w-7">
+                                          <Link href={`${base}?bulan=${month}&tab=pengeluaran&edit=${row.id}`}><Pencil className="h-3.5 w-3.5" /></Link>
+                                        </Button>
+                                        <form action={deleteExpense.bind(null, row.id, yearStr, String(month))}>
+                                          <Button type="submit" variant="ghost" size="icon" className="h-7 w-7 text-destructive hover:text-destructive"><Trash2 className="h-3.5 w-3.5" /></Button>
+                                        </form>
+                                      </div>
+                                    )}
                                   </td>
                                 </tr>
                               ))}
@@ -919,11 +965,20 @@ export default async function YearDetailPage({
                                 </div>
                               </td>
                               <td className="px-4 py-3 text-right tabular-nums font-medium text-blue-600">{formatRupiah(row.amount)}</td>
-                              <td className="px-4 py-3 text-muted-foreground">{row.notes ?? "—"}</td>
+                              <td className="px-4 py-3 text-muted-foreground">
+                                {row.notes ?? "—"}
+                                {isFamilyScope && row.user_id !== userId && (
+                                  <span className="ml-2 rounded px-1.5 py-0.5 text-[10px] font-bold bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-300">
+                                    {memberNames.get(row.user_id) ?? "Anggota"}
+                                  </span>
+                                )}
+                              </td>
                               <td className="px-3 py-3 text-right">
-                                <form action={deleteTransfer.bind(null, row.id, yearStr, String(month))}>
-                                  <Button type="submit" variant="ghost" size="icon" className="h-7 w-7 text-destructive hover:text-destructive"><Trash2 className="h-3.5 w-3.5" /></Button>
-                                </form>
+                                {row.user_id === userId && (
+                                  <form action={deleteTransfer.bind(null, row.id, yearStr, String(month))}>
+                                    <Button type="submit" variant="ghost" size="icon" className="h-7 w-7 text-destructive hover:text-destructive"><Trash2 className="h-3.5 w-3.5" /></Button>
+                                  </form>
+                                )}
                               </td>
                             </tr>
                           ))}

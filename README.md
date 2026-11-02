@@ -98,6 +98,19 @@ Jalankan migrasi sekali di server sebelum aplikasi dipakai:
 DATABASE_URL=... npm run migrate
 ```
 
+## Integrasi Telegram (AI)
+
+Anggota keluarga bisa mencatat pengeluaran, pemasukan, transfer, pinjaman, dan
+investasi lewat chat Telegram — termasuk mengirim **foto struk** yang nominalnya
+dibaca otomatis oleh Gemini (function calling).
+
+```bash
+npm run migrate              # buat tabel telegram_links & telegram_link_codes
+bun scripts/telegram-setup.ts  # pasang webhook (perlu TELEGRAM_BOT_TOKEN & SECRET)
+```
+
+Panduan lengkap: [`docs/TELEGRAM.md`](docs/TELEGRAM.md).
+
 ## Command
 
 ```bash

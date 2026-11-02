@@ -5,6 +5,7 @@ import { memberRepository } from "@/repositories/member.repository"
 import { licenseRepository } from "@/repositories/license.repository"
 import { licenseEventRepository } from "@/repositories/license-event.repository"
 import { evaluateLicense } from "@/dtos/license"
+import type { UserRole } from "@/lib/auth-simple"
 
 export class ServiceError extends Error {}
 
@@ -21,11 +22,23 @@ export interface NewMemberInput {
    * expired/suspended (justru itu tugasnya mengelola lisensi).
    */
   ignoreLicenseState?: boolean
+  /**
+   * Peran pelaku. Penambahan anggota HANYA boleh dilakukan `super_admin`;
+   * kepala keluarga (admin) tidak boleh menambah anggota.
+   */
+  actorRole: UserRole
 }
 
 export const memberService = {
-  /** Menambah anggota dengan validasi kuota lisensi. Untuk Admin Keluarga & Super Admin. */
+  /**
+   * Menambah anggota dengan validasi kuota lisensi.
+   *
+   * Hanya Super Admin yang boleh menambah anggota —-see {@link NewMemberInput.actorRole}.
+   */
   async addMember(input: NewMemberInput): Promise<string> {
+    if (input.actorRole !== "super_admin") {
+      throw new ServiceError("Hanya pengelola aplikasi (Super Admin) yang dapat menambah anggota")
+    }
     const license = await licenseRepository.findByHousehold(input.householdId)
     if (!license) throw new ServiceError("Lisensi keluarga tidak ditemukan")
     if (!input.ignoreLicenseState && !evaluateLicense(license).ok) {
@@ -69,13 +82,17 @@ export const memberService = {
    * household_id divalidasi (wajib ada) sebelum dipakai.
    */
   async addMemberBySuperAdmin(
-    input: Omit<NewMemberInput, "ignoreLicenseState">,
+    input: Omit<NewMemberInput, "ignoreLicenseState" | "actorRole">,
     actorId: string,
   ): Promise<string> {
     const household = await licenseRepository.findHousehold(input.householdId)
     if (!household) throw new ServiceError("Keluarga tidak ditemukan")
 
-    const userId = await memberService.addMember({ ...input, ignoreLicenseState: true })
+    const userId = await memberService.addMember({
+      ...input,
+      ignoreLicenseState: true,
+      actorRole: "super_admin",
+    })
 
     await licenseEventRepository.insert({
       id: crypto.randomUUID(),

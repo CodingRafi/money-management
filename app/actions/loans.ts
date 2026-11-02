@@ -4,11 +4,8 @@ import { revalidatePath } from "next/cache"
 import { redirect } from "next/navigation"
 import { db } from "@/lib/db"
 import { requireWritableUserId } from "@/lib/scope"
-import { calcNextInterest, calcLoanStatus, type InterestType } from "@/lib/loan"
-import crypto from "crypto"
-
-function uuid() { return crypto.randomUUID() }
-function formatRupiah(n: number) { return new Intl.NumberFormat("id-ID", { style: "currency", currency: "IDR", maximumFractionDigits: 0 }).format(n) }
+import { calcLoanStatus, type InterestType } from "@/lib/loan"
+import { financeService } from "@/services/finance.service"
 
 export async function createLoan(formData: FormData) {
   const userId          = await requireWritableUserId()
@@ -32,17 +29,18 @@ export async function createLoan(formData: FormData) {
   if (!startDate)                            throw new Error("Tanggal mulai wajib diisi")
   if (!walletId)                             throw new Error("Dompet wajib dipilih")
 
-  let loanId!: string
-  await db.transaction(async () => {
-    const wallet = await db.prepare(
-      "SELECT user_id FROM wallets WHERE id=? AND is_active=1"
-    ).get(walletId) as { user_id: string } | undefined
-    if (!wallet || wallet.user_id !== userId) throw new Error("Dompet tidak ditemukan")
-
-    loanId = uuid()
-    await db.prepare(
-      "INSERT INTO loans (id, user_id, recorded_by, type, name, description, principal_amount, interest_rate, interest_type, start_date, due_date, wallet_id, is_initial, payment_likelihood) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
-    ).run(loanId, userId, userId, type, name, description, principalAmount, interestRate, interestType, startDate, dueDate, walletId, isInitial, paymentLikelihood)
+  const loanId = await financeService.createLoan(userId, {
+    type: type as "PIUTANG" | "HUTANG",
+    name,
+    description,
+    principalAmount,
+    interestRate,
+    interestType: interestType as InterestType,
+    startDate,
+    dueDate,
+    walletId,
+    isInitial: isInitial === 1,
+    paymentLikelihood: paymentLikelihood as "LANCAR" | "MERAGUKAN" | "MACET" | null,
   })
 
   redirect(`/pinjaman/${loanId}`)
@@ -106,31 +104,11 @@ export async function addLoanPayment(loanId: string, formData: FormData) {
   if (isNaN(principalPaid) || principalPaid <= 0) throw new Error("Jumlah pokok tidak valid")
   if (!date)                                      throw new Error("Tanggal wajib diisi")
 
-  await db.transaction(async () => {
-    const loan = await db.prepare(
-      "SELECT type, principal_amount, interest_rate, interest_type, due_date, wallet_id, user_id FROM loans WHERE id=? AND is_active=1"
-    ).get(loanId) as { type: string; principal_amount: number; interest_rate: number; interest_type: string; due_date: string | null; wallet_id: string; user_id: string } | undefined
-    if (!loan || loan.user_id !== userId) throw new Error("Pinjaman tidak ditemukan")
-
-    const paidRow = await db.prepare(
-      "SELECT COALESCE(SUM(principal_paid), 0) AS total_pp FROM loan_payments WHERE loan_id=?"
-    ).get(loanId) as { total_pp: number }
-    const remainingPrincipal = loan.principal_amount - paidRow.total_pp
-
-    if (principalPaid > remainingPrincipal) {
-      throw new Error(`Melebihi sisa pokok. Sisa: ${formatRupiah(remainingPrincipal)}`)
-    }
-
-    const interestPaid = calcNextInterest(loan.principal_amount, loan.interest_rate, loan.interest_type as InterestType, remainingPrincipal)
-    const totalPaid    = principalPaid + interestPaid
-
-    await db.prepare(
-      "INSERT INTO loan_payments (id, loan_id, principal_paid, interest_paid, total_paid, date, notes, is_initial) VALUES (?, ?, ?, ?, ?, ?, ?, ?)"
-    ).run(uuid(), loanId, principalPaid, interestPaid, totalPaid, date, notes, isInitial)
-
-    const newRemaining = remainingPrincipal - principalPaid
-    const newStatus    = calcLoanStatus(loan.due_date, newRemaining)
-    await db.prepare("UPDATE loans SET status=?, updated_at=datetime('now') WHERE id=?").run(newStatus, loanId)
+  await financeService.addLoanPayment(userId, loanId, {
+    principalPaid,
+    date,
+    notes,
+    isInitial: isInitial === 1,
   })
 
   revalidatePath(`/pinjaman/${loanId}`)

@@ -4,9 +4,7 @@ import { revalidatePath } from "next/cache"
 import { redirect } from "next/navigation"
 import { db } from "@/lib/db"
 import { requireWritableUserId } from "@/lib/scope"
-import crypto from "crypto"
-
-function uuid() { return crypto.randomUUID() }
+import { financeService } from "@/services/finance.service"
 
 export async function addTransfer(formData: FormData) {
   const userId       = await requireWritableUserId()
@@ -23,19 +21,15 @@ export async function addTransfer(formData: FormData) {
   if (isNaN(amount) || amount <= 0)              throw new Error("Jumlah transfer harus lebih dari 0")
   if (fromWalletId === toWalletId)               throw new Error("Dompet asal dan tujuan tidak boleh sama")
 
-  await db.transaction(async () => {
-    const fromWallet = await db.prepare(
-      "SELECT id FROM wallets WHERE id = ? AND user_id = ? AND is_active = 1"
-    ).get(fromWalletId, userId) as { id: string } | undefined
-    const toWallet = await db.prepare(
-      "SELECT id FROM wallets WHERE id = ? AND user_id = ? AND is_active = 1"
-    ).get(toWalletId, userId) as { id: string } | undefined
-
-    if (!fromWallet || !toWallet) throw new Error("Dompet tidak valid")
-
-    await db.prepare(
-      "INSERT INTO transfers (id, user_id, recorded_by, from_wallet_id, to_wallet_id, amount, date, month, year, notes, is_initial) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
-    ).run(uuid(), userId, userId, fromWalletId, toWalletId, amount, date, month, year, notes, isInitial)
+  await financeService.createTransfer(userId, {
+    fromWalletId,
+    toWalletId,
+    amount,
+    date,
+    notes,
+    month,
+    year,
+    isInitial: isInitial === 1,
   })
 
   revalidatePath("/dashboard")

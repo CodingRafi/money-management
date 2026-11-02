@@ -33,9 +33,9 @@ export default async function ProtectedLayout({ children }: { children: React.Re
     if (!allowed) redirect("/super-admin")
   }
 
-  // Anak hanya boleh /dashboard, /saya dan pengaturan akun (dicek di server).
+  // Anak hanya boleh /dashboard, /saya, /integrasi/telegram dan pengaturan akun (dicek di server).
   if (session.householdRole === "child") {
-    const allowed = ["/dashboard", "/saya", "/settings/account"]
+    const allowed = ["/dashboard", "/saya", "/integrasi/telegram", "/settings/account"]
     if (!allowed.some((p) => pathname === p || pathname.startsWith(p + "/"))) redirect("/saya")
   }
 
@@ -47,27 +47,39 @@ export default async function ProtectedLayout({ children }: { children: React.Re
     context = {
       current,
       options: [
-        { value: "family", label: "🏠 Laporan Keluarga" },
-        ...scope.members.map((m) => ({
-          value: `user:${m.user_id}`,
-          label: m.user_id === session.userId
-            ? `👤 Personal: ${m.name} (Saya)`
-            : `👁 ${m.name} (Read-only)`,
-        })),
+        {
+          value: "family",
+          label: "Keluarga",
+          description: "Gabungan seluruh anggota",
+          kind: "family",
+        },
+        ...scope.members.map((m) => {
+          const isSelf = m.user_id === session.userId
+          return {
+            value: `user:${m.user_id}`,
+            label: isSelf ? `${m.name} (Saya)` : m.name,
+            description: isSelf ? "Data pribadi Anda" : "Hanya baca (read-only)",
+            kind: "member" as const,
+            readOnly: !isSelf,
+            isSelf,
+          }
+        }),
       ],
     }
   }
 
   // Super admin bekerja di seluruh SaaS, bukan satu keluarga.
-  const isSuperAdmin = session.role === "super_admin"
-  const familyMode = !isSuperAdmin && scope?.mode === "family"
+  const readOnlyMember = scope?.readOnly
+    ? scope.members.find((m) => m.user_id === scope.targetUserId)?.name
+    : null
 
   return (
     <div className="min-h-screen bg-background">
-      <Navbar username={session.username} role={session.role} context={context} familyMode={familyMode} />
+      <Navbar username={session.username} role={session.role} context={context} />
       {scope?.readOnly && (
-        <div className="bg-amber-100 px-4 py-1.5 text-center text-xs font-medium text-amber-900">
-          Mode baca-saja: Anda melihat data anggota lain. Beralih ke mode Anda untuk mengubah data.
+        <div className="border-b border-amber-300/60 bg-amber-100 px-4 py-2 text-center text-xs font-medium text-amber-900 dark:border-amber-500/30 dark:bg-amber-950/40 dark:text-amber-200">
+          Mode baca-saja{readOnlyMember ? ` — data ${readOnlyMember}` : ""}. Beralih ke mode Anda
+          sendiri lewat switcher di navbar untuk mengubah data.
         </div>
       )}
       <main className="mx-auto max-w-7xl px-4 py-8">{children}</main>

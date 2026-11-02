@@ -7,7 +7,6 @@ import { removeMember } from "@/app/actions/members"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
-import { AddMemberForm } from "./_components/add-member-form"
 
 export default async function AnggotaPage() {
   // Menu "Anggota" di navbar muncul bila punya izin member.view.
@@ -20,7 +19,6 @@ export default async function AnggotaPage() {
     memberRepository.list(session.householdId),
     licenseService.memberQuota(session.householdId),
   ])
-  const full = quota.used >= quota.max
 
   return (
     <div className="max-w-3xl space-y-6">
@@ -60,11 +58,11 @@ export default async function AnggotaPage() {
         </CardContent>
       </Card>
 
-      {full ? (
-        <p className="text-sm text-muted-foreground">Kuota penuh. Hubungi pengelola untuk menambah slot.</p>
-      ) : (
-        <AddMemberForm />
-      )}
+      <p className="text-sm text-muted-foreground">
+        Penambahan anggota dilakukan oleh pengelola aplikasi (Super Admin) pada halaman
+        <span className="mx-1 font-medium text-foreground">Keluarga</span>. Hubungi pengelola bila
+        kuota anggota perlu ditambah.
+      </p>
     </div>
   )
 }

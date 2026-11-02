@@ -4,10 +4,7 @@ import { revalidatePath, refresh } from "next/cache"
 import { redirect } from "next/navigation"
 import { db } from "@/lib/db"
 import { requireWritableUserId } from "@/lib/scope"
-import crypto from "crypto"
-
-function uuid() { return crypto.randomUUID() }
-function formatRupiah(n: number) { return new Intl.NumberFormat("id-ID", { style: "currency", currency: "IDR", maximumFractionDigits: 0 }).format(n) }
+import { financeService } from "@/services/finance.service"
 
 // ── Asset CRUD ────────────────────────────────────────────────────────────────
 
@@ -16,13 +13,10 @@ export async function createInvestment(year: string, formData: FormData) {
   const name       = (formData.get("name") as string)?.trim()
   const categoryId = formData.get("category_id") as string
   const walletId   = (formData.get("wallet_id") as string) || null
-  const isLiquid   = formData.get("is_liquid") === "true" ? 1 : 0
+  const isLiquid   = formData.get("is_liquid") === "true"
   const unit       = (formData.get("unit") as string) || null
   const notes      = (formData.get("notes") as string)?.trim() || null
-  if (!name || !categoryId) throw new Error("Data tidak valid")
-  await db.prepare(
-    "INSERT INTO investments (id, user_id, recorded_by, category_id, name, wallet_id, is_liquid, unit, notes) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)"
-  ).run(uuid(), userId, userId, categoryId, name, walletId, isLiquid, unit, notes)
+  await financeService.createInvestment(userId, { name, categoryId, walletId, isLiquid, unit, notes })
   redirect(`/rekap/${year}?tab=investasi`)
 }
 
@@ -31,14 +25,10 @@ export async function createInvestmentDirect(formData: FormData) {
   const name       = (formData.get("name") as string)?.trim()
   const categoryId = formData.get("category_id") as string
   const walletId   = (formData.get("wallet_id") as string) || null
-  const isLiquid   = formData.get("is_liquid") === "true" ? 1 : 0
+  const isLiquid   = formData.get("is_liquid") === "true"
   const unit       = (formData.get("unit") as string) || null
   const notes      = (formData.get("notes") as string)?.trim() || null
-  if (!name || !categoryId) throw new Error("Data tidak valid")
-  const id = uuid()
-  await db.prepare(
-    "INSERT INTO investments (id, user_id, recorded_by, category_id, name, wallet_id, is_liquid, unit, notes) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)"
-  ).run(id, userId, userId, categoryId, name, walletId, isLiquid, unit, notes)
+  const id = await financeService.createInvestment(userId, { name, categoryId, walletId, isLiquid, unit, notes })
   redirect(`/investasi/aset/${id}`)
 }
 
@@ -110,55 +100,27 @@ export async function reopenInvestmentDirect(id: string) {
 
 // ── Transaction helpers ───────────────────────────────────────────────────────
 
-const INTEGER_UNITS = new Set(["lot", "lembar"])
-
 async function execAddInvestmentTransaction(investmentId: string, userId: string, formData: FormData) {
-  const inv = await db.prepare(
-    "SELECT id, unit FROM investments WHERE id=? AND user_id=? AND is_active=1 AND is_closed=0"
-  ).get(investmentId, userId) as { id: string; unit: string | null } | undefined
-  if (!inv) throw new Error("Aset tidak ditemukan atau sudah ditutup")
-
   const type         = formData.get("type") as string
   const goalId       = (formData.get("goal_id") as string) || null
   const quantity     = (formData.get("quantity") as string)?.trim() || "1"
-  const numericQty   = parseFloat(quantity) || 1
   const totalAmount  = parseFloat(formData.get("total_amount") as string)
-  const pricePerUnit = totalAmount / numericQty
   const date         = formData.get("date") as string
   const fromWalletId = (formData.get("from_wallet_id") as string) || null
   const toWalletId   = (formData.get("to_wallet_id")   as string) || null
   const notes        = (formData.get("notes") as string)?.trim() || null
-  const isInitial    = formData.get("is_initial") === "true" ? 1 : 0
+  const isInitial    = formData.get("is_initial") === "true"
 
-  if (!["BUY", "SELL", "DIVIDEND"].includes(type)) throw new Error("Tipe tidak valid")
-  if (isNaN(totalAmount) || totalAmount <= 0)       throw new Error("Harga transaksi tidak valid")
-  if (!date)                                        throw new Error("Tanggal wajib diisi")
-  if (type === "BUY"      && !fromWalletId)         throw new Error("Dompet asal wajib diisi untuk BUY")
-  if (type === "SELL"     && !toWalletId)           throw new Error("Dompet tujuan wajib diisi untuk SELL")
-  if (type === "DIVIDEND" && !toWalletId)           throw new Error("Dompet tujuan wajib diisi untuk DIVIDEND")
-  if (type === "BUY"      && !goalId)               throw new Error("Kantong wajib dipilih untuk transaksi BUY")
-  if (inv.unit && INTEGER_UNITS.has(inv.unit) && type !== "DIVIDEND" && numericQty !== Math.floor(numericQty))
-    throw new Error(`Jumlah ${inv.unit} harus bilangan bulat`)
-
-  if (goalId) {
-    const goal = await db.prepare("SELECT id FROM investment_goals WHERE id=? AND user_id=? AND is_active=1").get(goalId, userId)
-    if (!goal) throw new Error("Kantong tidak ditemukan")
-  }
-
-  const txYear = new Date(date).getFullYear()
-
-  await db.transaction(async () => {
-    if (type === "BUY" && fromWalletId) {
-      const w = await db.prepare("SELECT user_id FROM wallets WHERE id=? AND is_active=1").get(fromWalletId) as { user_id: string } | undefined
-      if (!w || w.user_id !== userId) throw new Error("Dompet tidak ditemukan")
-    }
-    if ((type === "SELL" || type === "DIVIDEND") && toWalletId) {
-      const w = await db.prepare("SELECT user_id FROM wallets WHERE id=? AND is_active=1").get(toWalletId) as { user_id: string } | undefined
-      if (!w || w.user_id !== userId) throw new Error("Dompet tujuan tidak ditemukan")
-    }
-    await db.prepare(
-      "INSERT INTO investment_transactions (id, investment_id, goal_id, type, quantity, price_per_unit, total_amount, from_wallet_id, to_wallet_id, date, year, notes, is_initial) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
-    ).run(uuid(), investmentId, goalId, type, quantity, pricePerUnit, totalAmount, fromWalletId, toWalletId, date, txYear, notes, isInitial)
+  await financeService.createInvestmentTransaction(userId, investmentId, {
+    type: type as "BUY" | "SELL" | "DIVIDEND",
+    quantity,
+    totalAmount,
+    date,
+    goalId,
+    fromWalletId,
+    toWalletId,
+    notes,
+    isInitial,
   })
 }
 

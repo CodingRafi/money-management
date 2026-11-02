@@ -33,12 +33,17 @@ async function assertChildLimit(session: SessionData, v: ExpenseInput, excludeId
 /**
  * Pengeluaran anak dibatasi `spending_limit` bulanan; bukan beban keluarga
  * kecuali ditandai. Keputusan scope personal vs keluarga ada di sini, bukan di UI.
+ *
+ * Mengembalikan id transaksi yang dibuat — dipakai Integrasi Telegram agar
+ * transaksi bisa dikoreksi/hapus lewat chat.
  */
 export const expenseService = {
-  async createExpense(session: SessionData, v: ExpenseInput): Promise<void> {
+  async createExpense(session: SessionData, v: ExpenseInput): Promise<string> {
     await assertRefs(session, v, "expense_categories")
     await assertChildLimit(session, v, null)
-    await expenseRepository.insertExpense(crypto.randomUUID(), session.userId, session.userId, v)
+    const id = crypto.randomUUID()
+    await expenseRepository.insertExpense(id, session.userId, session.userId, v)
+    return id
   },
 
   async updateExpense(session: SessionData, id: string, v: ExpenseInput): Promise<void> {
@@ -59,9 +64,11 @@ export const expenseService = {
     await expenseRepository.deleteExpense(id, session.userId)
   },
 
-  async createIncome(session: SessionData, v: IncomeInput): Promise<void> {
+  async createIncome(session: SessionData, v: IncomeInput): Promise<string> {
     await assertRefs(session, v, "income_categories")
-    await expenseRepository.insertIncome(crypto.randomUUID(), session.userId, session.userId, v)
+    const id = crypto.randomUUID()
+    await expenseRepository.insertIncome(id, session.userId, session.userId, v)
+    return id
   },
 
   async updateIncome(session: SessionData, id: string, v: IncomeInput): Promise<void> {

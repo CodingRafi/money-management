@@ -22,10 +22,13 @@ export const expenseRepository = {
   },
 
   async updateExpense(id: string, userId: string, v: ExpenseInput): Promise<number> {
+    // month/year ikut diperbarui — kalau tanggalnya diganti, kolom ini harus
+    // ikut berubah agar rekap bulanan tetap konsisten.
     const res = await db.prepare(
-      `UPDATE expenses SET date=?, name=?, wallet_id=?, category_id=?, needs_type=?, amount=?, is_initial=?, is_family_expense=?
+      `UPDATE expenses SET date=?, name=?, wallet_id=?, category_id=?, needs_type=?, amount=?, month=?, year=?, is_initial=?, is_family_expense=?
        WHERE id=? AND user_id=?`
-    ).run(v.date, v.name, v.wallet_id, v.category_id, v.needs_type, v.amount, v.is_initial ? 1 : 0, v.is_family_expense ? 1 : 0, id, userId)
+    ).run(v.date, v.name, v.wallet_id, v.category_id, v.needs_type, v.amount, v.month, v.year,
+      v.is_initial ? 1 : 0, v.is_family_expense ? 1 : 0, id, userId)
     return res.changes
   },
 
@@ -41,9 +44,10 @@ export const expenseRepository = {
   },
 
   async updateIncome(id: string, userId: string, v: IncomeInput): Promise<number> {
+    // month/year ikut diperbarui — sama seperti updateExpense.
     const res = await db.prepare(
-      "UPDATE incomes SET date=?, name=?, category_id=?, wallet_id=?, amount=?, is_initial=? WHERE id=? AND user_id=?"
-    ).run(v.date, v.name, v.category_id, v.wallet_id, v.amount, v.is_initial ? 1 : 0, id, userId)
+      "UPDATE incomes SET date=?, name=?, category_id=?, wallet_id=?, amount=?, month=?, year=?, is_initial=? WHERE id=? AND user_id=?"
+    ).run(v.date, v.name, v.category_id, v.wallet_id, v.amount, v.month, v.year, v.is_initial ? 1 : 0, id, userId)
     return res.changes
   },
 

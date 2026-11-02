@@ -74,6 +74,7 @@ export const licenseService = {
         role: "admin",
         relation: "suami",
         ignoreLicenseState: true,
+        actorRole: "super_admin",
       })
       await categoryRepository.seedHouseholdFromTemplate(householdId)
       await licenseEventRepository.insert({

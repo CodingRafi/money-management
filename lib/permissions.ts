@@ -138,6 +138,10 @@ function viewOnly(resources: readonly Resource[]): Permission[] {
  * Kalau Family Admin ikut memegangnya, ia bisa membuka lisensi & anggota
  * keluarga lain (bocor lintas keluarga). Modul "keluarga & anggota" milik
  * Family Admin memakai resource `member` dengan cakupan household-nya sendiri.
+ *
+ * `member.create` TIDAK diberikan ke `admin` (kepala keluarga): pembuatan akun
+ * anggota & pemakaian kuota lisensi adalah kewenangan Super Admin. Kepala
+ * keluarga hanya melihat & mengelola anggota yang sudah terdaftar.
  */
 export const ROLE_PERMISSIONS: Record<UserRole, readonly Permission[]> = {
   super_admin: Object.values(RESOURCE).flatMap(allActions),
@@ -151,7 +155,9 @@ export const ROLE_PERMISSIONS: Record<UserRole, readonly Permission[]> = {
       RESOURCE.PERSONAL,
       RESOURCE.SETTINGS,
     ]),
-    ...allActions(RESOURCE.MEMBER),
+    PERMISSION.MEMBER.VIEW,
+    PERMISSION.MEMBER.UPDATE,
+    PERMISSION.MEMBER.DELETE,
   ],
   member: viewOnly([
     RESOURCE.DASHBOARD,

@@ -21,6 +21,8 @@ import {
   Users,
   ScrollText,
   Home,
+  UserCircle,
+  Send,
 } from "lucide-react"
 import Image from "next/image"
 import Link from "next/link"
@@ -28,12 +30,12 @@ import { usePathname, useRouter } from "next/navigation"
 import { logout } from "@/app/actions/session"
 import { ContextSwitcher, type ContextOption } from "@/components/context-switcher"
 import { PERMISSION, hasPermission, type Permission, type UserRole } from "@/lib/permissions"
+import { cn } from "@/lib/utils"
 
 interface NavbarProps {
   username: string
   role: UserRole
   context?: { current: string; options: ContextOption[] } | null
-  familyMode?: boolean
 }
 
 interface NavLink {
@@ -67,7 +69,6 @@ const ADMIN_EXTRA_LINKS: NavLink[] = [
 
 const CHILD_LINKS: NavLink[] = [
   { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard, permission: PERMISSION.DASHBOARD.VIEW },
-  { href: "/saya", label: "Saya", icon: Wallet, permission: PERMISSION.PERSONAL.VIEW },
 ]
 
 function linksForRole(role: UserRole): NavLink[] {
@@ -77,7 +78,7 @@ function linksForRole(role: UserRole): NavLink[] {
   return NAV_LINKS
 }
 
-export function Navbar({ username, role, context, familyMode }: NavbarProps) {
+export function Navbar({ username, role, context }: NavbarProps) {
   const pathname = usePathname()
   const router = useRouter()
 
@@ -92,71 +93,85 @@ export function Navbar({ username, role, context, familyMode }: NavbarProps) {
   }
 
   return (
-    <header className={`sticky top-0 z-40 border-b backdrop-blur ${familyMode ? "border-emerald-700/40 bg-emerald-50/90 dark:bg-emerald-950/40" : "border-border bg-background/95"}`}>
-      <div className="mx-auto flex h-14 max-w-7xl items-center justify-between px-4">
-        <div className="flex items-center gap-6">
-          <Link href={role === "super_admin" ? "/super-admin" : "/dashboard"} className="flex items-center shrink-0">
-            <Image src="/logo.svg" alt="TONAS" width={90} height={35} />
+    <header className="sticky top-0 z-40 border-b border-border bg-background/95 backdrop-blur">
+      <div className="mx-auto flex h-14 max-w-7xl items-center justify-between gap-2 px-4 sm:gap-4">
+        <div className="flex min-w-0 items-center gap-3 sm:gap-6">
+          <Link href={role === "super_admin" ? "/super-admin" : "/dashboard"} className="flex shrink-0 items-center">
+            <Image src="/logo.svg" alt="TONAS" width={90} height={35} className="h-auto w-[72px] sm:w-[90px]" />
           </Link>
 
-          <nav className="flex items-center gap-1">
+          <nav className="flex min-w-0 items-center gap-0.5 overflow-x-auto sm:gap-1">
             {visibleLinks.map(({ href, label, icon: Icon, exact }) => {
               const isActive = exact ? pathname === href : pathname.startsWith(href)
               return (
                 <Link
                   key={href}
                   href={href}
-                  className={`flex items-center gap-1.5 rounded-md px-3 py-1.5 text-sm font-medium transition-colors ${
+                  title={label}
+                  aria-label={label}
+                  aria-current={isActive ? "page" : undefined}
+                  className={cn(
+                    "flex shrink-0 items-center gap-1.5 rounded-md px-2.5 py-1.5 text-sm font-medium transition-colors sm:px-3",
                     isActive
                       ? "bg-primary/10 text-primary"
-                      : "text-muted-foreground hover:bg-muted hover:text-foreground"
-                  }`}
+                      : "text-muted-foreground hover:bg-muted hover:text-foreground",
+                  )}
                 >
-                  <Icon className="h-4 w-4" />
-                  {label}
+                  <Icon className="h-4 w-4 shrink-0" />
+                  <span className="hidden lg:inline">{label}</span>
                 </Link>
               )
             })}
           </nav>
         </div>
 
-        <div className="flex items-center gap-3">
-        {context && <ContextSwitcher current={context.current} options={context.options} />}
-        <DropdownMenu>
-          <DropdownMenuTrigger asChild>
-            <Button variant="ghost" className="h-9 gap-2 px-2">
-              <Avatar className="h-7 w-7">
-                <AvatarFallback className="text-xs">{initials}</AvatarFallback>
-              </Avatar>
-              <span className="hidden text-sm sm:inline-block">{username}</span>
-            </Button>
-          </DropdownMenuTrigger>
-          <DropdownMenuContent align="end" className="w-48">
-            <DropdownMenuLabel className="font-normal">
-              <p className="text-sm font-medium leading-none">{username}</p>
-            </DropdownMenuLabel>
-            <DropdownMenuSeparator />
-            <DropdownMenuItem asChild className="cursor-pointer">
-              <Link href="/settings/account">
-                <Settings className="h-4 w-4" />
-                Pengaturan Akun
-              </Link>
-            </DropdownMenuItem>
-            {role === "admin" && (
+        <div className="flex shrink-0 items-center gap-2 sm:gap-3">
+          {context && <ContextSwitcher current={context.current} options={context.options} />}
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button variant="ghost" className="h-9 gap-2 px-1 sm:px-2">
+                <Avatar className="h-7 w-7">
+                  <AvatarFallback className="text-xs">{initials}</AvatarFallback>
+                </Avatar>
+                <span className="hidden max-w-[120px] truncate text-sm sm:inline-block">{username}</span>
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end" className="w-48">
+              <DropdownMenuLabel className="font-normal">
+                <p className="truncate text-sm font-medium leading-none">{username}</p>
+              </DropdownMenuLabel>
+              <DropdownMenuSeparator />
+              {role !== "super_admin" && (
+                <>
+                  <DropdownMenuItem asChild className="cursor-pointer">
+                    <Link href="/integrasi/telegram">
+                      <Send className="h-4 w-4" />
+                      Integrasi Telegram
+                    </Link>
+                  </DropdownMenuItem>
+                </>
+              )}
               <DropdownMenuItem asChild className="cursor-pointer">
-                <Link href="/pengaturan/anggota">
-                  <Users className="h-4 w-4" />
-                  Anggota Keluarga
+                <Link href="/settings/account">
+                  <Settings className="h-4 w-4" />
+                  Pengaturan Akun
                 </Link>
               </DropdownMenuItem>
-            )}
-            <DropdownMenuSeparator />
-            <DropdownMenuItem onSelect={handleSignOut} className="cursor-pointer text-destructive focus:text-destructive">
-              <LogOut className="h-4 w-4" />
-              Keluar
-            </DropdownMenuItem>
-          </DropdownMenuContent>
-        </DropdownMenu>
+              {role === "admin" && (
+                <DropdownMenuItem asChild className="cursor-pointer">
+                  <Link href="/pengaturan/anggota">
+                    <Users className="h-4 w-4" />
+                    Anggota Keluarga
+                  </Link>
+                </DropdownMenuItem>
+              )}
+              <DropdownMenuSeparator />
+              <DropdownMenuItem onSelect={handleSignOut} className="cursor-pointer text-destructive focus:text-destructive">
+                <LogOut className="h-4 w-4" />
+                Keluar
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
         </div>
       </div>
     </header>

@@ -101,7 +101,7 @@ export default async function PinjamanPage({
         )}
       </div>
 
-      <div className="grid grid-cols-3 gap-3">
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
         <Card>
           <CardContent className="p-4">
             <p className="text-xs text-muted-foreground mb-1">Sisa Piutang</p>
@@ -117,7 +117,7 @@ export default async function PinjamanPage({
           </CardContent>
         </Card>
         {piutangMacet.length > 0 && (
-          <Card className="border-rose-200 bg-rose-50/50 dark:bg-rose-950/20 dark:border-rose-900/40">
+          <Card className="border-rose-200 bg-rose-50/50 sm:col-span-2 dark:bg-rose-950/20 dark:border-rose-900/40">
             <CardContent className="p-4">
               <p className="text-xs text-rose-600 dark:text-rose-400 mb-1 font-medium">Piutang Macet</p>
               <p className="text-xl font-bold text-rose-600 tabular-nums">{formatRupiah(totalMacetSisa)}</p>
