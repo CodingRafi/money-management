@@ -8,6 +8,7 @@ import type { EnergyAnalysisResult } from "@/lib/fundamental/energy-types"
 import type { PropertyAnalysisResult } from "@/lib/fundamental/property-types"
 import type { HealthAnalysisResult } from "@/lib/fundamental/health-types"
 import type { TransportAnalysisResult } from "@/lib/fundamental/transport-types"
+import type { InfraAnalysisResult } from "@/lib/fundamental/infra-types"
 import crypto from "crypto"
 import { revalidatePath } from "next/cache"
 
@@ -87,6 +88,20 @@ export async function saveTransportAnalysis(result: TransportAnalysisResult): Pr
   const userId = await requireUserIdAction()
   const id     = uuid()
   const sector = `TRANSPORT_${result.input.subsector}`
+  await db.prepare(
+    `INSERT INTO fundamental_analyses (id, user_id, sector, stock_code, period, input_data, result_data)
+     VALUES (?, ?, ?, ?, ?, ?, ?)`
+  ).run(id, userId, sector, result.input.stockCode.toUpperCase(), result.input.period, JSON.stringify(result.input), JSON.stringify(result))
+  revalidatePath("/investasi/fundamental")
+  return id
+}
+
+// ── Infrastruktur ────────────────────────────────────────────────────────────
+
+export async function saveInfraAnalysis(result: InfraAnalysisResult): Promise<string> {
+  const userId = await requireUserIdAction()
+  const id     = uuid()
+  const sector = `INFRA_${result.input.subsector}`
   await db.prepare(
     `INSERT INTO fundamental_analyses (id, user_id, sector, stock_code, period, input_data, result_data)
      VALUES (?, ?, ?, ?, ?, ?, ?)`

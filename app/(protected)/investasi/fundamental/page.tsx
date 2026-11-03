@@ -42,6 +42,9 @@ const SECTOR_LABEL: Record<string, string> = {
   TRANSPORT_LOGISTIK:    "Logistik",
   TRANSPORT_PELAYARAN:   "Pelayaran",
   TRANSPORT_PENERBANGAN: "Penerbangan",
+  INFRA_TOL:        "Jalan Tol",
+  INFRA_KONSTRUKSI: "Konstruksi",
+  INFRA_UTILITAS:   "Utilitas",
 }
 
 const SECTOR_HREF: Record<string, string> = {
@@ -59,6 +62,9 @@ const SECTOR_HREF: Record<string, string> = {
   TRANSPORT_LOGISTIK:    "/investasi/fundamental/transport",
   TRANSPORT_PELAYARAN:   "/investasi/fundamental/transport",
   TRANSPORT_PENERBANGAN: "/investasi/fundamental/transport",
+  INFRA_TOL:        "/investasi/fundamental/infra",
+  INFRA_KONSTRUKSI: "/investasi/fundamental/infra",
+  INFRA_UTILITAS:   "/investasi/fundamental/infra",
 }
 
 export default async function FundamentalPage() {
@@ -76,7 +82,7 @@ export default async function FundamentalPage() {
           </Button>
           <div>
             <h1 className="text-2xl font-bold">Kalkulator Fundamental</h1>
-            <p className="text-sm text-muted-foreground">Analisis saham dari laporan keuangan — Bank, Teknologi, Energi, Property, Kesehatan & Transportasi</p>
+            <p className="text-sm text-muted-foreground">Analisis saham dari laporan keuangan — Bank, Teknologi, Energi, Property, Kesehatan, Transportasi & Infrastruktur</p>
           </div>
         </div>
         <Button asChild size="sm">
