@@ -17,8 +17,53 @@ import {
   budgetFields,
 } from "./cards"
 import { revisiHint } from "./format"
-import { reviseExpense, reviseIncome } from "./revision"
+import {
+  findExpenseId,
+  findIncomeId,
+  findLastCreated,
+  isRecentAlias,
+  reviseExpense,
+  reviseIncome,
+} from "./revision"
 import { getCategoryBudgetStatus } from "./budget-status"
+
+/**
+ * Terjemahkan id yang diberikan AI menjadi ID transaksi milik user.
+ * Menerima: ID penuh, kode 6 karakter, alias "barusan"/"terakhir", atau nama
+ * transaksi (dipakai untuk transaksi yang paling baru dicatat dengan nama itu).
+ */
+async function resolveDeleteId(
+  userId: string,
+  id: string,
+  kind: "expense" | "income",
+  name?: string,
+): Promise<string> {
+  const raw = id.trim()
+  if (isRecentAlias(raw)) {
+    // Hapus itu destruktif → pakai transaksi terakhir secara global, lalu cek
+    // jenisnya. Kalau beda jenis, AI akan mencoba tool yang lain.
+    const last = await findLastCreated(userId)
+    if (!last) throw new Error("Belum ada transaksi yang tercatat")
+    if (last.kind !== kind) {
+      const jenis = last.kind === "expense" ? "pengeluaran" : "pemasukan"
+      const diminta = kind === "expense" ? "pengeluaran" : "pemasukan"
+      throw new Error(`Transaksi terakhir yang dicatat adalah ${jenis}, sedangkan yang diminta ${diminta}.`)
+    }
+    return last.id
+  }
+  const found =
+    kind === "expense" ? await findExpenseId(userId, raw) : await findIncomeId(userId, raw)
+  if (found) return found
+  // Terakhir: cari transaksi dengan nama yang sama (yang paling baru).
+  if (name?.trim()) {
+    const table = kind === "expense" ? "expenses" : "incomes"
+    const row = await db.prepare(
+      `SELECT id FROM ${table} WHERE user_id = ? AND lower(name) = lower(?) ORDER BY created_at DESC LIMIT 1`
+    ).get(userId, name.trim()) as { id: string } | undefined
+    if (row?.id) return row.id
+  }
+  return raw
+}
 
 // ── Konteks eksekusi ─────────────────────────────────────────────────────────
 
@@ -365,13 +410,15 @@ export const telegramTool: GeminiTool = {
     },
     {
       name: "delete_expense",
-      description: "Menghapus satu pengeluaran yang tercatat. Gunakan HANYA jika pengguna meminta menghapus/membatalkan transaksi tertentu.",
-      parameters: OBJ({ id: S("ID pengeluaran"), name: S("Nama transaksi bila:id tidak diketahui") }, ["id"]),
+      description:
+        "Menghapus satu pengeluaran yang tercatat. Gunakan HANYA jika pengguna meminta menghapus/membatalkan transaksi tertentu. id boleh kode 6 karakter, ID penuh, atau 'barusan' untuk transaksi terakhir; bila id tidak diketahui, isi name.",
+      parameters: OBJ({ id: S("ID pengeluaran, kode 6 karakter, atau 'barusan'"), name: S("Nama transaksi bila id tidak diketahui") }, ["id"]),
     },
     {
       name: "delete_income",
-      description: "Menghapus satu pemasukan yang tercatat. Gunakan HANYA jika pengguna meminta menghapus/membatalkan transaksi tertentu.",
-      parameters: OBJ({ id: S("ID pemasukan"), name: S("Nama transaksi bila id tidak diketahui") }, ["id"]),
+      description:
+        "Menghapus satu pemasukan yang tercatat. Gunakan HANYA jika pengguna meminta menghapus/membatalkan transaksi tertentu. id boleh kode 6 karakter, ID penuh, atau 'barusan' untuk transaksi terakhir; bila id tidak diketahui, isi name.",
+      parameters: OBJ({ id: S("ID pemasukan, kode 6 karakter, atau 'barusan'"), name: S("Nama transaksi bila id tidak diketahui") }, ["id"]),
     },
     {
       name: "revise_expense",
@@ -379,7 +426,7 @@ export const telegramTool: GeminiTool = {
         "Memperbaiki pengeluaran yang sudah tercatat (nominal, nama, tanggal, kategori, dompet, jenis kebutuhan, atau flag keluarga). Gunakan kode 6 karakter dari pesan pencatatan atau /riwayat.",
       parameters: OBJ(
         {
-          code: S("Kode transaksi (6 karakter) atau ID penuh transaksi"),
+          code: S("Kode transaksi (6 karakter), ID penuh, atau 'barusan' untuk transaksi terakhir"),
           amount: S("Nominal baru, mis. '30rb'"),
           name: S("Nama/keterangan baru"),
           date: S("Tanggal baru format YYYY-MM-DD"),
@@ -397,7 +444,7 @@ export const telegramTool: GeminiTool = {
         "Memperbaiki pemasukan yang sudah tercatat (nominal, nama, tanggal, kategori, atau dompet). Gunakan kode 6 karakter dari pesan pencatatan atau /riwayat.",
       parameters: OBJ(
         {
-          code: S("Kode transaksi (6 karakter) atau ID penuh transaksi"),
+          code: S("Kode transaksi (6 karakter), ID penuh, atau 'barusan' untuk transaksi terakhir"),
           amount: S("Nominal baru, mis. '30rb'"),
           name: S("Nama/keterangan baru"),
           date: S("Tanggal baru format YYYY-MM-DD"),
@@ -826,20 +873,22 @@ const handlers: Record<string, Handler> = {
 
   async delete_expense(raw, ctx) {
     const a = deleteArgs.parse(raw)
+    const id = await resolveDeleteId(ctx.session.userId, a.id, "expense", a.name)
     const changed = await db.prepare(
       "DELETE FROM expenses WHERE id = ? AND user_id = ?"
-    ).run(a.id, ctx.session.userId)
+    ).run(id, ctx.session.userId)
     if (!changed.changes) throw new Error("Pengeluaran tidak ditemukan")
-    return { ok: true, message: `Pengeluaran "${a.name ?? a.id}" berhasil dihapus.`, data: { id: a.id } }
+    return { ok: true, message: `Pengeluaran "${a.name ?? a.id}" berhasil dihapus.`, data: { id } }
   },
 
   async delete_income(raw, ctx) {
     const a = deleteArgs.parse(raw)
+    const id = await resolveDeleteId(ctx.session.userId, a.id, "income", a.name)
     const changed = await db.prepare(
       "DELETE FROM incomes WHERE id = ? AND user_id = ?"
-    ).run(a.id, ctx.session.userId)
+    ).run(id, ctx.session.userId)
     if (!changed.changes) throw new Error("Pemasukan tidak ditemukan")
-    return { ok: true, message: `Pemasukan "${a.name ?? a.id}" berhasil dihapus.`, data: { id: a.id } }
+    return { ok: true, message: `Pemasukan "${a.name ?? a.id}" berhasil dihapus.`, data: { id } }
   },
 
   async revise_expense(raw, ctx) {

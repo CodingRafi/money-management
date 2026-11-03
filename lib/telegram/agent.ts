@@ -36,6 +36,7 @@ export async function buildSystemInstruction(ctx: ToolContext): Promise<string> 
     "8. Kalau pengguna mengirim foto struk, baca nominal, nama merchant, tanggal, dan kategori dari struk tersebut lalu catat sebagai pengeluaran.",
     "9. Balas dalam bahasa Indonesia, singkat (maksimal 3-4 kalimat), tanpa markdown tebal berlebihan.",
     "10. Jangan mengarang hal yang tidak ada di data — kalau tidak tahu, katakan tidak tahu.",
+    "11. Kalau pengguna menyebut 'barusan', 'terbaru', atau 'terakhir' untuk revisi/hapus, itu berarti transaksi yang PALING BARU DICATAT — pakai code 'barusan' pada tool revise/delete.",
   ].join("\n")
 }
 

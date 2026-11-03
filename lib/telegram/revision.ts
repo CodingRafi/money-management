@@ -69,13 +69,67 @@ const FIND_INCOME = `
     AND (i.id = ? OR upper(right(replace(i.id, '-', ''), 6)) = upper(?))
   LIMIT 1`
 
-async function findExpenseId(userId: string, code: string): Promise<string | null> {
+export async function findExpenseId(userId: string, code: string): Promise<string | null> {
   const row = await db.prepare(FIND_EXPENSE).get(userId, code, code) as { id: string } | undefined
   return row?.id ?? null
 }
 
-async function findIncomeId(userId: string, code: string): Promise<string | null> {
+export async function findIncomeId(userId: string, code: string): Promise<string | null> {
   const row = await db.prepare(FIND_INCOME).get(userId, code, code) as { id: string } | undefined
+  return row?.id ?? null
+}
+
+// ── Alias "transaksi terakhir" ───────────────────────────────────────────────
+
+/**
+ * Kata kunci yang berarti "transaksi yang terakhir dicatat" — dipakai supaya
+ * user tidak perlu mengetik kode UUID yang panjang.
+ */
+export const RECENT_ALIASES = new Set([
+  "barusan",
+  "baru",
+  "terbaru",
+  "terakhir",
+  "last",
+  "recent",
+  "akhirlah",
+])
+
+/** True bila token user bermaksud "transaksi terakhir". */
+export function isRecentAlias(token: string): boolean {
+  return RECENT_ALIASES.has(token.trim().toLowerCase())
+}
+
+/**
+ * Transaksi milik user yang paling baru DIBUAT (bukan yang tanggalnya paling
+ * baru) — dipakai untuk alias "barusan".
+ */
+export async function findLastCreated(
+  userId: string,
+): Promise<{ id: string; kind: "expense" | "income" } | null> {
+  const row = await db.prepare(
+    `SELECT id, kind FROM (
+       SELECT id, 'expense' AS kind, created_at FROM expenses WHERE user_id = ?
+       UNION ALL
+       SELECT id, 'income' AS kind, created_at FROM incomes WHERE user_id = ?
+     ) t ORDER BY created_at DESC, id DESC LIMIT 1`
+  ).get(userId, userId) as { id: string; kind: "expense" | "income" } | undefined
+  return row ?? null
+}
+
+/**
+ * Transaksi terbaru milik user dari jenis tertentu — dipakai di jalur AI
+ * ("revisi pengeluaran barusan" = pengeluaran terakhir, bukan transaksi
+ * terakhir secara umum).
+ */
+export async function findLastCreatedOfKind(
+  userId: string,
+  kind: "expense" | "income",
+): Promise<string | null> {
+  const table = kind === "expense" ? "expenses" : "incomes"
+  const row = await db.prepare(
+    `SELECT id FROM ${table} WHERE user_id = ? ORDER BY created_at DESC, id DESC LIMIT 1`
+  ).get(userId) as { id: string } | undefined
   return row?.id ?? null
 }
 
@@ -132,7 +186,15 @@ export async function reviseExpense(
   code: string,
   patch: RevisionPatch,
 ): Promise<RevisionOutcome> {
-  const id = await findExpenseId(ctx.session.userId, code.trim())
+  // Alias "barusan" → pengeluaran terakhir (dipakai jalur AI).
+  let targetCode = code.trim()
+  if (isRecentAlias(targetCode)) {
+    const last = await findLastCreatedOfKind(ctx.session.userId, "expense")
+    if (!last) return { ok: false, message: "Belum ada pengeluaran yang bisa direvisi." }
+    targetCode = last
+  }
+
+  const id = await findExpenseId(ctx.session.userId, targetCode)
   if (!id) {
     return {
       ok: false,
@@ -252,7 +314,15 @@ export async function reviseIncome(
   code: string,
   patch: RevisionPatch,
 ): Promise<RevisionOutcome> {
-  const id = await findIncomeId(ctx.session.userId, code.trim())
+  // Alias "barusan" → pemasukan terakhir (dipakai jalur AI).
+  let targetCode = code.trim()
+  if (isRecentAlias(targetCode)) {
+    const last = await findLastCreatedOfKind(ctx.session.userId, "income")
+    if (!last) return { ok: false, message: "Belum ada pemasukan yang bisa direvisi." }
+    targetCode = last
+  }
+
+  const id = await findIncomeId(ctx.session.userId, targetCode)
   if (!id) {
     return {
       ok: false,
@@ -351,7 +421,14 @@ export async function showTransaction(
   ctx: RevisionCtx,
   code: string,
 ): Promise<RevisionOutcome> {
-  const expenseId = await findExpenseId(ctx.session.userId, code.trim())
+  let targetCode = code.trim()
+  if (isRecentAlias(targetCode)) {
+    const last = await findLastCreated(ctx.session.userId)
+    if (!last) return { ok: false, message: "Belum ada transaksi yang bisa ditampilkan." }
+    targetCode = last.id
+  }
+
+  const expenseId = await findExpenseId(ctx.session.userId, targetCode)
   if (expenseId) {
     const view = await loadExpenseView(expenseId)
     if (view) {
@@ -364,7 +441,7 @@ export async function showTransaction(
     }
   }
 
-  const incomeId = await findIncomeId(ctx.session.userId, code.trim())
+  const incomeId = await findIncomeId(ctx.session.userId, targetCode)
   if (incomeId) {
     const view = await loadIncomeView(incomeId)
     if (view) {
@@ -394,7 +471,14 @@ export async function findTransactionKind(
 
 /** Tampilkan transaksi yang akan dihapus (langkah konfirmasi). */
 export async function previewDeletion(ctx: RevisionCtx, code: string): Promise<RevisionOutcome> {
-  const expenseId = await findExpenseId(ctx.session.userId, code.trim())
+  let targetCode = code.trim()
+  if (isRecentAlias(targetCode)) {
+    const last = await findLastCreated(ctx.session.userId)
+    if (!last) return { ok: false, message: "Belum ada transaksi yang bisa dihapus." }
+    targetCode = last.id
+  }
+
+  const expenseId = await findExpenseId(ctx.session.userId, targetCode)
   if (expenseId) {
     const view = await loadExpenseView(expenseId)
     if (view) {
@@ -403,7 +487,7 @@ export async function previewDeletion(ctx: RevisionCtx, code: string): Promise<R
       return { ok: true, card, message: card.title }
     }
   }
-  const incomeId = await findIncomeId(ctx.session.userId, code.trim())
+  const incomeId = await findIncomeId(ctx.session.userId, targetCode)
   if (incomeId) {
     const view = await loadIncomeView(incomeId)
     if (view) {
@@ -423,7 +507,14 @@ export async function deleteTransactionByCode(
   ctx: RevisionCtx,
   code: string,
 ): Promise<{ ok: true; message: string } | { ok: false; message: string }> {
-  const expenseId = await findExpenseId(ctx.session.userId, code.trim())
+  let targetCode = code.trim()
+  if (isRecentAlias(targetCode)) {
+    const last = await findLastCreated(ctx.session.userId)
+    if (!last) return { ok: false, message: "Belum ada transaksi yang bisa dihapus." }
+    targetCode = last.id
+  }
+
+  const expenseId = await findExpenseId(ctx.session.userId, targetCode)
   if (expenseId) {
     const view = await loadExpenseView(expenseId)
     try {
@@ -437,7 +528,7 @@ export async function deleteTransactionByCode(
     }
   }
 
-  const incomeId = await findIncomeId(ctx.session.userId, code.trim())
+  const incomeId = await findIncomeId(ctx.session.userId, targetCode)
   if (incomeId) {
     const view = await loadIncomeView(incomeId)
     try {
@@ -484,7 +575,10 @@ export function revisionHelpText(): string {
     "",
     "<code>/revisi</code> — lihat daftar kode transaksi terbaru",
     "<code>/revisi &lt;kode&gt;</code> — tampilkan data transaksi",
+    "<code>/revisi barusan</code> — tampilkan transaksi yang terakhir dicatat",
     "<code>/revisi &lt;kode&gt; &lt;field&gt; &lt;nilai&gt;</code> — ubah satu field",
+    "<code>/revisi barusan &lt;field&gt; &lt;nilai&gt;</code> — ubah transaksi terakhir",
+    "<code>/revisi &lt;field&gt; &lt;nilai&gt;</code> — tanpa kode, berlaku ke transaksi terakhir",
     "",
     "Field yang bisa diubah:",
     "• <code>jumlah</code> — mis. <code>/revisi 0AD968 jumlah 30rb</code>",

@@ -49,7 +49,7 @@ const BOT_COMMANDS = [
   { command: "link", description: "Hubungkan akun dengan kode koneksi" },
   { command: "unlink", description: "Putuskan hubungan akun" },
   { command: "riwayat", description: "Lihat 10 transaksi terakhir" },
-  { command: "revisi", description: "Perbaiki transaksi yang salah catat" },
+  { command: "revisi", description: "Perbaiki transaksi yang salah catat (atau 'barusan')" },
   { command: "hapus", description: "Hapus transaksi (dengan konfirmasi)" },
   { command: "rekap", description: "Rekap bulanan (opsional: 2026-11)" },
   { command: "rekap_harian", description: "Hari ini + tren 7 hari" },

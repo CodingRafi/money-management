@@ -12,7 +12,7 @@ import {
 import { runTelegramAgent } from "@/lib/telegram/agent"
 import { GeminiError } from "@/lib/telegram/gemini"
 import type { ToolContext } from "@/lib/telegram/tools"
-import { formatCard, formatAmount } from "@/lib/telegram/format"
+import { formatCard, formatAmount, shortCode } from "@/lib/telegram/format"
 import { historyCard } from "@/lib/telegram/cards"
 import { todayFromDb } from "@/lib/telegram/tools"
 import {
@@ -34,6 +34,8 @@ import {
   deleteTransactionByCode,
   previewDeletion,
   findTransactionKind,
+  findLastCreated,
+  isRecentAlias,
   listRecent,
   reviseExpense,
   reviseIncome,
@@ -158,7 +160,7 @@ const COMMAND_HINTS = [
   ["/start", "mulai & lihat cara pakai"],
   ["/link", "hubungkan akun dengan kode"],
   ["/riwayat", "10 transaksi terakhir"],
-  ["/revisi", "perbaiki transaksi yang salah catat"],
+  ["/revisi", "perbaiki transaksi (boleh 'barusan')"],
   ["/hapus", "hapus transaksi (dengan konfirmasi)"],
   ["/rekap", "rekap bulanan (opsional: 2026-11)"],
   ["/rekap_harian [tanggal]", "harian + tren 7 hari"],
@@ -477,13 +479,26 @@ function revisiUsage(): string {
     "<code>/revisi 0AD968 kebutuhan SEKUNDER</code>",
     "<code>/revisi 0AD968 keluarga Y</code>",
     "<code>/revisi 0AD968 nama makan malam</code>",
+    "<code>/revisi barusan</code> → transaksi yang terakhir dicatat",
+    "<code>/revisi barusan jumlah 30rb</code>",
+    "<code>/revisi jumlah 30rb</code> → tanpa kode, berlaku ke transaksi terakhir",
     "",
     "Lihat daftar kode: <code>/riwayat</code>",
   ].join("\n")
 }
 
+/**
+ * Terjemahkan alias "barusan"/"terakhir" menjadi kode transaksi terakhir milik
+ * user. Alias lain dikembalikan apa adanya.
+ */
+async function resolveCodeAlias(userId: string, token: string): Promise<string | null> {
+  if (!isRecentAlias(token)) return token
+  const last = await findLastCreated(userId)
+  return last?.id ?? null
+}
+
 async function handleRevisi(chatId: string, ctx: Omit<ToolContext, "today">, arg: string) {
-  const parts = arg.trim().split(/\s+/).filter(Boolean)
+  let parts = arg.trim().split(/\s+/).filter(Boolean)
 
   // /revisi → daftar kode terbaru + panduan
   if (parts.length === 0) {
@@ -495,13 +510,40 @@ async function handleRevisi(chatId: string, ctx: Omit<ToolContext, "today">, arg
     return
   }
 
-  const code = parts[0]
+  // Pintasan: /revisi <field> <nilai> tanpa kode → berlaku untuk transaksi
+  // terakhir. Kode transaksi selalu hex, jadi tidak mungkin sama dengan nama
+  // field.
+  if (REVISION_FIELD_ALIASES[parts[0].toLowerCase()]) {
+    if (parts.length === 1) {
+      // "/revisi jumlah" — field tanpa nilai.
+      await sendTelegramHtml(
+        chatId,
+        `Nilai untuk "${escapeHtml(parts[0])}" belum diisi.\n\n${revisiUsage()}`,
+      )
+      return
+    }
+    parts = ["barusan", ...parts]
+  }
+
+  // /revisi barusan → kode transaksi terakhir yang dicatat
+  const rawToken = parts[0]
+  const code = await resolveCodeAlias(ctx.session.userId, rawToken)
+  if (!code) {
+    await sendTelegramHtml(chatId, "Belum ada transaksi yang bisa direvisi.")
+    return
+  }
+  // Kode yang ditampilkan ke user: tetap seperti yang diketik, kecuali kalau
+  // user memakai alias "barusan" (maka tampilkan kode transaksinya).
+  const displayCode = rawToken === code ? rawToken : shortCode(code)
 
   // /revisi <kode> → tampilkan data transaksi
   if (parts.length === 1) {
     const outcome = await showTransaction(ctx, code)
     if (!outcome.ok) {
-      await sendTelegramMessage(chatId, outcome.message)
+      await sendTelegramHtml(
+        chatId,
+        `Transaksi "${escapeHtml(displayCode)}" tidak ditemukan. Lihat daftar kode dengan /riwayat.`,
+      )
       return
     }
     await sendTelegramHtml(chatId, formatCard(outcome.card))
@@ -531,7 +573,7 @@ async function handleRevisi(chatId: string, ctx: Omit<ToolContext, "today">, arg
   if (!kind) {
     await sendTelegramHtml(
       chatId,
-      `Transaksi "${escapeHtml(code)}" tidak ditemukan. Lihat daftar kode dengan /riwayat.`,
+      `Transaksi "${escapeHtml(displayCode)}" tidak ditemukan. Lihat daftar kode dengan /riwayat.`,
     )
     return
   }
@@ -568,6 +610,7 @@ function hapusUsage(): string {
     "Bot akan menampilkan transaksinya dulu, lalu minta konfirmasi:",
     "<code>/hapus 0AD968</code> → lihat data yang akan dihapus",
     "<code>/hapus 0AD968 ya</code> → hapus permanen",
+    "<code>/hapus barusan</code> → transaksi yang terakhir dicatat",
     "",
     "Lihat daftar kode: <code>/riwayat</code>",
   ].join("\n")
@@ -585,7 +628,13 @@ async function handleHapus(chatId: string, ctx: Omit<ToolContext, "today">, arg:
     return
   }
 
-  const code = parts[0]
+  // /hapus barusan → kode transaksi terakhir yang dicatat
+  const code = await resolveCodeAlias(ctx.session.userId, parts[0])
+  if (!code) {
+    await sendTelegramHtml(chatId, "Belum ada transaksi yang bisa dihapus.")
+    return
+  }
+
   const confirmed = parts.length > 1 && ["ya", "y", "yes", "ok", "hapus"].includes(parts[1].toLowerCase())
 
   if (!confirmed) {
@@ -596,7 +645,7 @@ async function handleHapus(chatId: string, ctx: Omit<ToolContext, "today">, arg:
     }
     await sendTelegramHtml(
       chatId,
-      `${formatCard(preview.card)}\n\n⚠️ Penghapusan <b>tidak bisa dibatalkan</b>. Untuk melanjutkan kirim:\n<code>/hapus ${escapeHtml(code)} ya</code>`,
+      `${formatCard(preview.card)}\n\n⚠️ Penghapusan <b>tidak bisa dibatalkan</b>. Untuk melanjutkan kirim:\n<code>/hapus ${escapeHtml(shortCode(code))} ya</code>`,
     )
     return
   }

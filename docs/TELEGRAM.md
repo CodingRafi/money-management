@@ -144,7 +144,15 @@ mudah diketik. Kodenya muncul di pesan pencatatan dan di `/riwayat`.
 /revisi                     → daftar kode terbaru + panduan
 /revisi 592C67              → tampilkan data transaksi saat ini
 /revisi 592C67 jumlah 30rb  → ubah field
+/revisi barusan             → transaksi yang terakhir dicatat
+/revisi barusan jumlah 30rb → ubah transaksi terakhir
+/revisi jumlah 30rb         → tanpa kode, berlaku ke transaksi terakhir
 ```
+
+`barusan` (alias: `baru`, `terbaru`, `terakhir`, `last`, `recent`) berarti
+transaksi yang **paling baru dicatat** — jadi tidak perlu mengetik kode sama
+sekali. Field juga boleh ditulis tanpa kode: `/revisi jumlah 30rb` memakai
+transaksi terakhir.
 
 Field yang bisa diubah:
 
@@ -173,6 +181,8 @@ Memakai kode yang sama dengan `/revisi`. Ada dua langkah supaya tidak salah hapu
 /hapus                → daftar kode terbaru
 /hapus 592C67         → tampilkan transaksi + minta konfirmasi
 /hapus 592C67 ya      → hapus permanen
+/hapus barusan        → transaksi terakhir dicatat + minta konfirmasi
+/hapus barusan ya     → hapus transaksi terakhir
 ```
 
 Berlaku untuk pengeluaran dan pendapatan milik akun yang tertaut.
@@ -184,10 +194,14 @@ AI juga bisa memperbaiki transaksi kalau diminta dalam kalimat biasa:
 ```
 "tolong ubah transaksi kode 592C67 jadi 55rb"
 "yang tadi 27rb seharusnya 30rb ya"
+"hapus yang barusan"
 ```
 
-Keduanya memakai tool `revise_expense` / `revise_income` yang sama dengan
-perintah `/revisi`, jadi aturannya identik.
+Keduanya memakai tool `revise_expense` / `revise_income` / `delete_*` yang sama
+dengan perintah `/revisi`, jadi aturannya identik. Kata "barusan" juga
+dipakai AI: `revise_expense` → pengeluaran terakhir, `revise_income` →
+pemasukan terakhir, dan `delete_*` → transaksi terakhir secara keseluruhan
+(jenisnya dicek, supaya tidak salah hapus).
 
 ### Uji jalur AI tanpa Telegram
 

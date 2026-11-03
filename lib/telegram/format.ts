@@ -123,6 +123,7 @@ export function revisiHint(id: string): string {
     `<code>/revisi ${code} &lt;field&gt; &lt;nilai&gt;</code>`,
     "",
     "Field: jumlah · nama · tanggal · kategori · wallet",
-    `Contoh: <code>/revisi ${code} jumlah 30rb</code></blockquote>`,
+    `Contoh: <code>/revisi ${code} jumlah 30rb</code>`,
+    "Atau tanpa kode: <code>/revisi barusan</code></blockquote>",
   ].join("\n")
 }
