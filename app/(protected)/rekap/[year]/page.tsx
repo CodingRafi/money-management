@@ -567,6 +567,13 @@ export default async function YearDetailPage({
                                 const isLastInGroup = ci === cats.length - 1
                                 const repPct        = catRepPct(cat.id)
                                 const hasNominal    = cat.nominal !== null && cat.nominal > 0
+                                // Amplop budget kategori = alokasi TIPE (dikalikan batas
+                                // pengeluaran) terhadap pendapatan. Persentase kategori
+                                // dihitung DARI amplop tipe, bukan dari pendapatan global —
+                                // kalau tidak, kategori bisa melebihi amplop induknya.
+                                // Tipe tanpa alokasi → amplop = seluruh batas pengeluaran.
+                                const envelope      = (typeAlloc > 0 ? (typeAlloc / 100) : 1) * (maxExpensePct / 100)
+                                const repPctOfIncome = envelope * repPct
                                 return (
                                   <tr key={cat.id} className={`${isLastInGroup ? "border-b-2 border-border" : "border-b border-border/40"} ${ci % 2 === 0 ? "bg-muted/20" : ""}`}>
                                     <td className="w-[100px] px-3 py-2.5 sticky left-0 z-10 border-r border-border bg-background" />
@@ -574,14 +581,23 @@ export default async function YearDetailPage({
                                     <td className="min-w-[90px] max-w-[90px] px-3 py-2.5 text-right tabular-nums sticky left-52 z-10 bg-background border-r border-border text-muted-foreground text-xs">
                                       {hasNominal
                                         ? <span className="text-primary font-medium">{formatRupiah(cat.nominal!)}</span>
-                                        : repPct > 0 ? `${repPct.toFixed(2)}%` : "—"}
+                                        : repPct > 0 ? (
+                                          <span className="leading-tight">
+                                            <span className="block font-semibold">{repPct.toFixed(2)}% {typeName}</span>
+                                            <span className="text-muted-foreground/70">= {repPctOfIncome.toFixed(1)}% pendapatan</span>
+                                          </span>
+                                        ) : "—"}
                                     </td>
                                     {bdMonths.map((m) => {
                                       const monthIncome = incomeMo[String(m)] ?? 0
+                                      const monthPct    = getMonthPct(cat.id, m)
+                                      // Budget persentase dihitung dari amplop TIPE:
+                                      //   income × (alokasi tipe × batas pengeluaran) × %kategori
+                                      // Budget nominal (Rp) tetap absolute — menang atas persentase.
                                       const maxBudget   = hasNominal
                                         ? (cat.nominal ?? 0)
-                                        : monthIncome * (getMonthPct(cat.id, m) / 100)
-                                      const hasBudget   = hasNominal || getMonthPct(cat.id, m) > 0
+                                        : monthIncome * envelope * (monthPct / 100)
+                                      const hasBudget   = hasNominal || (envelope > 0 && monthPct > 0)
                                       const spent       = cat.months[String(m)] ?? 0
                                       const sisa        = maxBudget - spent
                                       const status      = expenseStatus(hasBudget ? 1 : 0, maxBudget, spent)
