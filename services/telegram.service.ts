@@ -124,7 +124,7 @@ function helpText(linked: boolean): string {
     "<b>Laporan:</b>",
     "• <code>/rekap</code> — rekap bulan berjalan (s/d hari ini)",
     "• <code>/rekap 2026-11</code> — rekap bulan tertentu",
-    "• <code>/rekap_harian</code> — hari ini + tren 7 hari",
+    "• <code>/rekap_harian [tanggal]</code> — harian (default hari ini, mis. kemarin / 2026-11-01) + tren 7 hari",
     "• <code>/rekap_tahunan</code> — rekap 12 bulan",
     "• <code>/rekap_kategori</code> — pengeluaran per kategori + status anggaran",
     "• <code>/anggaran</code> — status anggaran bulan ini",
@@ -161,7 +161,7 @@ const COMMAND_HINTS = [
   ["/revisi", "perbaiki transaksi yang salah catat"],
   ["/hapus", "hapus transaksi (dengan konfirmasi)"],
   ["/rekap", "rekap bulanan (opsional: 2026-11)"],
-  ["/rekap_harian", "hari ini + tren 7 hari"],
+  ["/rekap_harian [tanggal]", "harian + tren 7 hari"],
   ["/rekap_tahunan", "rekap 12 bulan (opsional: 2026)"],
   ["/rekap_kategori", "pengeluaran per kategori + status anggaran"],
   ["/anggaran", "status anggaran bulan ini"],
@@ -211,6 +211,51 @@ function parseMonthArg(arg: string, today: string): { month?: number; year?: num
   }
 
   return null
+}
+
+/**
+ * Parse argumen "/rekap_harian" menjadi tanggal "YYYY-MM-DD".
+ * Mendukung: kosong/"hari ini", "kemarin", "lusa kemarin", "N hari lalu",
+ * "YYYY-MM-DD", "DD-MM-YYYY", "DD/MM(/YYYY)", dan "DD" (bulan berjalan).
+ * Mengembalikan `null` bila tidak valid.
+ */
+function parseDayArg(arg: string, today: string): string | null {
+  const raw = arg.trim().toLowerCase()
+  if (!raw || raw === "hari ini" || raw === "today") return today
+
+  const shift = (days: number) => {
+    const d = new Date(`${today}T00:00:00Z`)
+    d.setUTCDate(d.getUTCDate() + days)
+    return d.toISOString().slice(0, 10)
+  }
+  if (raw === "kemarin" || raw === "yesterday") return shift(-1)
+  if (raw === "kemarin lusa" || raw === "lusa kemarin") return shift(-2)
+
+  const ago = /^(\d{1,3})\s*hari\s+(?:yang\s+)?lalu$/.exec(raw)
+  if (ago) return shift(-Number(ago[1]))
+
+  const [ty, tm] = today.split("-").map(Number)
+  let y = ty
+  let m = tm
+  let d: number
+
+  let match: RegExpExecArray | null
+  if ((match = /^(\d{4})-(\d{1,2})-(\d{1,2})$/.exec(raw))) {
+    y = Number(match[1]); m = Number(match[2]); d = Number(match[3])
+  } else if ((match = /^(\d{1,2})[-/.](\d{1,2})[-/.](\d{4})$/.exec(raw))) {
+    d = Number(match[1]); m = Number(match[2]); y = Number(match[3])
+  } else if ((match = /^(\d{1,2})[-/.](\d{1,2})$/.exec(raw))) {
+    d = Number(match[1]); m = Number(match[2])
+  } else if ((match = /^(\d{1,2})$/.exec(raw))) {
+    d = Number(match[1])
+  } else {
+    return null
+  }
+
+  // Validasi tanggal nyata (mis. tolak 31 Februari).
+  const dt = new Date(Date.UTC(y, m - 1, d))
+  if (dt.getUTCFullYear() !== y || dt.getUTCMonth() !== m - 1 || dt.getUTCDate() !== d) return null
+  return dt.toISOString().slice(0, 10)
 }
 
 /** Parse argumen "/rekap_tahunan" — "YYYY" atau kosong (tahun berjalan). */
@@ -582,7 +627,24 @@ async function handleLaporan(chatId: string, ctx: Omit<ToolContext, "today">, co
       return
     }
     case "/rekap_harian": {
-      const html = await recapDaily(session, today)
+      const date = parseDayArg(arg, today)
+      if (date === null) {
+        await sendTelegramHtml(
+          chatId,
+          [
+            "Format: <code>/rekap_harian [tanggal]</code>",
+            "Contoh:",
+            "<code>/rekap_harian</code> — hari ini",
+            "<code>/rekap_harian kemarin</code>",
+            "<code>/rekap_harian 3 hari lalu</code>",
+            "<code>/rekap_harian 2026-11-01</code>",
+            "<code>/rekap_harian 01-11-2026</code> atau <code>01/11</code>",
+            "<code>/rekap_harian 15</code> — tanggal 15 bulan berjalan",
+          ].join("\n"),
+        )
+        return
+      }
+      const html = await recapDaily(session, today, date)
       await sendTelegramHtml(chatId, html)
       return
     }

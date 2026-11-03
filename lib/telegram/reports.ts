@@ -244,7 +244,7 @@ export async function recapMonthly(
 /**
  * Rekap harian: pengeluaran & pemasukan hari ini plus tren 7 hari terakhir.
  */
-export async function recapDaily(session: SessionData, today: string): Promise<string> {
+export async function recapDaily(session: SessionData, today: string, date: string = today): Promise<string> {
   const scope = await resolveTgScope(session)
   const famClause = scope.excludeFamilyExpense ? " AND is_family_expense = 0" : ""
 
@@ -262,10 +262,10 @@ export async function recapDaily(session: SessionData, today: string): Promise<s
           WHERE user_id = ANY(?) AND date = ?${famClause}
        ) t`
     )
-    .get(scope.userIds, today, scope.userIds, today)
+    .get(scope.userIds, date, scope.userIds, date)
 
-  // 7 hari terakhir (termasuk hari ini) — mini-trend.
-  // Batas atas = hari ini, supaya transaksi bertanggal masa depan (mis.
+  // 7 hari terakhir (termasuk tanggal yang diminta) — mini-trend.
+  // Batas atas = tanggal yang diminta, supaya transaksi bertanggal masa depan (mis.
   // saldo awal yang di-assign ke bulan berikutnya) tidak ikut dihitung.
   const trend = await db
     .prepare<[string[], string, string, string[], string, string], { date: string; income: number; expense: number }>(
@@ -282,7 +282,7 @@ export async function recapDaily(session: SessionData, today: string): Promise<s
         GROUP BY date
         ORDER BY date`
     )
-    .all(scope.userIds, trendStart(today, 6), today, scope.userIds, trendStart(today, 6), today) as {
+    .all(scope.userIds, trendStart(date, 6), date, scope.userIds, trendStart(date, 6), date) as {
     date: string; income: number; expense: number
   }[]
 
@@ -291,7 +291,7 @@ export async function recapDaily(session: SessionData, today: string): Promise<s
   const net = income - expense
 
   const lines = [
-    `📅 <b>Harian ${escapeHtml(today)}</b>`,
+    `📅 <b>Harian ${escapeHtml(date)}${date === today ? " (hari ini)" : ""}</b>`,
     "",
     row("Pemasukan", rupiah(income), "💰"),
     row("Pengeluaran", rupiah(expense), "💸"),
@@ -459,57 +459,28 @@ export async function recapCategory(
 // ── /anggaran ───────────────────────────────────────────────────────────────
 
 /**
- * Status anggaran bulan ini: daftar kategori yang WARNING/DANGER plus sisa
- * hari menuju batas akhir bulan.
- *
- * Bila bulan berjalan belum punya anggaran sama sekali, fallback ke bulan
- * terdekat yang punya — supaya perintah ini tidak selalu kosong.
+ * Status anggaran bulan berjalan: daftar kategori yang WARNING/DANGER plus
+ * sisa hari menuju batas akhir bulan. Selalu bulan berjalan — tidak pernah
+ * berpindah ke bulan lain.
  */
 export async function budgetReport(session: SessionData, today: string): Promise<string> {
   const scope = await resolveTgScope(session)
-  const [ty, tm] = today.split("-").map(Number)
-  const todayMonth = tm
+  const [year, month] = today.split("-").map(Number)
 
-  // Kategori yang punya anggaran di bulan ini (dari DB anggaran, bukan dari
-  // pengeluaran) — supaya kategori yang belum terpakai tetap terlihat.
-  let budgetRows = await db
-    .prepare<[string[], number, number], { category_id: string; name: string; pct: number }>(
-      `SELECT b.category_id, ec.name, SUM(b.percentage) AS pct
+  // Kategori yang punya anggaran persentase di tahun ini (bulan mana pun).
+  // Kategori yang disembunyikan tidak ditampilkan — sama seperti halaman Rekap.
+  // Persentase bulan berjalan yang kosong otomatis memakai persentase tertinggi
+  // dari bulan lain (fallback di getCategoryBudgetStatuses, sama seperti Rekap),
+  // jadi kategori tidak hilang hanya karena barisnya belum dibuat untuk bulan ini.
+  const budgetRows = await db
+    .prepare<[string[], number], { category_id: string; name: string }>(
+      `SELECT DISTINCT b.category_id, ec.name
          FROM budgets b
          JOIN expense_categories ec ON ec.id = b.category_id
-        WHERE b.user_id = ANY(?) AND b.year = ? AND b.month = ?
-        GROUP BY b.category_id, ec.name`,
+        WHERE b.user_id = ANY(?) AND b.year = ? AND b.percentage > 0
+          AND ec.is_hidden = 0`,
     )
-    .all(scope.userIds, ty, tm) as { category_id: string; name: string; pct: number }[]
-
-  const year = ty
-  let month = tm
-
-  // Fallback: bulan terdekat yang punya anggaran di tahun ini.
-  if (budgetRows.length === 0) {
-    const fallback = await db
-      .prepare<[string[], number, number], { month: number }>(
-        `SELECT month FROM (
-           SELECT DISTINCT month FROM budgets
-            WHERE user_id = ANY(?) AND year = ?
-          ) m
-          ORDER BY ABS(month - ?)`,
-      )
-      .all(scope.userIds, ty, tm) as { month: number }[]
-    const picked = fallback[0]?.month
-    if (picked && picked !== tm) {
-      month = picked
-      budgetRows = await db
-        .prepare<[string[], number, number], { category_id: string; name: string; pct: number }>(
-          `SELECT b.category_id, ec.name, SUM(b.percentage) AS pct
-             FROM budgets b
-             JOIN expense_categories ec ON ec.id = b.category_id
-            WHERE b.user_id = ANY(?) AND b.year = ? AND b.month = ?
-            GROUP BY b.category_id, ec.name`,
-        )
-        .all(scope.userIds, ty, month) as { category_id: string; name: string; pct: number }[]
-    }
-  }
+    .all(scope.userIds, year) as { category_id: string; name: string }[]
 
   // Kategori dengan anggaran nominal (tanpa persentase).
   const nominalRows = await db
@@ -517,7 +488,7 @@ export async function budgetReport(session: SessionData, today: string): Promise
       `SELECT n.category_id, ec.name
          FROM category_nominal_budgets n
          JOIN expense_categories ec ON ec.id = n.category_id
-        WHERE n.user_id = ANY(?) AND n.year = ?`,
+        WHERE n.user_id = ANY(?) AND n.year = ? AND ec.is_hidden = 0`,
     )
     .all(scope.userIds, year) as { category_id: string; name: string }[]
 
@@ -539,12 +510,6 @@ export async function budgetReport(session: SessionData, today: string): Promise
 
   const lines = [`🎯 <b>Anggaran ${monthName(month)} ${year}</b>`, ""]
 
-  // Bila yang ditampilkan bukan bulan berjalan, beri tahu agar user tidak
-  // mengira ini angka bulan ini.
-  if (month !== todayMonth) {
-    lines.push(`ℹ️ Bulan ini belum ada anggaran — yang ditampilkan: ${monthName(month)} ${year}.`, "")
-  }
-
   if (items.length === 0) {
     lines.push("Belum ada anggaran yang berlaku bulan ini.")
     return lines.join("\n")
@@ -555,17 +520,10 @@ export async function budgetReport(session: SessionData, today: string): Promise
   const dayNow = Number(today.slice(8, 10))
   const daysLeft = daysInMonth - dayNow
 
-  if (month === todayMonth) {
-    lines.push(
-      `⏳ Sisa hari menuju batas: <b>${daysLeft} hari</b> (s/d ${daysInMonth} ${monthShort(month)})`,
-      "",
-    )
-  } else {
-    lines.push(
-      `📅 Periode: ${monthName(month)} ${year} (${daysInMonth} hari)`,
-      "",
-    )
-  }
+  lines.push(
+    `⏳ Sisa hari menuju batas: <b>${daysLeft} hari</b> (s/d ${daysInMonth} ${monthShort(month)})`,
+    "",
+  )
 
   const problem = items.filter((i) => i.status!.status !== "NORMAL")
   const safe = items.filter((i) => i.status!.status === "NORMAL")
