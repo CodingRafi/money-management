@@ -1,6 +1,6 @@
 # Handoff — Bug "Perhitungan Table" di `/rekap/[year]?view=report&detail=pengeluaran`
 
-Status: **dalam pengerjaan** — perbaikan di halaman web sudah masuk, cermin Telegram belum.
+Status: **selesai** (2026-11-03) — halaman web, cermin Telegram, dan label Kategori & Budget sudah diperbaiki. Tersisa §3d (isu terpisah).
 Dibuat: 2026-11-02 · Branch: `main` · Commit terakhir saat handoff: `1daae9b`
 
 ---
@@ -45,7 +45,7 @@ Sebelum fix:
 Sesudah fix:
   TETAP (baris tipe)    MAX = 5.567.200 × 60%      = Rp3.340.320
   ORANG TUA (kategori)  MAX = 5.567.200 × 60% × 70% = Rp2.338.224  ← ≤ induknya ✓
-  Realisasi ORANG TUA                             = Rp2.000.000   → sisa +Rp338.224 (NORMAL)
+  Realisasi ORANG TUA                             = Rp2.000.000   → sisa +Rp338.224 (WARNING: sisa < 20% MAX)
 ```
 
 Data relevan di backup (user `user-rafi`):
@@ -103,9 +103,9 @@ Sekarang menampilkan dua baris supaya jelas proporsinya:
 
 ## 3. Yang BELUM selesai (lanjut di sini)
 
-### [ ] 3a. Cermin Telegram — `lib/telegram/budget-status.ts` (PRIORITAS TINGGI)
+### [x] 3a. Cermin Telegram — `lib/telegram/budget-status.ts` (PRIORITAS TINGGI)
 
-Modul ini menghitung MAX / PENGELUARAN / SISA / STATUS yang ** supposedly cermin
+Modul ini menghitung MAX / PENGELUARAN / SISA / STATUS yang **seharusnya** cermin
 dari tabel Rekap** — lihat komentar di header file. Saat ini masih memakai rumus
 lama tanpa amplop:
 
@@ -146,7 +146,7 @@ perbaikannya di dalam modul):
 - `lib/telegram/revision.ts` → kartu transaksi saat revise
 - `lib/telegram/tools.ts` → ringkasan transaksi
 
-### [ ] 3b. Label di halaman Kategori & Budget
+### [x] 3b. Label di halaman Kategori & Budget
 
 `app/(protected)/rekap/[year]/_components/kategori-budget-tab.tsx` — input "%"
 per kategori (baris ~373, `name="percentage"`) kini berarti **% dari alokasi
@@ -160,7 +160,7 @@ Budget (dari TETAP)   [ 70 ] %
 Perhatikan juga baris ~308 (`= {fromIncome.toFixed(1)}% pendapatan`) untuk alokasi
 tipe — sudah benar, tidak diubah.
 
-### [ ] 3c. Verifikasi
+### [x] 3c. Verifikasi
 
 ```bash
 bunx tsc --noEmit     # atau: npx next typegen && npx tsc --noEmit
@@ -229,3 +229,19 @@ ini → lanjut dari §3.
 
 Command tersebut (`.claude/commands/lanjut-fix-budget.md`) memuat instruksi untuk
 membaca dokumen handoff ini dan melanjutkan pekerjaan yang tersisa.
+
+---
+
+## 7. Log penyelesaian (2026-11-03)
+
+- **3a** `lib/telegram/budget-status.ts`: `SQL` dan `BULK_SQL` kini mengambil
+  alokasi tipe kategori (`type_allocations`, fallback tahun terbaru ≤ tahun berjalan,
+  `SUM` antar anggota) dan `MAX(max_expense_pct)` (default 100). Rumus dipusatkan di
+  `computeStatus()` — identik dengan baris kategori di Rekap.
+- **3b** `kategori-budget-tab.tsx`: label "Budget (dari {TIPE})" di depan input %.
+- **3c** Diverifikasi di DB sementara (migrasi + data skenario Juni 2026):
+  ORANG TUA MAX = Rp2.338.224, sisa Rp338.224, status WARNING; versi single = bulk;
+  kategori tipe tanpa alokasi tetap punya MAX; batas pengeluaran 80% ikut terhitung.
+  `tsc` bersih (kecuali `.next/types` usang), `bun run build` sukses, `eslint .`
+  hanya error lama di `scripts/gemini-check.ts`.
+- Cek manual di browser belum dilakukan (DB `money_management` tidak ada di laptop ini).

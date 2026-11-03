@@ -12,7 +12,7 @@ import type { SessionData } from "@/lib/auth-simple"
 export type BudgetStatusLevel = "NORMAL" | "WARNING" | "DANGER"
 
 export interface CategoryBudgetStatus {
-  /** Ada anggaran yang berlaku (nominal atau persentase pendapatan). */
+  /** Ada anggaran yang berlaku (nominal, atau persentase dari amplop alokasi tipe). */
   hasBudget: boolean
   /** Batas maksimum pengeluaran kategori untuk bulan tersebut. */
   max: number
@@ -55,6 +55,23 @@ e AS (
     FROM expenses
    WHERE user_id IN (SELECT user_id FROM m)
      AND year = ? AND month = ? AND category_id = ?$FAM$
+),
+c AS (
+  SELECT type_id FROM expense_categories WHERE id = ?
+),
+t AS (
+  SELECT COALESCE(SUM(ta.percentage), 0) AS alloc
+    FROM type_allocations ta, c
+   WHERE ta.type_id = c.type_id
+     AND ta.user_id IN (SELECT user_id FROM m)
+     AND ta.year = (SELECT MAX(t2.year) FROM type_allocations t2
+                     WHERE t2.user_id IN (SELECT user_id FROM m)
+                       AND t2.type_id = c.type_id AND t2.year <= ?)
+),
+ys AS (
+  SELECT MAX(max_expense_pct) AS max_pct
+    FROM year_budget_settings
+   WHERE user_id IN (SELECT user_id FROM m) AND year = ?
 )
 SELECT
   (SELECT COALESCE(MAX(pct), 0) FROM b)                 AS pct_rep,
@@ -62,8 +79,10 @@ SELECT
   (SELECT COUNT(*) FROM b WHERE month = ?)               AS has_month,
   n.nominal                                              AS nominal,
   i.total                                                AS income,
-  e.total                                                AS spent
-  FROM n, i, e`
+  e.total                                                AS spent,
+  t.alloc                                                AS type_alloc,
+  COALESCE(ys.max_pct, 100)                              AS max_pct
+  FROM n, i, e, t, ys`
 
 /**
  * Scope pembacaan data.
@@ -111,6 +130,8 @@ export async function getCategoryBudgetStatus(
     nominal: number
     income: number
     spent: number
+    type_alloc: number
+    max_pct: number
   }>(sql).all(
     scope.param,   // m (household_id / user_id)
     categoryId,    // b.category_id
@@ -122,6 +143,9 @@ export async function getCategoryBudgetStatus(
     year,          // e.year
     month,         // e.month
     categoryId,    // e.category_id
+    categoryId,    // c.id (tipe kategori)
+    year,          // t: alokasi tipe tahun terbaru <= year
+    year,          // ys.year
     month,         // pct_month
     month,         // has_month
   )
@@ -129,21 +153,44 @@ export async function getCategoryBudgetStatus(
   const row = rows[0]
   if (!row) return null
 
+  return computeStatus(row)
+}
+
+interface StatusRow {
+  pct_rep: number
+  pct_month: number
+  has_month: number
+  nominal: number
+  income: number
+  spent: number
+  type_alloc: number
+  max_pct: number
+}
+
+/** Rumus MAX / SISA / STATUS — identik dengan baris kategori di tabel Rekap. */
+function computeStatus(row: StatusRow): CategoryBudgetStatus {
   const pctRep = Number(row.pct_rep) || 0
   const pctMonth = Number(row.pct_month) || 0
   const hasMonth = Number(row.has_month) > 0
   const nominal = Number(row.nominal) || 0
   const income = Number(row.income) || 0
   const spent = Number(row.spent) || 0
+  const typeAlloc = Number(row.type_alloc) || 0
+  const maxExpensePct = row.max_pct == null ? 100 : Number(row.max_pct)
 
   // Persentase bulan ini; kalau bulan ini tidak punya baris anggaran, pakai
   // persentase tertinggi dari bulan lain pada tahun yang sama (fallback yang
   // sama dengan halaman Rekap).
   const pct = hasMonth ? pctMonth : pctRep
   const hasNominal = nominal > 0
-  const hasBudget = hasNominal || pct > 0
 
-  const max = hasNominal ? nominal : income * (pct / 100)
+  // Amplop = alokasi TIPE × batas pengeluaran, terhadap pendapatan. Persentase
+  // kategori dihitung DARI amplop tipe, supaya kategori tidak melebihi
+  // induknya. Tipe tanpa alokasi → amplop = seluruh batas pengeluaran.
+  const envelope = (typeAlloc > 0 ? typeAlloc / 100 : 1) * (maxExpensePct / 100)
+  const hasBudget = hasNominal || (envelope > 0 && pct > 0)
+
+  const max = hasNominal ? nominal : income * envelope * (pct / 100)
   const sisa = max - spent
 
   let status: BudgetStatusLevel | null = null
@@ -195,6 +242,20 @@ e AS (
    WHERE user_id IN (SELECT user_id FROM m)
      AND year = ? AND month = ?$FAM$
    GROUP BY category_id
+),
+t AS (
+  SELECT ta.type_id, SUM(ta.percentage) AS alloc
+    FROM type_allocations ta
+   WHERE ta.user_id IN (SELECT user_id FROM m)
+     AND ta.year = (SELECT MAX(t2.year) FROM type_allocations t2
+                     WHERE t2.user_id IN (SELECT user_id FROM m)
+                       AND t2.type_id = ta.type_id AND t2.year <= ?)
+   GROUP BY ta.type_id
+),
+ys AS (
+  SELECT MAX(max_expense_pct) AS max_pct
+    FROM year_budget_settings
+   WHERE user_id IN (SELECT user_id FROM m) AND year = ?
 )
 SELECT
   c.id AS category_id,
@@ -203,10 +264,14 @@ SELECT
   (SELECT COUNT(*) FROM b WHERE b.category_id = c.id AND month = ?) AS has_month,
   COALESCE(n.nominal, 0) AS nominal,
   (SELECT total FROM i) AS income,
-  COALESCE(e.total, 0) AS spent
+  COALESCE(e.total, 0) AS spent,
+  COALESCE(t.alloc, 0) AS type_alloc,
+  COALESCE((SELECT max_pct FROM ys), 100) AS max_pct
 FROM (SELECT unnest(?::text[]) AS id) c
 LEFT JOIN n ON n.category_id = c.id
-LEFT JOIN e ON e.category_id = c.id`
+LEFT JOIN e ON e.category_id = c.id
+LEFT JOIN expense_categories ec ON ec.id = c.id
+LEFT JOIN t ON t.type_id = ec.type_id`
 
 /**
  * Status anggaran untuk banyak kategori sekaligus.
@@ -233,6 +298,8 @@ export async function getCategoryBudgetStatuses(
     nominal: number
     income: number
     spent: number
+    type_alloc: number
+    max_pct: number
   }>(sql).all(
     scope.param,   // m
     year,          // b.year
@@ -241,34 +308,15 @@ export async function getCategoryBudgetStatuses(
     month,         // i.month
     year,          // e.year
     month,         // e.month
+    year,          // t: alokasi tipe tahun terbaru <= year
+    year,          // ys.year
     month,         // pct_month
     month,         // has_month
     categoryIds,   // daftar kategori
   )
 
   for (const row of rows) {
-    const pctRep = Number(row.pct_rep) || 0
-    const pctMonth = Number(row.pct_month) || 0
-    const hasMonth = Number(row.has_month) > 0
-    const nominal = Number(row.nominal) || 0
-    const income = Number(row.income) || 0
-    const spent = Number(row.spent) || 0
-
-    const pct = hasMonth ? pctMonth : pctRep
-    const hasNominal = nominal > 0
-    const hasBudget = hasNominal || pct > 0
-    const max = hasNominal ? nominal : income * (pct / 100)
-    const sisa = max - spent
-
-    let status: BudgetStatusLevel | null = null
-    if (hasBudget) {
-      if (max <= 0) status = "NORMAL"
-      else if (sisa < 0) status = "DANGER"
-      else if (sisa < max * 0.2) status = "WARNING"
-      else status = "NORMAL"
-    }
-
-    result.set(row.category_id, { hasBudget, max, spent, sisa, status })
+    result.set(row.category_id, computeStatus(row))
   }
 
   return result

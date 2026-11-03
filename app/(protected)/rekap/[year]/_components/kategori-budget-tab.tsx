@@ -370,6 +370,12 @@ export function KategoriBudgetTab({
                             <input type="hidden" name="category_id" value={cat.id} />
                             <input type="hidden" name="month" value={month} />
                             <input type="hidden" name="year" value={year} />
+                            <span
+                              className="text-xs text-muted-foreground"
+                              title={`Persentase dihitung dari alokasi tipe ${type.name}, bukan dari pendapatan`}
+                            >
+                              Budget (dari {type.name})
+                            </span>
                             <Input
                               name="percentage"
                               type="number" step="0.01" min="0" max="100"
