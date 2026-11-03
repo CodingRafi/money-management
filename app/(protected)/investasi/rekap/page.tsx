@@ -4,10 +4,14 @@ import { Button } from "@/components/ui/button"
 import { ArrowLeft } from "lucide-react"
 import Link from "next/link"
 import { InvestasiCharts } from "./_components/InvestasiCharts"
-import type { CategoryData, LiquidData } from "./_components/InvestasiCharts"
+import type { CategoryData, LiquidData, HoldingData } from "./_components/InvestasiCharts"
+import { GrowthChart } from "./_components/GrowthChart"
+import { PerformanceTable } from "./_components/PerformanceTable"
+import { monthlyGrowth, realizedPerformance, type CashTx } from "@/lib/investment-metrics"
 
 type CategoryRow = { category_name: string; total_buy: number; total_sell: number }
 type LiquidRow   = { is_liquid: number; total_buy: number; total_sell: number }
+type TxRow       = { investment_id: string; name: string; category_name: string; is_closed: number; date: string; type: string; total_amount: number }
 
 export default async function InvestasiRekapPage() {
   const scope  = await requireScope()
@@ -34,6 +38,39 @@ export default async function InvestasiRekapPage() {
      WHERE i.user_id = ANY(?) AND i.is_active = 1
      GROUP BY i.is_liquid`
   ).all(userId) as LiquidRow[]
+
+  const txRows = await db.prepare<[string[]], TxRow>(
+    `SELECT i.id AS investment_id, i.name, ic.name AS category_name, i.is_closed,
+            it.date, it.type, it.total_amount
+     FROM investment_transactions it
+     JOIN investments i ON i.id = it.investment_id
+     JOIN investment_categories ic ON ic.id = i.category_id
+     WHERE i.user_id = ANY(?) AND i.is_active = 1
+     ORDER BY it.date`
+  ).all(userId) as TxRow[]
+
+  const toTx = (r: TxRow): CashTx => ({ date: r.date, type: r.type, amount: Number(r.total_amount) })
+  const growthData = monthlyGrowth(txRows.map(toTx))
+
+  const byAsset = new Map<string, { name: string; category: string; closed: boolean; txs: CashTx[] }>()
+  for (const r of txRows) {
+    const cur = byAsset.get(r.investment_id) ?? { name: r.name, category: r.category_name, closed: !!r.is_closed, txs: [] }
+    cur.txs.push(toTx(r))
+    byAsset.set(r.investment_id, cur)
+  }
+
+  const holdingData: HoldingData[] = []
+  const performanceRows = []
+  for (const [id, a] of byAsset) {
+    if (a.closed) {
+      performanceRows.push({ id, name: a.name, category: a.category, ...realizedPerformance(a.txs) })
+    } else {
+      const aktif = a.txs.reduce((s, t) => s + (t.type === "BUY" ? t.amount : t.type === "SELL" ? -t.amount : 0), 0)
+      if (aktif > 0) holdingData.push({ name: a.name, category: a.category, modalAktif: aktif })
+    }
+  }
+  holdingData.sort((x, y) => y.modalAktif - x.modalAktif)
+  performanceRows.sort((x, y) => (y.returnPct ?? -Infinity) - (x.returnPct ?? -Infinity))
 
   const categoryData: CategoryData[] = categoryRows
     .map((r) => ({ name: r.category_name, modalAktif: r.total_buy - r.total_sell }))
@@ -64,7 +101,12 @@ export default async function InvestasiRekapPage() {
       <InvestasiCharts
         categoryData={categoryData}
         liquidData={liquidData}
+        holdingData={holdingData}
       />
+
+      <GrowthChart data={growthData} />
+
+      <PerformanceTable rows={performanceRows} />
     </div>
   )
 }

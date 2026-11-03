@@ -3,7 +3,7 @@ import { requireScope } from "@/lib/scope"
 import { Card, CardContent, CardHeader } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
-import { Plus, Pencil, X, Target, TrendingUp, ChevronRight, BarChart2, FlaskConical } from "lucide-react"
+import { Plus, Pencil, X, Target, TrendingUp, ChevronRight, BarChart2, FlaskConical, Flag } from "lucide-react"
 import Link from "next/link"
 import { GoalForm } from "./_components/goal-form"
 import { AssetForm } from "./_components/asset-form"
@@ -125,6 +125,9 @@ export default async function InvestasiPage({
         </div>
         <div className="flex items-center gap-2">
           <Button asChild variant="outline" size="sm">
+            <Link href="/investasi/kebebasan-finansial"><Flag className="h-4 w-4 mr-1.5" />Kebebasan Finansial</Link>
+          </Button>
+          <Button asChild variant="outline" size="sm">
             <Link href="/investasi/fundamental"><FlaskConical className="h-4 w-4 mr-1.5" />Fundamental</Link>
           </Button>
           <Button asChild variant="outline" size="sm">
@@ -198,33 +201,7 @@ export default async function InvestasiPage({
         </div>
       )}
 
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        <div className="space-y-3">
-          <div className="flex items-center justify-between">
-            <h2 className="text-base font-semibold">Saldo Dompet</h2>
-            <Button asChild variant="outline" size="sm"><Link href="/dompet">Kelola Dompet</Link></Button>
-          </div>
-          {wallets.length === 0 ? (
-            <Card><CardContent className="py-8 text-center text-sm text-muted-foreground">Belum ada dompet.</CardContent></Card>
-          ) : (
-            <Card>
-              <CardContent className="p-0 divide-y">
-                {wallets.map((w) => (
-                  <div key={w.id} className="flex items-center justify-between px-4 py-3">
-                    <div className="flex items-center gap-2.5 min-w-0">
-                      {w.color && <span className="h-2.5 w-2.5 shrink-0 rounded-full border" style={{ backgroundColor: w.color }} />}
-                      <div className="min-w-0">
-                        <p className="font-medium text-sm truncate">{w.name}</p>
-                        <p className="text-xs text-muted-foreground">{w.category_name}</p>
-                      </div>
-                    </div>
-                  </div>
-                ))}
-              </CardContent>
-            </Card>
-          )}
-        </div>
-
+      <div className="grid grid-cols-1 gap-6">
         <div className="space-y-3">
           <div className="flex items-center justify-between">
             <h2 className="text-base font-semibold">Semua Aset</h2>

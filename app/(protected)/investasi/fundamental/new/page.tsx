@@ -1,11 +1,11 @@
 import { Button } from "@/components/ui/button"
 import { Card, CardContent } from "@/components/ui/card"
-import { ArrowLeft, Building2, Cpu, Zap, Building } from "lucide-react"
+import { ArrowLeft, Building2, Cpu, Zap, Building, HeartPulse } from "lucide-react"
 import Link from "next/link"
 
 export default function NewAnalysisPage() {
   return (
-    <div className="space-y-5 max-w-2xl">
+    <div className="space-y-5 w-full">
       <div className="flex items-start gap-3">
         <Button asChild variant="ghost" size="icon" className="h-8 w-8 mt-0.5 shrink-0">
           <Link href="/investasi/fundamental"><ArrowLeft className="h-4 w-4" /></Link>
@@ -16,7 +16,7 @@ export default function NewAnalysisPage() {
         </div>
       </div>
 
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 gap-4">
         <Link href="/investasi/fundamental/bank">
           <Card className="hover:border-primary/60 hover:shadow-sm transition-all cursor-pointer h-full">
             <CardContent className="p-6 space-y-3">
@@ -95,6 +95,26 @@ export default function NewAnalysisPage() {
               <div className="flex flex-wrap gap-1 pt-1">
                 {["EBITDA Margin", "RLI / Produksi", "FCF", "EV/EBITDA"].map((r) => (
                   <span key={r} className="text-[10px] px-1.5 py-0.5 rounded bg-amber-50 text-amber-700 font-medium">{r}</span>
+                ))}
+              </div>
+            </CardContent>
+          </Card>
+        </Link>
+        <Link href="/investasi/fundamental/health">
+          <Card className="hover:border-primary/60 hover:shadow-sm transition-all cursor-pointer h-full">
+            <CardContent className="p-6 space-y-3">
+              <div className="w-10 h-10 rounded-lg bg-rose-100 text-rose-700 flex items-center justify-center">
+                <HeartPulse className="h-5 w-5" />
+              </div>
+              <div>
+                <p className="font-semibold text-base">Kesehatan</p>
+                <p className="text-sm text-muted-foreground mt-1">
+                  Rumah Sakit, Farmasi, dan Alat Kesehatan — margin, okupansi (BOR), R&D, EV/EBITDA
+                </p>
+              </div>
+              <div className="flex flex-wrap gap-1 pt-1">
+                {["EBITDA Margin", "BOR", "ROE", "EV/EBITDA"].map((r) => (
+                  <span key={r} className="text-[10px] px-1.5 py-0.5 rounded bg-rose-50 text-rose-700 font-medium">{r}</span>
                 ))}
               </div>
             </CardContent>
