@@ -1,3 +1,4 @@
+import { type Scale, scale, interpolate, currentRatioScore, safeDiv, clamp } from "./scoring"
 import type {
   HealthAnalysisResult, HealthCategoryKey, HealthDerived, HealthInput, HealthRatio, HealthSubsector,
 } from "./health-types"
@@ -24,13 +25,6 @@ export const HEALTH_SUBSECTOR_LABELS: Record<HealthSubsector, string> = {
   RS:      "Rumah Sakit",
   FARMASI: "Farmasi",
   ALKES:   "Alat Kesehatan",
-}
-
-/** Skala: nilai batas [buruk, cukup, baik, sangat baik] → skor 0, 35, 65, 95 */
-type Scale = { dir: "higher" | "lower"; pts: [number, number, number, number] }
-
-function scale(dir: "higher" | "lower", pts: [number, number, number, number]): Scale {
-  return { dir, pts }
 }
 
 // Threshold dibedakan per subsektor untuk rasio yang sifat bisnisnya beda
@@ -65,34 +59,6 @@ const STATIC: Record<string, Scale> = {
   pbv:              scale("lower",  [5.0, 3.5, 2.2, 1.2]),
   evEbitda:         scale("lower",  [20, 14, 9, 6]),
   dividendYield:    scale("higher", [0.00, 0.01, 0.025, 0.045]),
-}
-
-const SCORE_AT = [0, 35, 65, 95] as const
-
-function interpolate(v: number, s: Scale): number {
-  const p = s.pts
-  if (s.dir === "higher") {
-    if (v <= p[0]) return 0
-    if (v >= p[3]) return 100
-    for (let i = 0; i < 3; i++) {
-      if (v <= p[i + 1]) return SCORE_AT[i] + ((v - p[i]) / (p[i + 1] - p[i])) * (SCORE_AT[i + 1] - SCORE_AT[i])
-    }
-    return 100
-  }
-  // lower: titik batas menurun (buruk → bagus), makin kecil makin baik
-  if (v >= p[0]) return 0
-  if (v <= p[3]) return 100
-  for (let i = 0; i < 3; i++) {
-    if (v >= p[i + 1]) return SCORE_AT[i] + ((p[i] - v) / (p[i] - p[i + 1])) * (SCORE_AT[i + 1] - SCORE_AT[i])
-  }
-  return 100
-}
-
-/** Current ratio ideal di 1.5–2.5; terlalu rendah atau terlalu tinggi sama-sama dikurangi. */
-function currentRatioScore(v: number): number {
-  if (v >= 1.5 && v <= 2.5) return 100
-  if (v < 1.5) return Math.max(0, ((v - 0.5) / 1.0) * 100)
-  return Math.max(30, 100 - (v - 2.5) * 20)
 }
 
 // ── Label & seksi tampilan ───────────────────────────────────────────────────
@@ -143,9 +109,6 @@ export const HEALTH_RATIO_SECTIONS: Record<HealthCategoryKey, string[]> = {
 }
 
 // ── Analyzer ─────────────────────────────────────────────────────────────────
-
-const safeDiv = (a: number, b: number, fallback = 0) => (b === 0 || !isFinite(b) || !isFinite(a) ? fallback : a / b)
-const clamp = (v: number) => Math.max(0, Math.min(100, v))
 
 export class HealthAnalyzer {
   analyze(input: HealthInput): HealthAnalysisResult {
