@@ -1,6 +1,9 @@
 import { redirect } from "next/navigation"
 import { db } from "@/lib/db"
-import { requireHouseholdSession } from "@/lib/session"
+import { requireHouseholdSession, getSession, sessionHasPermission } from "@/lib/session"
+import { PERMISSION } from "@/lib/permissions"
+import { Suspense } from "react"
+import { MissingEntriesCard } from "@/components/dashboard/MissingEntriesCard"
 import { requireScope } from "@/lib/scope"
 import { Card, CardContent, CardHeader } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
@@ -372,10 +375,27 @@ export default async function YearDetailPage({
             </p>
           </div>
         </div>
-        <Button asChild variant="outline" size="sm">
-          <Link href={`${base}/kategori-budget`}>Kategori &amp; Budget</Link>
-        </Button>
+        <div className="flex gap-2">
+          <Button asChild variant="outline" size="sm">
+            <Link href="/pengaturan/pola">Transaksi Berulang</Link>
+          </Button>
+          <Button asChild variant="outline" size="sm">
+            <Link href={`${base}/kategori-budget`}>Kategori &amp; Budget</Link>
+          </Button>
+        </div>
       </div>
+
+      {/* Transaksi rutin yang belum dicatat bulan ini (hanya tahun berjalan) */}
+      {String(year) === String(new Date().getFullYear()) && (
+        <Suspense fallback={null}>
+          <MissingEntriesCard
+            userIds={readIds}
+            session={(await getSession())!}
+            canWrite={!readOnly && sessionHasPermission((await getSession())!, PERMISSION.CASHFLOW.CREATE)}
+            compact
+          />
+        </Suspense>
+      )}
 
       <div className="flex gap-1 border-b pb-0">
         <Link href={`${base}?bulan=${month}&tab=${tab}`}

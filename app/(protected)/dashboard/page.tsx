@@ -12,6 +12,9 @@ import { CashflowSection, CashflowSkeleton } from "@/components/dashboard/Cashfl
 import { CategorySection, CategorySkeleton } from "@/components/dashboard/CategorySection"
 import { WalletExpenseSection, WalletExpenseSkeleton } from "@/components/dashboard/WalletExpenseSection"
 import { FamilyMemberRecap, FamilyMemberRecapSkeleton } from "@/components/dashboard/FamilyMemberRecap"
+import { MissingEntriesCard } from "@/components/dashboard/MissingEntriesCard"
+import { sessionHasPermission } from "@/lib/session"
+import { PERMISSION } from "@/lib/permissions"
 
 const MONTHS = [
   "Januari", "Februari", "Maret", "April", "Mei", "Juni",
@@ -41,7 +44,8 @@ export default async function DashboardPage({
   const scope     = await requireScope()
   const userId    = scope.userIds
   const familyMode = scope.mode === "family"
-  const username  = (await requireSession()).username
+  const session   = await requireSession()
+  const username  = session.username
   const firstName = username
 
   const sp  = await searchParams
@@ -128,6 +132,16 @@ export default async function DashboardPage({
           {scope.readOnly ? "Ringkasan keuangan anggota (read-only)" : "Ringkasan keuangan kamu"}
         </p>
       </div>
+
+      {/* Transaksi rutin yang belum dicatat bulan ini */}
+      <Suspense fallback={null}>
+        <MissingEntriesCard
+          userIds={userId}
+          session={session}
+          canWrite={!scope.readOnly && sessionHasPermission(session, PERMISSION.CASHFLOW.CREATE)}
+          compact
+        />
+      </Suspense>
 
       {/* Wealth section — chartYear mengontrol Cashflow Bulanan */}
       <Suspense fallback={<NetWorthSkeleton />}>
