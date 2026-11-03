@@ -108,7 +108,7 @@ export function InvestasiCharts({
           ) : (
             <div className="space-y-4">
               {topHolding && topHolding.pct >= 40 && holdItems.length > 1 && (
-                <div className="rounded-lg border border-amber-300 bg-amber-50 px-3 py-2 text-xs text-amber-800 dark:bg-amber-950/30 dark:text-amber-300">
+                <div className="rounded-lg border border-amber-300 bg-amber-50 px-3 py-2 text-xs text-amber-800">
                   Konsentrasi tinggi: <strong>{topHolding.name}</strong> menguasai {topHolding.pct.toFixed(1)}% portofolio.
                   Pertimbangkan diversifikasi.
                 </div>
