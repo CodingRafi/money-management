@@ -20,9 +20,7 @@ import {
   recapCategory,
   recapDaily,
   recapMonthly,
-  recapWallet,
   recapYearly,
-  totalBalance,
 } from "@/lib/telegram/reports"
 import {
   filterTransactions,
@@ -129,9 +127,7 @@ function helpText(linked: boolean): string {
     "• <code>/rekap_harian</code> — hari ini + tren 7 hari",
     "• <code>/rekap_tahunan</code> — rekap 12 bulan",
     "• <code>/rekap_kategori</code> — pengeluaran per kategori + status anggaran",
-    "• <code>/rekap_dompet</code> — saldo tiap dompet",
     "• <code>/anggaran</code> — status anggaran bulan ini",
-    "• <code>/saldo</code> — total saldo seluruh dompet",
     "• <code>/pinjaman</code> — daftar pinjaman &amp; sisa angsuran",
     "• <code>/investasi</code> — portofolio investasi",
     "",
@@ -168,9 +164,7 @@ const COMMAND_HINTS = [
   ["/rekap_harian", "hari ini + tren 7 hari"],
   ["/rekap_tahunan", "rekap 12 bulan (opsional: 2026)"],
   ["/rekap_kategori", "pengeluaran per kategori + status anggaran"],
-  ["/rekap_dompet", "saldo tiap dompet"],
   ["/anggaran", "status anggaran bulan ini"],
-  ["/saldo", "total saldo seluruh dompet"],
   ["/cari", "cari transaksi (kata kunci)"],
   ["/transaksi", "daftar transaksi berfilter"],
   ["/top", "pengeluaran terbesar (opsional: 5)"],
@@ -607,23 +601,8 @@ async function handleLaporan(chatId: string, ctx: Omit<ToolContext, "today">, co
       await sendTelegramHtml(chatId, html)
       return
     }
-    case "/rekap_dompet": {
-      const opts = parseMonthArg(arg, today)
-      if (opts === null) {
-        await sendTelegramHtml(chatId, laporanUsage())
-        return
-      }
-      const html = await recapWallet(session, today, opts)
-      await sendTelegramHtml(chatId, html)
-      return
-    }
     case "/anggaran": {
       const html = await budgetReport(session, today)
-      await sendTelegramHtml(chatId, html)
-      return
-    }
-    case "/saldo": {
-      const html = await totalBalance(session)
       await sendTelegramHtml(chatId, html)
       return
     }
@@ -694,9 +673,7 @@ const LAPORAN_COMMANDS = new Set([
   "/rekap_harian",
   "/rekap_tahunan",
   "/rekap_kategori",
-  "/rekap_dompet",
   "/anggaran",
-  "/saldo",
   "/cari",
   "/transaksi",
   "/top",

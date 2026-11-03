@@ -149,6 +149,10 @@ interface AssetRow {
 /**
  * Portofolio investasi: jumlah aset, total modal, nilai/hasil per aset, dan
  * pencapaian target (investment_goals).
+ *
+ * Perhitungan disamakan dengan halaman /investasi di web: transaksi berlabel
+ * "data awal" (is_initial) TETAP ikut dihitung sebagai modal aset — yang
+ * mengecualikannya hanya posisi kas (Dashboard). See juga lib/dashboard.ts.
  */
 export async function investmentReport(session: SessionData): Promise<string> {
   const scope = await resolveTgScope(session)
@@ -173,7 +177,7 @@ export async function investmentReport(session: SessionData): Promise<string> {
       `SELECT it.investment_id, it.type, it.quantity, it.total_amount
          FROM investment_transactions it
          JOIN investments i ON i.id = it.investment_id
-        WHERE i.user_id = ANY(?) AND it.is_initial = 0
+        WHERE i.user_id = ANY(?)
         ORDER BY it.date`,
     )
     .all(scope.userIds) as { investment_id: string; type: string; quantity: string; total_amount: number }[]
@@ -187,7 +191,8 @@ export async function investmentReport(session: SessionData): Promise<string> {
 
   let totalModal = 0
   let totalNilai = 0
-  const lines: string[] = ["📈 <b>Investasi</b>", "", `Aset aktif: ${assets.length}`, ""]
+  const asetAktif = assets.filter((a) => !a.is_closed).length
+  const lines: string[] = ["📈 <b>Investasi</b>", "", `Aset aktif: ${asetAktif}`, ""]
 
   for (const a of assets) {
     const assetTxs = txsByAsset.get(a.id) ?? []
@@ -200,8 +205,12 @@ export async function investmentReport(session: SessionData): Promise<string> {
     )
     // Nilai = modal − modal yang sudah terjual (SELL mengurangi nilai aktif).
     const nilai = pl.totalModal - pl.totalHasil
-    totalModal += pl.totalModal
-    totalNilai += nilai
+    // Totalan mengikuti halaman web: aset yang sudah ditutup tidak dihitung
+    // sebagai investasi aktif.
+    if (!a.is_closed) {
+      totalModal += pl.totalModal
+      totalNilai += nilai
+    }
 
     const plLabel =
       pl.status === "PROFIT" ? `🟢 +${formatRp(pl.profitLoss)}`
@@ -225,9 +234,10 @@ export async function investmentReport(session: SessionData): Promise<string> {
   const goals = await db
     .prepare<[string[]], { name: string; target_amount: number | null; modal: number }>(
       `SELECT g.name, g.target_amount,
-              COALESCE((SELECT SUM(CASE WHEN it.type = 'BUY' THEN it.total_amount ELSE 0 END)
+              COALESCE((SELECT SUM(CASE WHEN it.type = 'BUY' THEN it.total_amount
+                                       WHEN it.type = 'SELL' THEN -it.total_amount ELSE 0 END)
                           FROM investment_transactions it
-                         WHERE it.goal_id = g.id AND it.is_initial = 0), 0) AS modal
+                         WHERE it.goal_id = g.id), 0) AS modal
          FROM investment_goals g
         WHERE g.user_id = ANY(?) AND g.is_active = 1
         ORDER BY g.sort_order, g.name`,

@@ -61,9 +61,9 @@ interface FlowRow {
  *
  * CATATAN `is_initial`: transaksi bertanda "data awal" tetap ikut dihitung di
  * sini, sama seperti tabel Rekap di web yang menampilkan baris AWAL. Jadi
- * angka /rekap boleh berbeda dari /saldo (yang mengikuti posisi kas dan
- * memang mengecualikan data awal) — persis seperti perbedaan Dashboard
- * vs Rekap di aplikasi.
+ * angka /rekap boleh berbeda dari posisi kas di Dashboard (yang mengikuti
+ * saldo awal + arus kas dan memang mengecualikan data awal) — persis seperti
+ * perbedaan Dashboard vs Rekap di aplikasi.
  */
 async function flowFor(
   userIds: string[],
@@ -454,151 +454,6 @@ export async function recapCategory(
   }
 
   return lines.join("\n")
-}
-
-// ── /rekap_dompet ────────────────────────────────────────────────────────────
-
-/**
- * Saldo tiap dompet + pengeluaran per dompet bulan ini.
- *
- * Dompet = label sumber kas, jadi "saldo" di sini berarti posisi kas yang
- * attributable ke dompet tersebut: saldo awal + pemasukan − pengeluaran ±
- * arus investasi lewat dompet itu.
- */
-export async function recapWallet(
-  session: SessionData,
-  today: string,
-  opts: RecapOptions = {},
-): Promise<string> {
-  const scope = await resolveTgScope(session)
-  const [ty, tm] = today.split("-").map(Number)
-  const year = opts.year ?? ty
-  const month = opts.month ?? tm
-  const famClause = scope.excludeFamilyExpense ? " AND e.is_family_expense = 0" : ""
-
-  const rows = await db
-    .prepare<
-      [string[], string[], string[], string[], string[], number, number, string[]],
-      {
-        id: string
-        name: string
-        initial_balance: number
-        income_total: number
-        expense_total: number
-        invest_out: number
-        invest_in: number
-        month_expense: number
-      }
-    >(
-      `SELECT w.id, w.name, w.initial_balance,
-              COALESCE((SELECT SUM(amount) FROM incomes
-                         WHERE user_id = ANY(?) AND wallet_id = w.id AND is_initial = 0), 0) AS income_total,
-              COALESCE((SELECT SUM(amount) FROM expenses
-                         WHERE user_id = ANY(?) AND wallet_id = w.id AND is_initial = 0), 0) AS expense_total,
-              COALESCE((SELECT SUM(it.total_amount) FROM investment_transactions it
-                         JOIN investments i ON i.id = it.investment_id
-                        WHERE i.user_id = ANY(?) AND it.from_wallet_id = w.id
-                          AND it.type = 'BUY' AND it.is_initial = 0), 0) AS invest_out,
-              COALESCE((SELECT SUM(it.total_amount) FROM investment_transactions it
-                         JOIN investments i ON i.id = it.investment_id
-                        WHERE i.user_id = ANY(?) AND it.to_wallet_id = w.id
-                          AND it.type IN ('SELL','DIVIDEND') AND it.is_initial = 0), 0) AS invest_in,
-              COALESCE((SELECT SUM(e.amount) FROM expenses e
-                         WHERE e.user_id = ANY(?) AND e.wallet_id = w.id
-                           AND e.year = ? AND e.month = ?${famClause}), 0) AS month_expense
-         FROM wallets w
-        WHERE w.user_id = ANY(?) AND w.is_active = 1
-        ORDER BY w.sort_order, w.name`
-    )
-    .all(
-      scope.userIds, scope.userIds, scope.userIds, scope.userIds,
-      scope.userIds, year, month, scope.userIds,
-    ) as {    id: string
-    name: string
-    initial_balance: number
-    income_total: number
-    expense_total: number
-    invest_out: number
-    invest_in: number
-    month_expense: number
-  }[]
-
-  const lines = [`👛 <b>Dompet — ${monthName(month)} ${year}</b>`, ""]
-
-  if (rows.length === 0) {
-    lines.push("Belum ada dompet aktif.")
-    return lines.join("\n")
-  }
-
-  let totalSaldo = 0
-  let totalExpense = 0
-
-  for (const w of rows) {
-    const saldo =
-      Number(w.initial_balance) +
-      Number(w.income_total) -
-      Number(w.expense_total) -
-      Number(w.invest_out) +
-      Number(w.invest_in)
-    totalSaldo += saldo
-    totalExpense += Number(w.month_expense)
-
-    lines.push(
-      `• <b>${escapeHtml(w.name)}</b> — saldo ${rupiah(saldo)}` +
-        (Number(w.month_expense) > 0 ? ` · belanja bulan ini ${rupiah(Number(w.month_expense))}` : ""),
-    )
-  }
-
-  lines.push("", `💰 Total saldo dompet: ${rupiah(totalSaldo)}`)
-  if (totalExpense > 0) lines.push(`💸 Pengeluaran bulan ini: ${rupiah(totalExpense)}`)
-
-  return lines.join("\n")
-}
-
-// ── /saldo ───────────────────────────────────────────────────────────────────
-
-/**
- * Total saldo seluruh dompet — ringkas, tanpa AI.
- *
- * Posisi kas mengikuti lib/dashboard.ts (getCashPosition): saldo awal +
- * pemasukan − pengeluaran − BELI investasi + JUAL/DIVIDEND ± arus pinjaman.
- */
-export async function totalBalance(session: SessionData): Promise<string> {
-  const scope = await resolveTgScope(session)
-  const famClause = scope.excludeFamilyExpense ? " AND is_family_expense = 0" : ""
-
-  const row = await db
-    .prepare<
-      [string[], string[], string[], string[], string[], string[], string[]],
-      { cash: number }
-    >(
-      `SELECT
-         COALESCE((SELECT SUM(initial_balance) FROM wallets
-                    WHERE user_id = ANY(?) AND is_active = 1), 0)
-       + COALESCE((SELECT SUM(amount) FROM incomes
-                    WHERE user_id = ANY(?) AND is_initial = 0), 0)
-       - COALESCE((SELECT SUM(amount) FROM expenses
-                    WHERE user_id = ANY(?) AND is_initial = 0${famClause}), 0)
-       - COALESCE((SELECT SUM(it.total_amount) FROM investment_transactions it
-                     JOIN investments i ON i.id = it.investment_id
-                    WHERE i.user_id = ANY(?) AND it.type = 'BUY' AND it.is_initial = 0), 0)
-       + COALESCE((SELECT SUM(it.total_amount) FROM investment_transactions it
-                     JOIN investments i ON i.id = it.investment_id
-                    WHERE i.user_id = ANY(?) AND it.type IN ('SELL','DIVIDEND') AND it.is_initial = 0), 0)
-       + COALESCE((SELECT SUM(CASE WHEN type = 'HUTANG' THEN principal_amount ELSE -principal_amount END)
-                     FROM loans
-                    WHERE user_id = ANY(?) AND is_active = 1 AND is_initial = 0), 0)
-       + COALESCE((SELECT SUM(CASE WHEN l.type = 'PIUTANG' THEN lp.total_paid ELSE -lp.total_paid END)
-                     FROM loan_payments lp JOIN loans l ON l.id = lp.loan_id
-                    WHERE l.user_id = ANY(?) AND l.is_active = 1 AND lp.is_initial = 0), 0) AS cash`
-    )
-    .get(
-      scope.userIds, scope.userIds, scope.userIds, scope.userIds, scope.userIds,
-      scope.userIds, scope.userIds,
-    )
-
-  const cash = Number(row?.cash ?? 0)
-  return `💰 <b>Total saldo: ${rupiah(cash)}</b>`
 }
 
 // ── /anggaran ───────────────────────────────────────────────────────────────
