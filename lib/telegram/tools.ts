@@ -27,6 +27,7 @@ import {
   reviseIncome,
 } from "./revision"
 import { getCategoryBudgetStatus } from "./budget-status"
+import { riskHandlers, riskToolDeclarations } from "./risk-tools"
 
 /**
  * Terjemahkan id yang diberikan AI menjadi ID transaksi milik user.
@@ -300,6 +301,7 @@ export const telegramTool: GeminiTool = {
       description: "Daftar pola transaksi berulang yang sudah disetujui pengguna beserta nominal rata-rata dan tanggal jatuh tempo.",
       parameters: OBJ({}),
     },
+    ...riskToolDeclarations,
     {
       name: "create_expense",
       description: "Mencatat pengeluaran. Gunakan hanya setelah pengguna relayed nominal & kategori dengan jelas. Tanggal default hari ini.",
@@ -473,6 +475,7 @@ export const telegramTool: GeminiTool = {
 type Handler = (args: Record<string, unknown>, ctx: ToolContext) => Promise<ToolResult>
 
 const handlers: Record<string, Handler> = {
+  ...riskHandlers,
   async list_wallets(_args, ctx) {
     const rows = await db.prepare(
       "SELECT id, name, is_liquid FROM wallets WHERE user_id = ? AND is_active = 1 ORDER BY sort_order, name"

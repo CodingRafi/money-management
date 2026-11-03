@@ -13,6 +13,7 @@ import { CategorySection, CategorySkeleton } from "@/components/dashboard/Catego
 import { WalletExpenseSection, WalletExpenseSkeleton } from "@/components/dashboard/WalletExpenseSection"
 import { FamilyMemberRecap, FamilyMemberRecapSkeleton } from "@/components/dashboard/FamilyMemberRecap"
 import { MissingEntriesCard } from "@/components/dashboard/MissingEntriesCard"
+import { PortfolioRiskCard } from "@/components/dashboard/PortfolioRiskCard"
 import { sessionHasPermission } from "@/lib/session"
 import { PERMISSION } from "@/lib/permissions"
 
@@ -147,6 +148,13 @@ export default async function DashboardPage({
       <Suspense fallback={<NetWorthSkeleton />}>
         <NetWorthSection userId={userId} year={chartYear} />
       </Suspense>
+
+      {/* Risiko portofolio investasi */}
+      {sessionHasPermission(session, PERMISSION.INVESTMENT.VIEW) && (
+        <Suspense fallback={null}>
+          <PortfolioRiskCard userIds={userId} />
+        </Suspense>
+      )}
 
       {/* ── Cashflow — pakai filter bulan ── */}
       <div className="space-y-4">

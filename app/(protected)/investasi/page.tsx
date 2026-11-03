@@ -3,7 +3,7 @@ import { requireScope } from "@/lib/scope"
 import { Card, CardContent, CardHeader } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
-import { Plus, Pencil, X, Target, TrendingUp, ChevronRight, BarChart2, FlaskConical, Flag } from "lucide-react"
+import { Plus, Pencil, X, Target, TrendingUp, ChevronRight, BarChart2, FlaskConical, Flag, Activity } from "lucide-react"
 import Link from "next/link"
 import { GoalForm } from "./_components/goal-form"
 import { AssetForm } from "./_components/asset-form"
@@ -129,6 +129,9 @@ export default async function InvestasiPage({
           </Button>
           <Button asChild variant="outline" size="sm">
             <Link href="/investasi/fundamental"><FlaskConical className="h-4 w-4 mr-1.5" />Fundamental</Link>
+          </Button>
+          <Button asChild variant="outline" size="sm">
+            <Link href="/investasi/simulasi"><Activity className="h-4 w-4 mr-1.5" />Simulasi</Link>
           </Button>
           <Button asChild variant="outline" size="sm">
             <Link href="/investasi/rekap"><BarChart2 className="h-4 w-4 mr-1.5" />Rekap</Link>

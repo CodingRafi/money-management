@@ -7,6 +7,7 @@ import { Badge } from "@/components/ui/badge"
 import { ArrowLeft, Plus, Trash2, Pencil, X, Lock, LockOpen, History } from "lucide-react"
 import Link from "next/link"
 import { AssetForm } from "../../_components/asset-form"
+import { PriceSection } from "./_components/PriceSection"
 import { TransactionForm } from "../../_components/transaction-form"
 import { calcProfitLoss, showQuantityField } from "@/lib/investment"
 import {
@@ -218,6 +219,8 @@ export default async function AsetDetailPage({
           </CardContent>
         </Card>
       )}
+
+      {unit && <PriceSection investmentId={investmentId} userId={userId} canEdit={!isClosed} />}
 
       <div className="space-y-3">
         <div className="flex items-center justify-between">
