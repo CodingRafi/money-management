@@ -12,8 +12,25 @@ import {
 import { runTelegramAgent } from "@/lib/telegram/agent"
 import { GeminiError } from "@/lib/telegram/gemini"
 import type { ToolContext } from "@/lib/telegram/tools"
-import { formatCard } from "@/lib/telegram/format"
+import { formatCard, formatAmount } from "@/lib/telegram/format"
 import { historyCard } from "@/lib/telegram/cards"
+import { todayFromDb } from "@/lib/telegram/tools"
+import {
+  budgetReport,
+  recapCategory,
+  recapDaily,
+  recapMonthly,
+  recapWallet,
+  recapYearly,
+  totalBalance,
+} from "@/lib/telegram/reports"
+import {
+  filterTransactions,
+  searchTransactions,
+  topCategories,
+  txList,
+} from "@/lib/telegram/search"
+import { investmentReport, loanReport } from "@/lib/telegram/domain"
 import {
   REVISION_FIELD_ALIASES,
   deleteTransactionByCode,
@@ -106,6 +123,23 @@ function helpText(linked: boolean): string {
     "• kirim <b>foto struk</b> — nominal &amp; merchant-nya saya baca sendiri",
     "• <code>berapa pengeluaran bulan ini?</code>",
     "",
+    "<b>Laporan:</b>",
+    "• <code>/rekap</code> — rekap bulan berjalan (s/d hari ini)",
+    "• <code>/rekap 2026-11</code> — rekap bulan tertentu",
+    "• <code>/rekap_harian</code> — hari ini + tren 7 hari",
+    "• <code>/rekap_tahunan</code> — rekap 12 bulan",
+    "• <code>/rekap_kategori</code> — pengeluaran per kategori + status anggaran",
+    "• <code>/rekap_dompet</code> — saldo tiap dompet",
+    "• <code>/anggaran</code> — status anggaran bulan ini",
+    "• <code>/saldo</code> — total saldo seluruh dompet",
+    "• <code>/pinjaman</code> — daftar pinjaman &amp; sisa angsuran",
+    "• <code>/investasi</code> — portofolio investasi",
+    "",
+    "<b>Cari &amp; filter:</b>",
+    "• <code>/cari kopi</code> — cari transaksi by kata kunci",
+    "• <code>/transaksi 2026-11 kategori TRANSPORTASI</code> — transaksi berfilter",
+    "• <code>/top 5</code> — 5 pengeluaran terbesar",
+    "",
     "<b>Perintah:</b>",
     ...COMMAND_HINTS.map(([cmd, desc]) => `• <code>${cmd}</code> — ${desc}`),
     "",
@@ -130,6 +164,18 @@ const COMMAND_HINTS = [
   ["/riwayat", "10 transaksi terakhir"],
   ["/revisi", "perbaiki transaksi yang salah catat"],
   ["/hapus", "hapus transaksi (dengan konfirmasi)"],
+  ["/rekap", "rekap bulanan (opsional: 2026-11)"],
+  ["/rekap_harian", "hari ini + tren 7 hari"],
+  ["/rekap_tahunan", "rekap 12 bulan (opsional: 2026)"],
+  ["/rekap_kategori", "pengeluaran per kategori + status anggaran"],
+  ["/rekap_dompet", "saldo tiap dompet"],
+  ["/anggaran", "status anggaran bulan ini"],
+  ["/saldo", "total saldo seluruh dompet"],
+  ["/cari", "cari transaksi (kata kunci)"],
+  ["/transaksi", "daftar transaksi berfilter"],
+  ["/top", "pengeluaran terbesar (opsional: 5)"],
+  ["/pinjaman", "daftar pinjaman & sisa angsuran"],
+  ["/investasi", "portofolio investasi"],
   ["/status", "status koneksi akun"],
   ["/help", "bantuan"],
   ["/unlink", "putuskan hubungan akun"],
@@ -140,6 +186,161 @@ async function loadContext(userId: string): Promise<Omit<ToolContext, "today"> |
   if (!session) return null
   if (!session.householdId) return null
   return { session, householdId: session.householdId }
+}
+
+// ── Parsing argumen perintah laporan ────────────────────────────────────────
+
+/**
+ * Parse argumen "/rekap" — bisa "YYYY-MM" (tahun & bulan) atau "MM" (bulan
+ * saja, tahun berjalan) atau kosong (bulan berjalan).
+ *
+ * Mengembalikan `null` bila argumennya tidak valid, supaya pemanggil bisa
+ * menampilkan petunjuk format.
+ */
+function parseMonthArg(arg: string, today: string): { month?: number; year?: number } | null {
+  const raw = arg.trim()
+  if (!raw) return {}
+
+  const full = /^(\d{4})-(\d{1,2})$/.exec(raw)
+  if (full) {
+    const year = Number(full[1])
+    const month = Number(full[2])
+    if (month >= 1 && month <= 12) return { month, year }
+    return null
+  }
+
+  const short = /^(\d{1,2})$/.exec(raw)
+  if (short) {
+    const month = Number(short[1])
+    if (month >= 1 && month <= 12) return { month, year: Number(today.slice(0, 4)) }
+    return null
+  }
+
+  return null
+}
+
+/** Parse argumen "/rekap_tahunan" — "YYYY" atau kosong (tahun berjalan). */
+function parseYearArg(arg: string, today: string): { year?: number } {
+  const raw = arg.trim()
+  const m = /^(\d{4})$/.exec(raw)
+  if (m) {
+    const year = Number(m[1])
+    if (year >= 2000 && year <= 2100) return { year }
+  }
+  return { year: Number(today.slice(0, 4)) }
+}
+
+/**
+ * Parse argumen "/transaksi" — sepadan key-value yang longgar:
+ *   "2026-11 kategori TRANSPORTASI dompet BCA jenis pengeluaran limit 10"
+ * Nilai boleh dipisah spasi atau memakai "=".
+ */
+function parseFilterArg(arg: string): {
+  period?: string
+  category?: string
+  wallet?: string
+  kind?: "expense" | "income"
+  limit?: number
+  keyword?: string
+} {
+  const out: ReturnType<typeof parseFilterArg> = {}
+  const tokens = arg.trim().split(/\s+/).filter(Boolean)
+
+  const KEYS: Record<string, "period" | "category" | "wallet" | "kind" | "limit"> = {
+    periode: "period",
+    period: "period",
+    bulan: "period",
+    tanggal: "period",
+    date: "period",
+    kategori: "category",
+    category: "category",
+    dompet: "wallet",
+    wallet: "wallet",
+    jenis: "kind",
+    type: "kind",
+    limit: "limit",
+    jumlah: "limit",
+  }
+
+  for (let i = 0; i < tokens.length; i++) {
+    const token = tokens[i]
+    const [rawKey, inlineValue] = token.includes("=")
+      ? [token.slice(0, token.indexOf("=")), token.slice(token.indexOf("=") + 1)]
+      : [token, undefined]
+
+    const key = KEYS[rawKey.toLowerCase()]
+    if (!key) {
+      // Token tak dikenal → kumpulkan sebagai kata kunci bebas.
+      out.keyword = out.keyword ? `${out.keyword} ${rawKey}` : rawKey
+      continue
+    }
+
+    const value = inlineValue ?? tokens[++i]
+    if (!value) continue
+
+    if (key === "kind") {
+      const v = value.toLowerCase()
+      if (["expense", "pengeluaran", "keluar"].includes(v)) out.kind = "expense"
+      else if (["income", "pemasukan", "masuk"].includes(v)) out.kind = "income"
+      continue
+    }
+    if (key === "limit") {
+      const n = Number(value)
+      if (Number.isFinite(n) && n > 0) out.limit = Math.min(50, Math.floor(n))
+      continue
+    }
+    out[key] = value
+  }
+
+  return out
+}
+
+/**
+ * Parse argumen "/cari" — kata kunci bebas, dengan penyederhanaan tanggal:
+ * "hari ini", "kemarin", "minggu ini", "bulan ini", "last bulan", "tahun ini".
+ */
+function parseSearchArg(
+  arg: string,
+  today: string,
+): { keyword?: string; from?: string; to?: string } {
+  const raw = arg.trim().toLowerCase()
+  const [ty, tm] = today.split("-").map(Number)
+
+  const shift = (base: string, days: number) => {
+    const d = new Date(`${base}T00:00:00Z`)
+    d.setUTCDate(d.getUTCDate() + days)
+    return d.toISOString().slice(0, 10)
+  }
+
+  const prevMonth = new Date(Date.UTC(ty, tm - 2, 1))
+  const prevMonthStart = prevMonth.toISOString().slice(0, 8) + "01"
+  const prevMonthEnd = new Date(Date.UTC(ty, tm - 1, 0)).toISOString().slice(0, 10)
+
+  const monthStart = `${ty}-${String(tm).padStart(2, "0")}-01`
+  const monthEnd = new Date(Date.UTC(ty, tm, 0)).toISOString().slice(0, 10)
+
+  const period = (from: string, to: string) => ({ from, to, keyword: undefined })
+
+  if (raw === "hari ini" || raw === "today") return period(today, today)
+  if (raw === "kemarin" || raw === "yesterday") return period(shift(today, -1), shift(today, -1))
+  if (raw === "minggu ini" || raw === "week ini") return period(shift(today, -6), today)
+  if (raw === "bulan ini" || raw === "month ini") return period(monthStart, monthEnd)
+  if (raw === "last bulan" || raw === "bulan lalu") return period(prevMonthStart, prevMonthEnd)
+  if (raw === "tahun ini" || raw === "year ini") return period(`${ty}-01-01`, `${ty}-12-31`)
+
+  // Keyword biasa — tanpa filter tanggal.
+  return { keyword: arg.trim() || undefined }
+}
+
+/** Petunjuk singkat untuk perintah laporan. */
+function laporanUsage(): string {
+  return [
+    "Format: <code>/rekap [YYYY-MM | MM]</code>",
+    "Contoh:",
+    "<code>/rekap</code> — bulan berjalan",
+    "<code>/rekap 2026-11</code> — November 2026",
+    "<code>/rekap 11</code> — November tahun berjalan",
+  ].join("\n")
 }
 
 // ── Penanganan perintah ──────────────────────────────────────────────────────
@@ -365,6 +566,144 @@ async function handleHapus(chatId: string, ctx: Omit<ToolContext, "today">, arg:
   await sendTelegramHtml(chatId, `${result.ok ? "🗑️" : "❌"} ${escapeHtml(result.message)}`)
 }
 
+// ── Perintah laporan ─────────────────────────────────────────────────────────
+
+/**
+ * Menjalankan perintah laporan. Semua perintah ini membaca data langsung
+ * dari database (tanpa AI), jadi hasilnya konsisten dan cepat.
+ */
+async function handleLaporan(chatId: string, ctx: Omit<ToolContext, "today">, command: string, arg: string) {
+  const session = ctx.session
+  const today = await todayFromDb()
+
+  switch (command) {
+    case "/rekap": {
+      const opts = parseMonthArg(arg, today)
+      if (opts === null) {
+        await sendTelegramHtml(chatId, laporanUsage())
+        return
+      }
+      const html = await recapMonthly(session, today, opts)
+      await sendTelegramHtml(chatId, html)
+      return
+    }
+    case "/rekap_harian": {
+      const html = await recapDaily(session, today)
+      await sendTelegramHtml(chatId, html)
+      return
+    }
+    case "/rekap_tahunan": {
+      const html = await recapYearly(session, today, parseYearArg(arg, today))
+      await sendTelegramHtml(chatId, html)
+      return
+    }
+    case "/rekap_kategori": {
+      const opts = parseMonthArg(arg, today)
+      if (opts === null) {
+        await sendTelegramHtml(chatId, laporanUsage())
+        return
+      }
+      const html = await recapCategory(session, today, opts)
+      await sendTelegramHtml(chatId, html)
+      return
+    }
+    case "/rekap_dompet": {
+      const opts = parseMonthArg(arg, today)
+      if (opts === null) {
+        await sendTelegramHtml(chatId, laporanUsage())
+        return
+      }
+      const html = await recapWallet(session, today, opts)
+      await sendTelegramHtml(chatId, html)
+      return
+    }
+    case "/anggaran": {
+      const html = await budgetReport(session, today)
+      await sendTelegramHtml(chatId, html)
+      return
+    }
+    case "/saldo": {
+      const html = await totalBalance(session)
+      await sendTelegramHtml(chatId, html)
+      return
+    }
+    case "/pinjaman": {
+      const html = await loanReport(session, today)
+      await sendTelegramHtml(chatId, html)
+      return
+    }
+    case "/investasi": {
+      const html = await investmentReport(session)
+      await sendTelegramHtml(chatId, html)
+      return
+    }
+    case "/cari": {
+      if (!arg.trim()) {
+        await sendTelegramHtml(
+          chatId,
+          [
+            "Format: <code>/cari &lt;kata kunci&gt;</code>",
+            "",
+            "Contoh:",
+            "<code>/cari kopi</code> — cari transaksi bernama kopi",
+            "<code>/cari bulan lalu</code> — semua transaksi bulan lalu",
+            "<code>/cari 2026-11</code> — transaksi pada November 2026",
+          ].join("\n"),
+        )
+        return
+      }
+      const opts = parseSearchArg(arg, today)
+      const { rows, total } = await searchTransactions(session, { ...opts, limit: 20 })
+      const header = `🔎 <b>Hasil pencarian</b>${opts.keyword ? ` — “${escapeHtml(opts.keyword)}”` : ""}`
+      const footer = total > rows.length
+        ? `\n\n⚠️ Menampilkan ${rows.length} dari ${total} hasil.`
+        : ""
+      await sendTelegramHtml(chatId, `${header}\n\n${txList(rows)}${footer}`)
+      return
+    }
+    case "/transaksi": {
+      const opts = parseFilterArg(arg)
+      const rows = await filterTransactions(session, opts)
+      const header = `🧾 <b>Transaksi${opts.period ? ` — ${escapeHtml(opts.period)}` : ""}</b>`
+      await sendTelegramHtml(
+        chatId,
+        `${header}\n\n${txList(rows, "Tidak ada transaksi yang cocok.")}\n\nFilter: <code>kategori</code> · <code>dompet</code> · <code>jenis</code> · <code>periode</code> · <code>limit</code>`,
+      )
+      return
+    }
+    case "/top": {
+      const limit = Number(arg.trim())
+      const n = Number.isFinite(limit) && limit > 0 ? Math.min(20, Math.floor(limit)) : 5
+      const items = await topCategories(session, today, { limit: n })
+      if (items.length === 0) {
+        await sendTelegramHtml(chatId, "🏆 <b>Top pengeluaran</b>\n\nBelum ada pengeluaran bulan ini.")
+        return
+      }
+      const lines = items.map(
+        (i) => `• ${escapeHtml(i.name)} — ${formatAmount(i.total)} (${i.pct.toLocaleString("id-ID", { maximumFractionDigits: 1 })}%)`,
+      )
+      await sendTelegramHtml(chatId, `🏆 <b>Top ${items.length} pengeluaran</b>\n\n${lines.join("\n")}`)
+      return
+    }
+  }
+}
+
+/** Perintah laporan yang butuh akun tertaut. */
+const LAPORAN_COMMANDS = new Set([
+  "/rekap",
+  "/rekap_harian",
+  "/rekap_tahunan",
+  "/rekap_kategori",
+  "/rekap_dompet",
+  "/anggaran",
+  "/saldo",
+  "/cari",
+  "/transaksi",
+  "/top",
+  "/pinjaman",
+  "/investasi",
+])
+
 // ── Entry point ──────────────────────────────────────────────────────────────
 
 export async function handleTelegramUpdate(update: TelegramUpdate): Promise<void> {
@@ -433,9 +772,35 @@ export async function handleTelegramUpdate(update: TelegramUpdate): Promise<void
         await handleHapus(chatId, delCtx, arg)
         return
       }
-      default:
-        await sendTelegramMessage(chatId, `Perintah tidak dikenal: ${command}. /help untuk melihat daftar.`)
+      default: {
+        if (!LAPORAN_COMMANDS.has(command)) {
+          await sendTelegramMessage(chatId, `Perintah tidak dikenal: ${command}. /help untuk melihat daftar.`)
+          return
+        }
+
+        const link = await telegramRepository.findByChatId(chatId)
+        if (!link) {
+          await sendTelegramMessage(chatId, "Belum terhubung. Kirim /link KODE dulu.")
+          return
+        }
+        const repCtx = await loadContext(link.user_id)
+        if (!repCtx) {
+          await sendTelegramMessage(chatId, "Akun ini tidak bisa dipakai lewat Telegram.")
+          return
+        }
+
+        // Perintah laporan tidak melewati rate limit AI (tak memanggil model).
+        try {
+          await handleLaporan(chatId, repCtx, command, arg)
+        } catch (err) {
+          console.error(`[telegram] gagal menjalankan ${command}:`, err)
+          await sendTelegramMessage(
+            chatId,
+            "⚠️ Maaf, laporan tidak bisa dibuat. Coba lagi sebentar.",
+          )
+        }
         return
+      }
     }
   }
 

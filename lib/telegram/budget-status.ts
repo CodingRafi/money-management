@@ -88,7 +88,7 @@ function scopeOf(session: SessionData): { members: string; fam: string; param: s
 }
 
 /**
- * Hitung status anggaran satu kategori untuk satu bulan/tahun.
+ * Status anggaran satu kategori untuk satu bulan/tahun.
  * Mengembalikan null bila kategori tidak ada (mis. transaksi tanpa kategori).
  */
 export async function getCategoryBudgetStatus(
@@ -155,4 +155,121 @@ export async function getCategoryBudgetStatus(
   }
 
   return { hasBudget, max, spent, sisa, status }
+}
+
+/**
+ * Versi massal dari `getCategoryBudgetStatus`: hitung status anggaran banyak
+ * kategori sekaligus dalam satu query.
+ *
+ * dipakai laporan yang menyorot banyak kategori sekaligus (/rekap_kategori,
+ * /anggaran) supaya tidak perlu N+1 query. Semantiknya identik dengan versi
+ * per kategori di atas: persentase dijumlahkan antar anggota keluarga,
+ * nominal dijumlahkan antar anggota, dan income/spent mengikuti scope yang
+ * sama (mode personal mengabaikan beban rumah tangga).
+ */
+const BULK_SQL = `
+WITH m AS ($MEMBERS$),
+b AS (
+  SELECT category_id, month, SUM(percentage) AS pct
+    FROM budgets
+   WHERE user_id IN (SELECT user_id FROM m)
+     AND year = ?
+   GROUP BY category_id, month
+),
+n AS (
+  SELECT category_id, SUM(nominal) AS nominal
+    FROM category_nominal_budgets
+   WHERE user_id IN (SELECT user_id FROM m)
+     AND year = ?
+   GROUP BY category_id
+),
+i AS (
+  SELECT COALESCE(SUM(amount), 0) AS total
+    FROM incomes
+   WHERE user_id IN (SELECT user_id FROM m)
+     AND year = ? AND month = ?
+),
+e AS (
+  SELECT category_id, COALESCE(SUM(amount), 0) AS total
+    FROM expenses
+   WHERE user_id IN (SELECT user_id FROM m)
+     AND year = ? AND month = ?$FAM$
+   GROUP BY category_id
+)
+SELECT
+  c.id AS category_id,
+  COALESCE((SELECT MAX(pct) FROM b WHERE b.category_id = c.id), 0) AS pct_rep,
+  COALESCE((SELECT SUM(pct) FROM b WHERE b.category_id = c.id AND month = ?), 0) AS pct_month,
+  (SELECT COUNT(*) FROM b WHERE b.category_id = c.id AND month = ?) AS has_month,
+  COALESCE(n.nominal, 0) AS nominal,
+  (SELECT total FROM i) AS income,
+  COALESCE(e.total, 0) AS spent
+FROM (SELECT unnest(?::text[]) AS id) c
+LEFT JOIN n ON n.category_id = c.id
+LEFT JOIN e ON e.category_id = c.id`
+
+/**
+ * Status anggaran untuk banyak kategori sekaligus.
+ * Kategori yang tidak punya anggaran tetap dikembalikan dengan
+ * `hasBudget: false` supaya pemanggil tetap bisa menampilkan barisnya.
+ */
+export async function getCategoryBudgetStatuses(
+  session: SessionData,
+  categoryIds: string[],
+  year: number,
+  month: number,
+): Promise<Map<string, CategoryBudgetStatus>> {
+  const result = new Map<string, CategoryBudgetStatus>()
+  if (categoryIds.length === 0) return result
+
+  const scope = scopeOf(session)
+  const sql = BULK_SQL.replace("$MEMBERS$", scope.members).replace("$FAM$", scope.fam)
+
+  const rows = await db.prepare<unknown[], {
+    category_id: string
+    pct_rep: number
+    pct_month: number
+    has_month: number
+    nominal: number
+    income: number
+    spent: number
+  }>(sql).all(
+    scope.param,   // m
+    year,          // b.year
+    year,          // n.year
+    year,          // i.year
+    month,         // i.month
+    year,          // e.year
+    month,         // e.month
+    month,         // pct_month
+    month,         // has_month
+    categoryIds,   // daftar kategori
+  )
+
+  for (const row of rows) {
+    const pctRep = Number(row.pct_rep) || 0
+    const pctMonth = Number(row.pct_month) || 0
+    const hasMonth = Number(row.has_month) > 0
+    const nominal = Number(row.nominal) || 0
+    const income = Number(row.income) || 0
+    const spent = Number(row.spent) || 0
+
+    const pct = hasMonth ? pctMonth : pctRep
+    const hasNominal = nominal > 0
+    const hasBudget = hasNominal || pct > 0
+    const max = hasNominal ? nominal : income * (pct / 100)
+    const sisa = max - spent
+
+    let status: BudgetStatusLevel | null = null
+    if (hasBudget) {
+      if (max <= 0) status = "NORMAL"
+      else if (sisa < 0) status = "DANGER"
+      else if (sisa < max * 0.2) status = "WARNING"
+      else status = "NORMAL"
+    }
+
+    result.set(row.category_id, { hasBudget, max, spent, sisa, status })
+  }
+
+  return result
 }
