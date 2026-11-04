@@ -122,6 +122,37 @@ async function main() {
   const loanData = await getLoans(USER)
   console.log("   loans setelah pembayaran:", JSON.stringify(loanData.piutang.items.map((i) => ({ n: i.name, sisa: i.sisa }))))
 
+  // Harga aset + metrik risiko + simulasi (fitur risiko investasi)
+  console.log("\nRisiko: harga aset, portofolio, simulasi...")
+  const { riskService } = await import("../services/risk.service")
+  await db.prepare("UPDATE investments SET unit = 'lembar', ticker = 'SMOKE.JK' WHERE id = ?").run(invId)
+  const monthsBack = Array.from({ length: 8 }, (_, i) => {
+    const d = new Date(Date.UTC(year, month - 1 - (7 - i), 15))
+    return { d: d.toISOString().slice(0, 10), c: 1000 * (1 + 0.02 * i) }
+  })
+  await db.prepare(
+    `INSERT INTO asset_prices (investment_id, date, close, source)
+     SELECT ?::text, t.d, t.c, 'seed' FROM unnest(?::text[], ?::float8[]) AS t(d, c)
+     ON CONFLICT (investment_id, date) DO NOTHING`,
+  ).run(invId, monthsBack.map((x) => x.d), monthsBack.map((x) => x.c))
+  const scoped = await db.prepare(
+    "SELECT COUNT(*)::int AS n FROM asset_prices ap JOIN investments i ON i.id = ap.investment_id WHERE i.user_id = ANY(?)",
+  ).get([USER]) as { n: number }
+  const foreign = await db.prepare(
+    "SELECT COUNT(*)::int AS n FROM asset_prices ap JOIN investments i ON i.id = ap.investment_id WHERE i.user_id = ANY(?)",
+  ).get(["user-lain-tidak-ada"]) as { n: number }
+  console.log("   harga milik scope:", scoped.n, "| harga user lain:", foreign.n)
+  const risk = await riskService.portfolioRisk([USER], null)
+  console.log("   portofolio hasData:", risk.hasData, "| maxDD:", risk.metrics.maxDrawdown)
+  const sim = await riskService.simulate([USER], {
+    initialCapital: 1_000_000, monthlyContribution: 100_000, years: 1,
+    allocation: [{ investmentId: invId, weight: 1 }], rebalance: "NONE",
+    monteCarlo: { method: "BOOTSTRAP", iterations: 200, seed: 1 },
+  })
+  console.log("   simulasi bulan:", sim.simulation.assumptions.months, "| MC median:", Math.round(sim.monteCarlo?.finalStats.p50 ?? 0), sim.monteCarloError ?? "")
+  const stress = await riskService.stressTest([USER])
+  console.log("   stress skenario:", stress.results.length)
+
   console.log("\nSMOKE TEST SELESAI")
   process.exit(0)
 }

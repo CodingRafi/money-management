@@ -12,6 +12,10 @@ import { CashflowSection, CashflowSkeleton } from "@/components/dashboard/Cashfl
 import { CategorySection, CategorySkeleton } from "@/components/dashboard/CategorySection"
 import { WalletExpenseSection, WalletExpenseSkeleton } from "@/components/dashboard/WalletExpenseSection"
 import { FamilyMemberRecap, FamilyMemberRecapSkeleton } from "@/components/dashboard/FamilyMemberRecap"
+import { MissingEntriesCard } from "@/components/dashboard/MissingEntriesCard"
+import { PortfolioRiskCard } from "@/components/dashboard/PortfolioRiskCard"
+import { sessionHasPermission } from "@/lib/session"
+import { PERMISSION } from "@/lib/permissions"
 
 const MONTHS = [
   "Januari", "Februari", "Maret", "April", "Mei", "Juni",
@@ -41,7 +45,8 @@ export default async function DashboardPage({
   const scope     = await requireScope()
   const userId    = scope.userIds
   const familyMode = scope.mode === "family"
-  const username  = (await requireSession()).username
+  const session   = await requireSession()
+  const username  = session.username
   const firstName = username
 
   const sp  = await searchParams
@@ -129,10 +134,27 @@ export default async function DashboardPage({
         </p>
       </div>
 
+      {/* Transaksi rutin yang belum dicatat bulan ini */}
+      <Suspense fallback={null}>
+        <MissingEntriesCard
+          userIds={userId}
+          session={session}
+          canWrite={!scope.readOnly && sessionHasPermission(session, PERMISSION.CASHFLOW.CREATE)}
+          compact
+        />
+      </Suspense>
+
       {/* Wealth section — chartYear mengontrol Cashflow Bulanan */}
       <Suspense fallback={<NetWorthSkeleton />}>
         <NetWorthSection userId={userId} year={chartYear} />
       </Suspense>
+
+      {/* Risiko portofolio investasi */}
+      {sessionHasPermission(session, PERMISSION.INVESTMENT.VIEW) && (
+        <Suspense fallback={null}>
+          <PortfolioRiskCard userIds={userId} />
+        </Suspense>
+      )}
 
       {/* ── Cashflow — pakai filter bulan ── */}
       <div className="space-y-4">

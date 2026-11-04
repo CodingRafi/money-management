@@ -3,6 +3,7 @@ import { db } from "@/lib/db"
 import type { SessionData } from "@/lib/auth-simple"
 import { expenseService } from "@/services/expense.service"
 import { financeService } from "@/services/finance.service"
+import { recurringService } from "@/services/recurring.service"
 import type { GeminiSchema, GeminiTool } from "./gemini"
 import type { TxnCard } from "./format"
 import {
@@ -26,6 +27,7 @@ import {
   reviseIncome,
 } from "./revision"
 import { getCategoryBudgetStatus } from "./budget-status"
+import { riskHandlers, riskToolDeclarations } from "./risk-tools"
 
 /**
  * Terjemahkan id yang diberikan AI menjadi ID transaksi milik user.
@@ -290,6 +292,17 @@ export const telegramTool: GeminiTool = {
       parameters: OBJ({}),
     },
     {
+      name: "list_missing_entries",
+      description: "Transaksi rutin (listrik, gaji, iuran, dll) yang biasanya ada bulan ini tapi BELUM dicatat atau sudah jatuh tempo.",
+      parameters: OBJ({}),
+    },
+    {
+      name: "list_recurring",
+      description: "Daftar pola transaksi berulang yang sudah disetujui pengguna beserta nominal rata-rata dan tanggal jatuh tempo.",
+      parameters: OBJ({}),
+    },
+    ...riskToolDeclarations,
+    {
       name: "create_expense",
       description: "Mencatat pengeluaran. Gunakan hanya setelah pengguna relayed nominal & kategori dengan jelas. Tanggal default hari ini.",
       parameters: OBJ(
@@ -462,6 +475,7 @@ export const telegramTool: GeminiTool = {
 type Handler = (args: Record<string, unknown>, ctx: ToolContext) => Promise<ToolResult>
 
 const handlers: Record<string, Handler> = {
+  ...riskHandlers,
   async list_wallets(_args, ctx) {
     const rows = await db.prepare(
       "SELECT id, name, is_liquid FROM wallets WHERE user_id = ? AND is_active = 1 ORDER BY sort_order, name"
@@ -542,6 +556,35 @@ const handlers: Record<string, Handler> = {
       ok: true,
       message: `${rows.length} kantong investasi.`,
       data: { goals: rows.map((r) => ({ id: r.id, name: r.name, target_amount: r.target_amount })) },
+    }
+  },
+
+  async list_missing_entries(_args, ctx) {
+    const items = await recurringService.missingThisMonth([ctx.session.userId], ctx.today)
+    return {
+      ok: true,
+      message: items.length ? `${items.length} transaksi rutin belum dicatat bulan ini.` : "Semua transaksi rutin bulan ini sudah tercatat.",
+      data: {
+        missing: items.map((m) => ({
+          name: m.name, kind: m.kind, amount: m.amount, due_date: m.dueDate,
+          status: m.severity === "overdue" ? `terlambat ${m.daysLate} hari` : m.daysLate === 0 ? "jatuh tempo hari ini" : `${-m.daysLate} hari lagi`,
+          category: m.categoryName,
+        })),
+      },
+    }
+  },
+
+  async list_recurring(_args, ctx) {
+    const rows = (await recurringService.list([ctx.session.userId])).filter((p) => p.is_active === 1)
+    return {
+      ok: true,
+      message: `${rows.length} pola transaksi berulang aktif.`,
+      data: {
+        recurring: rows.map((p) => ({
+          name: p.name, kind: p.kind, amount: Number(p.amount_avg), day_of_month: p.day_of_month,
+          category: p.category_name, auto_post: p.auto_post === 1,
+        })),
+      },
     }
   },
 

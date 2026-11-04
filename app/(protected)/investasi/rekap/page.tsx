@@ -7,6 +7,8 @@ import { InvestasiCharts } from "./_components/InvestasiCharts"
 import type { CategoryData, LiquidData, HoldingData } from "./_components/InvestasiCharts"
 import { GrowthChart } from "./_components/GrowthChart"
 import { PerformanceTable } from "./_components/PerformanceTable"
+import { RiskSection } from "./_components/RiskSection"
+import { riskService } from "@/services/risk.service"
 import { monthlyGrowth, realizedPerformance, type CashTx } from "@/lib/investment-metrics"
 
 type CategoryRow = { category_name: string; total_buy: number; total_sell: number }
@@ -17,6 +19,11 @@ export default async function InvestasiRekapPage() {
   const scope  = await requireScope()
   const userId = scope.userIds
   const selfId = scope.targetUserId
+
+  const risk = await riskService.portfolioRisk(userId).catch((err) => {
+    console.error("[rekap] risiko gagal dihitung:", err)
+    return null
+  })
 
   const categoryRows = await db.prepare<[string[]], CategoryRow>(
     `SELECT ic.name AS category_name,
@@ -107,6 +114,8 @@ export default async function InvestasiRekapPage() {
       <GrowthChart data={growthData} />
 
       <PerformanceTable rows={performanceRows} />
+
+      {risk && <RiskSection risk={risk} />}
     </div>
   )
 }
