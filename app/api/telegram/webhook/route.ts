@@ -1,7 +1,12 @@
 import { after, NextResponse } from "next/server"
 import { handleTelegramUpdate, type TelegramUpdate } from "@/services/telegram.service"
 
-/** Panjang maksimum eksekusi route (dipakai oleh `after()` saat memanggil AI). */
+/**
+ * Panjang maksimum eksekusi route (dipakai oleh `after()` saat memanggil AI).
+ *
+ * Harus lebih besar dari `TELEGRAM_AI_BUDGET_MS` (default 40 detik) — sisa
+ * waktunya dipakai untuk mengirim pesan konfirmasi ke user.
+ */
 export const maxDuration = 60
 
 /**

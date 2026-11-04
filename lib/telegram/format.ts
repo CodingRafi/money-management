@@ -111,6 +111,35 @@ export function formatCard(card: TxnCard): string {
 }
 
 /**
+ * Kebalikan dari {@link escapeHtml} — dipakai saat mengirim versi teks biasa
+ * (fallback kalau Telegram menolak pesan HTML-nya).
+ */
+export function unescapeHtml(text: string): string {
+  return text
+    .replace(/&lt;/g, "<")
+    .replace(/&gt;/g, ">")
+    .replace(/&amp;/g, "&")
+}
+
+/**
+ * Versi teks biasa dari kartu — dipakai kalau pengiriman HTML ditolak
+ * Telegram (mis. karena ada karakter yang tidak valid).
+ */
+export function formatCardPlain(card: TxnCard): string {
+  const lines = [
+    card.title,
+    ...card.fields.map((f) => `${f.label}: ${unescapeHtml(f.value)}`),
+    `Kode transaksi: ${shortCode(card.id)}`,
+  ]
+  return lines.join("\n")
+}
+
+/** Buang tag HTML dari teks balasan, lalu kembalikan teksnya. */
+export function stripHtml(text: string): string {
+  return unescapeHtml(text.replace(/<[^>]*>/g, ""))
+}
+
+/**
  * Petunjuk cara memperbaiki transaksi yang keliru, dengan kode transaksi sudah
  * terisi. Dibungkus <code> supaya cukup diketuk di Telegram untuk menyalinnya;
  * user tinggal mengganti <field> dan <nilai>. Dipakai di pesan berformat HTML

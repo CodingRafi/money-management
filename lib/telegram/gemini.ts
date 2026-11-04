@@ -34,7 +34,18 @@ const FALLBACK_MODELS = [
   "gemini-3.7-flash",
 ]
 
-const ATTEMPT_TIMEOUT_MS = Number(process.env.GEMINI_TIMEOUT_MS ?? 40_000)
+const ATTEMPT_TIMEOUT_MS = Number(process.env.GEMINI_TIMEOUT_MS ?? 20_000)
+/**
+ * Sisa waktu (ms) yang wajib tersisa sebelum model dicoba lagi.
+ *
+ * Penting: satu percobaan bisa saja makan 40 detik, sedangkan seluruh
+ * pemrosesan webhook dibatasi platform (mis. 60 detik di Vercel). Tanpa
+ * batas sisa waktu, satu retry lambat bisa membuat seluruh giliran
+ * terpotong — transaksi sudah tercatat tapi balasannya tidak pernah sampai.
+ */
+const MIN_REMAINING_MS = 4_000
+/** Timeout paling pendek untuk satu percobaan (biar tidak ganggu ctx). */
+const MIN_ATTEMPT_TIMEOUT_MS = 3_000
 const MAX_ATTEMPTS_PER_MODEL = 2
 
 /**
@@ -154,6 +165,8 @@ async function callOnce(model: string, apiKey: string, opts: {
   systemInstruction: string
   contents: GeminiContent[]
   tools?: GeminiTool[]
+  /** Batas waktu satu percobaan (ms). */
+  timeoutMs: number
 }): Promise<GeminiResult> {
   const body: Record<string, unknown> = {
     system_instruction: { parts: [{ text: opts.systemInstruction }] },
@@ -171,7 +184,7 @@ async function callOnce(model: string, apiKey: string, opts: {
       },
       body: JSON.stringify(body),
       cache: "no-store",
-      signal: AbortSignal.timeout(ATTEMPT_TIMEOUT_MS),
+      signal: AbortSignal.timeout(opts.timeoutMs),
     })
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err)
@@ -230,26 +243,46 @@ export async function callGemini(opts: {
   systemInstruction: string
   contents: GeminiContent[]
   tools?: GeminiTool[]
+  /**
+   * Batas waktu absolut (epoch ms) untuk seluruh pemanggilan.
+   *
+   * Setelah batas ini lewat, tidak ada model/attempt lagi yang dicoba —
+   * pemanggil decidir sendiri apa yang dikirim ke user.
+   */
+  deadline?: number
 }): Promise<GeminiResult> {
   const primary = getGeminiModel()
   const models = [primary, ...FALLBACK_MODELS.filter((m) => m !== primary)]
 
   const keys = getGeminiApiKeys()
 
+  const remainingMs = () =>
+    opts.deadline === undefined ? Number.POSITIVE_INFINITY : opts.deadline - Date.now()
+
   let lastError: GeminiRequestError | undefined
   let sawQuota = false
   let tried = 0
+  let deadlineHit = false
 
   // Kuota free tier dihitung per model per project, jadi saat satu kombinasi
   // habis kita pindah ke model/key berikutnya secara otomatis.
   for (const model of models) {
     for (const apiKey of keys) {
       if (isExhausted(model, apiKey)) { sawQuota = true; continue }
+      // Waktu sudah habis → stop, jangan habiskan sisa budget.
+      if (remainingMs() <= MIN_REMAINING_MS) { deadlineHit = true; break }
       tried++
 
       for (let attempt = 1; attempt <= MAX_ATTEMPTS_PER_MODEL; attempt++) {
+        const budget = remainingMs()
+        if (budget <= MIN_REMAINING_MS) { deadlineHit = true; break }
+        const timeoutMs = Math.max(
+          MIN_ATTEMPT_TIMEOUT_MS,
+          Math.min(ATTEMPT_TIMEOUT_MS, budget - 500),
+        )
+
         try {
-          return await callOnce(model, apiKey, opts)
+          return await callOnce(model, apiKey, { ...opts, timeoutMs })
         } catch (err) {
           const e = err instanceof GeminiRequestError
             ? err
@@ -268,12 +301,21 @@ export async function callGemini(opts: {
           // menunggu terlalu lama.
           const maxAttempts = model === primary ? MAX_ATTEMPTS_PER_MODEL : 1
           if (!e.retryable || attempt >= maxAttempts) break
+          // Kalau sisa waktu tak cukup untuk tidur + mencoba lagi, berhenti.
+          if (remainingMs() - 1_500 <= MIN_REMAINING_MS) { deadlineHit = true; break }
           await sleep(1500 * attempt)
         }
       }
+      if (deadlineHit) break
     }
+    if (deadlineHit) break
   }
 
+  // Waktu habis sebelum sempat ada respons → laporkan sebagai "busy" supaya
+  // pemanggil bisa mengirim pesan yang jelas ke user.
+  if (deadlineHit && !lastError) {
+    throw new GeminiError("Waktu proses AI habis sebelum model merespons", "busy", primary)
+  }
   // Semua kombinasi di-skip karena cooldown kuota → tidak ada yang dicoba.
   if (tried === 0 && sawQuota) {
     throw new GeminiError("Kuota semua model Gemini habis", "quota", primary)

@@ -38,6 +38,12 @@ TELEGRAM_WEBHOOK_SECRET=<openssl rand -hex 24>
 TELEGRAM_BOT_USERNAME=tonas_bot
 GEMINI_API_KEY=AIza...
 GEMINI_MODEL=gemini-2.5-flash
+
+# Opsional — batas waktu pemrosesan AI per pesan (ms, default 40000).
+# Harus lebih kecil dari maxDuration route (60000).
+TELEGRAM_AI_BUDGET_MS=40000
+# Timeout satu percobaan ke Gemini (ms, default 20000).
+GEMINI_TIMEOUT_MS=20000
 ```
 
 `TELEGRAM_WEBHOOK_SECRET` wajib: Telegram mengirimkannya sebagai header
@@ -92,6 +98,25 @@ Perintah yang tersedia:
 
 Untuk menambah/mengubah perintah, edit konstanta `BOT_COMMANDS` di
 `scripts/telegram-setup.ts`, lalu jalankan ulang `--commands-only`.
+
+## Foto struk (OCR)
+
+Foto struk dikirim ke Gemini sebagai vision input. Karena satu foto bisa butuh
+beberapa kali panggilan model (baca struk → cari kategori → catat), dan model
+kadang lambat (5–50 detik, atau `503` saat sibuk), alurnya dijamin begini:
+
+1. Bot membalas **"📸 Sedang membaca struk, sebentar ya…"** begitu foto
+   diterima — jadi user selalu tahu pesananya sudah masuk.
+2. Begitu transaksi tercatat, **kartu konfirmasi langsung dikirim** (tidak
+   menunggu giliran model berikutnya). Kalau prosesnya sempat terpotong di
+   tengah, user tetap tahu transaksi sudah masuk.
+3. Semua panggilan AI dibatasi oleh anggaran waktu
+   (`TELEGRAM_AI_BUDGET_MS`, default 40 detik) agar masih ada waktu mengirim
+   pesan sebelum route-nya dihentikan platform (`maxDuration = 60` detik).
+   Kalau waktu habis, bot membalas bahwa catatannya belum selesai.
+
+Konfirmasi dikirim dalam format HTML; kalau Telegram menolak pesan HTML-nya,
+bot mengirim ulang versi teks biasa.
 
 ## Format output transaksi
 

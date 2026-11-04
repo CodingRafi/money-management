@@ -12,7 +12,7 @@ import {
 import { runTelegramAgent } from "@/lib/telegram/agent"
 import { GeminiError } from "@/lib/telegram/gemini"
 import type { ToolContext } from "@/lib/telegram/tools"
-import { formatCard, formatAmount, shortCode } from "@/lib/telegram/format"
+import { formatCard, formatCardPlain, formatAmount, shortCode, stripHtml, type TxnCard } from "@/lib/telegram/format"
 import { historyCard } from "@/lib/telegram/cards"
 import { todayFromDb } from "@/lib/telegram/tools"
 import {
@@ -90,6 +90,14 @@ function isRateLimited(chatId: string): boolean {
   }
   return hits.length > RATE_MAX_MESSAGES
 }
+
+/**
+ * Anggaran waktu pemrosesan AI untuk satu pesan (ms).
+ *
+ * Harus lebih kecil dari batas durasi route (`maxDuration`) supaya masih
+ * ada waktu mengirim pesan balasan ke user sebelum proses dipotong platform.
+ */
+const AI_BUDGET_MS = Number(process.env.TELEGRAM_AI_BUDGET_MS ?? 40_000)
 
 // ── Riwayat percakapan (in-memory, per chat) ────────────────────────────────
 
@@ -947,22 +955,65 @@ export async function handleTelegramUpdate(update: TelegramUpdate): Promise<void
     return
   }
 
+  // Konfirmasi awal untuk foto struk: OCR butuh beberapa kali panggilan AI
+  // yang bisa memakan puluhan detik. Tanpa pesan ini user menggantung lama
+  // tanpa tahu apakah fotonya sudah diterima.
+  if (image) {
+    await sendTelegramMessage(chatId, "📸 Sedang membaca struk, sebentar ya…")
+  }
+
   try {
     const history = getHistory(chatId)
+    let cardReplied = false
     const out = await runTelegramAgent({
       ctx,
       text: text || "Tolong catat struk ini.",
       image,
       history,
+      deadline: Date.now() + AI_BUDGET_MS,
+      // Kirim kartu segera setelah transaksi tercatat — user tidak perlu
+      // menunggu langkah AI berikutnya selesai (yang bisa saja tidak pernah).
+      onCard: async (card: TxnCard) => {
+        await sendCard(chatId, card)
+        cardReplied = true
+      },
     })
 
-    pushHistory(chatId, { role: "user", parts: [{ text }] })
-    pushHistory(chatId, { role: "model", parts: [{ text: out.reply }] })
+    pushHistory(chatId, { role: "user", parts: [{ text: text || "[foto struk]" }] })
+    pushHistory(chatId, { role: "model", parts: [{ text: out.reply || "[kartu transaksi terkirim]" }] })
 
-    await sendTelegramMessageLong(chatId, out.reply, out.html ? { parseMode: "HTML" } : {})
+    if (out.reply.trim()) {
+      try {
+        await sendTelegramMessageLong(chatId, out.reply, out.html ? { parseMode: "HTML" } : {})
+      } catch (err) {
+        console.error("[telegram] gagal mengirim balasan:", err)
+        if (out.html) {
+          // Telegram menolak HTML-nya → kirim ulang versi teks biasa.
+          await sendTelegramMessage(chatId, stripHtml(out.reply))
+        } else if (!cardReplied) {
+          throw err
+        }
+      }
+    }
   } catch (err) {
     console.error("[telegram] gagal memproses pesan:", err)
     await sendTelegramMessage(chatId, friendlyErrorMessage(err))
+  }
+}
+
+/**
+ * Kirim kartu transaksi ke user.
+ *
+ * Kalau Telegram menolak pesan HTML-nya (mis. ada karakter tak valid), kirim
+ * ulang versi teks biasa — supaya konfirmasi tetap sampai.
+ */
+async function sendCard(chatId: string, card: TxnCard): Promise<void> {
+  const html = formatCard(card)
+  try {
+    await sendTelegramHtml(chatId, html)
+  } catch (err) {
+    console.error("[telegram] gagal kirim kartu HTML, kirim versi teks:", err)
+    await sendTelegramMessage(chatId, formatCardPlain(card))
   }
 }
 
