@@ -370,6 +370,9 @@ export default async function YearDetailPage({
   const expCategoryNames = allExpCats.map((c) => c.name)
 
   const base       = `/rekap/${year}`
+  // Link di view report harus membawa filter kategori (xcat) agar tidak reset.
+  const xcatQs     = excludedCatIds.length > 0 ? `&xcat=${excludedCatIds.join(",")}` : ""
+  const reportHref = (extra = "") => `${base}?view=report${extra}${xcatQs}`
   const cancelHref = `${base}?bulan=${month}&tab=${tab}`
   const tambahHref = `${cancelHref}&new=1`
 
@@ -422,7 +425,7 @@ export default async function YearDetailPage({
           className={`rounded-t-md px-4 py-2 text-sm font-medium transition-colors ${view === "manage" ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:text-foreground"}`}>
           Manage Keuangan
         </Link>
-        <Link href={`${base}?view=report`}
+        <Link href={reportHref()}
           className={`rounded-t-md px-4 py-2 text-sm font-medium transition-colors ${view === "report" ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:text-foreground"}`}>
           Report
         </Link>
@@ -438,7 +441,7 @@ export default async function YearDetailPage({
             />
           </Suspense>
           <div className="grid grid-cols-2 gap-4">
-            <Link href={detail === "pendapatan" ? `${base}?view=report` : `${base}?view=report&detail=pendapatan`} className="block h-full">
+            <Link href={detail === "pendapatan" ? reportHref() : reportHref("&detail=pendapatan")} className="block h-full">
               <Card className={`transition-all hover:shadow-md cursor-pointer h-full ${detail === "pendapatan" ? "ring-2 ring-emerald-500" : ""}`}>
                 <CardContent className="p-5 flex flex-col justify-between h-full">
                   <div>
@@ -460,7 +463,7 @@ export default async function YearDetailPage({
                 </CardContent>
               </Card>
             </Link>
-            <Link href={detail === "pengeluaran" ? `${base}?view=report` : `${base}?view=report&detail=pengeluaran`} className="block h-full">
+            <Link href={detail === "pengeluaran" ? reportHref() : reportHref("&detail=pengeluaran")} className="block h-full">
               <Card className={`transition-all hover:shadow-md cursor-pointer h-full ${detail === "pengeluaran" ? "ring-2 ring-rose-500" : ""}`}>
                 <CardContent className="p-5 flex flex-col justify-between h-full">
                   <div>
@@ -488,7 +491,7 @@ export default async function YearDetailPage({
                 </CardContent>
               </Card>
             </Link>
-            <Link href={stat === "wealth_growth" ? `${base}?view=report` : `${base}?view=report&stat=wealth_growth`} className="block">
+            <Link href={stat === "wealth_growth" ? reportHref() : reportHref("&stat=wealth_growth")} className="block">
               <Card className={`transition-all hover:shadow-md cursor-pointer h-full ${stat === "wealth_growth" ? "ring-2 ring-cyan-500" : ""}`}>
                 <CardContent className="p-5 flex flex-col justify-between h-full">
                   <div>
@@ -512,7 +515,7 @@ export default async function YearDetailPage({
                 </CardContent>
               </Card>
             </Link>
-            <Link href={stat === "saving_rate" ? `${base}?view=report` : `${base}?view=report&stat=saving_rate`} className="block">
+            <Link href={stat === "saving_rate" ? reportHref() : reportHref("&stat=saving_rate")} className="block">
               <Card className={`transition-all hover:shadow-md cursor-pointer h-full ${stat === "saving_rate" ? "ring-2 ring-blue-500" : ""}`}>
                 <CardContent className="p-5 flex flex-col justify-between h-full">
                   <div>
