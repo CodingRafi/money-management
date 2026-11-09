@@ -16,6 +16,7 @@ import { ReportTab } from "./_components/report-tab"
 import { StatChart } from "./_components/stat-chart"
 import { IncomeDetailTabs } from "./_components/income-detail-tabs"
 import { ExpenseDetailTabs } from "./_components/expense-detail-tabs"
+import { ExpenseCategoryFilter, NO_CATEGORY_ID } from "./_components/expense-category-filter"
 import { getExpenseByWallet } from "@/lib/dashboard"
 import { WalletExpensePieChart } from "@/components/dashboard/WalletExpensePieChart"
 import {
@@ -111,13 +112,32 @@ export default async function YearDetailPage({
     "SELECT id, name FROM wallets WHERE user_id = ? AND is_active = 1 ORDER BY sort_order"
   ).all(userId) as { id: string; name: string }[]
 
+  // ── Filter kategori pengeluaran (hanya view report) ───────────────────────────
+  // `xcat` = daftar id kategori yang DISEMBUNYIKAN (dipisah koma); "none" = tanpa kategori.
+  // Id divalidasi terhadap kategori yang dikenal sebelum masuk ke SQL.
+  const knownCatIds = new Set<string>([...expenseCats.map((c) => c.id), NO_CATEGORY_ID])
+  const excludedCatIds = view === "report" && typeof sp.xcat === "string"
+    ? Array.from(new Set(sp.xcat.split(",").filter((id) => knownCatIds.has(id))))
+    : []
+  const catClauseFor = (col: string) => {
+    if (excludedCatIds.length === 0) return ""
+    const real = excludedCatIds.filter((id) => id !== NO_CATEGORY_ID).map((id) => `'${id.replace(/'/g, "''")}'`)
+    const parts: string[] = []
+    if (real.length > 0) parts.push(`(${col} IS NULL OR ${col} NOT IN (${real.join(",")}))`)
+    if (excludedCatIds.includes(NO_CATEGORY_ID)) parts.push(`${col} IS NOT NULL`)
+    return ` AND ${parts.join(" AND ")}`
+  }
+  const catClause  = catClauseFor("category_id")
+  const catClauseE = catClauseFor("e.category_id")
+  const visibleExpenseCats = expenseCats.filter((c) => !excludedCatIds.includes(c.id))
+
   // ── Pengeluaran per dompet (pie chart) ────────────────────────────────────────
   // Manage: pengeluaran bulan yang dipilih. Report: pengeluaran sepanjang tahun.
   const expenseByWallet = await getExpenseByWallet(
     readIds,
     year,
     view === "report" ? null : month,
-    { excludeFamily: !isFamilyScope },
+    { excludeFamily: !isFamilyScope, extraClause: catClauseE },
   )
   const walletPieItems = expenseByWallet.items.map((w) => ({
     id: w.id,
@@ -150,13 +170,13 @@ export default async function YearDetailPage({
 
   // ── Yearly aggregate data (replaces yearly_recap table) ───────────────────────
   const totalIncomeRow  = await db.prepare<[string[], number]>("SELECT COALESCE(SUM(amount), 0) AS total FROM incomes  WHERE user_id=ANY(?) AND year=?").get(readIds, year) as { total: number }
-  const totalExpenseRow = await db.prepare<[string[], number]>(`SELECT COALESCE(SUM(amount), 0) AS total FROM expenses WHERE user_id=ANY(?) AND year=?${famClause}`).get(readIds, year) as { total: number }
+  const totalExpenseRow = await db.prepare<[string[], number]>(`SELECT COALESCE(SUM(amount), 0) AS total FROM expenses WHERE user_id=ANY(?) AND year=?${famClause}${catClause}`).get(readIds, year) as { total: number }
   const totalIncome  = totalIncomeRow.total
   const totalExpense = totalExpenseRow.total
   const hasData      = totalIncome > 0 || totalExpense > 0
 
   const incomeMoRows  = await db.prepare<[string[], number]>("SELECT month, COALESCE(SUM(amount),0) AS total FROM incomes  WHERE user_id=ANY(?) AND year=? GROUP BY month").all(readIds, year)  as { month: number; total: number }[]
-  const expenseMoRows = await db.prepare<[string[], number]>(`SELECT month, COALESCE(SUM(amount),0) AS total FROM expenses WHERE user_id=ANY(?) AND year=?${famClause} GROUP BY month`).all(readIds, year) as { month: number; total: number }[]
+  const expenseMoRows = await db.prepare<[string[], number]>(`SELECT month, COALESCE(SUM(amount),0) AS total FROM expenses WHERE user_id=ANY(?) AND year=?${famClause}${catClause} GROUP BY month`).all(readIds, year) as { month: number; total: number }[]
   const incomeMo: Record<string, number>  = {}
   const expenseMo: Record<string, number> = {}
   for (const r of incomeMoRows)  incomeMo[String(r.month)]  = r.total
@@ -166,7 +186,7 @@ export default async function YearDetailPage({
 
   // expense breakdown by category & month
   const expByCatMonthRows = await db.prepare<[string[], number]>(
-    `SELECT category_id, month, COALESCE(SUM(amount),0) AS total FROM expenses WHERE user_id=ANY(?) AND year=?${famClause} AND category_id IS NOT NULL GROUP BY category_id, month`
+    `SELECT category_id, month, COALESCE(SUM(amount),0) AS total FROM expenses WHERE user_id=ANY(?) AND year=?${famClause}${catClause} AND category_id IS NOT NULL GROUP BY category_id, month`
   ).all(readIds, year) as { category_id: string; month: number; total: number }[]
   const expBdSpendMap = new Map<string, Record<string, number>>()
   for (const r of expByCatMonthRows) {
@@ -182,13 +202,13 @@ export default async function YearDetailPage({
 
   // ── Report charts ─────────────────────────────────────────────────────────────
   const needsChartRows = await db.prepare<[string[], number, number]>(
-    `SELECT needs_type AS label, COALESCE(SUM(amount),0) AS total FROM expenses WHERE user_id=ANY(?) AND year=? AND month=?${famClause} GROUP BY needs_type`
+    `SELECT needs_type AS label, COALESCE(SUM(amount),0) AS total FROM expenses WHERE user_id=ANY(?) AND year=? AND month=?${famClause}${catClause} GROUP BY needs_type`
   ).all(readIds, year, month) as { label: string; total: number }[]
 
   const catChartRows = await db.prepare<[string[], number, number]>(
     `SELECT COALESCE(ec.name, 'Lainnya') AS label, COALESCE(SUM(e.amount),0) AS total
      FROM expenses e LEFT JOIN expense_categories ec ON ec.id = e.category_id
-     WHERE e.user_id=ANY(?) AND e.year=? AND e.month=?${famClause}
+     WHERE e.user_id=ANY(?) AND e.year=? AND e.month=?${famClause}${catClauseE}
      GROUP BY ec.name ORDER BY SUM(e.amount) DESC`
   ).all(readIds, year, month) as { label: string; total: number }[]
 
@@ -270,8 +290,8 @@ export default async function YearDetailPage({
   type FreshExpCat = { id: string; name: string; type_id: string; type_name: string; default_percentage: number; months: Record<string, number>; nominal: number | null }
   type ExpenseGroup = { typeName: string; typeId: string; cats: FreshExpCat[] }
   const expGroups: ExpenseGroup[] = []
-  for (const cat of expenseCats) {
-    const last     = expGroups[expGroups.length - 1]
+  for (const cat of visibleExpenseCats) {
+    const last    = expGroups[expGroups.length - 1]
     const enriched: FreshExpCat = { ...cat, months: expBdSpendMap.get(cat.id) ?? {}, nominal: nominalMap.get(cat.id) ?? null }
     if (!last || last.typeName !== cat.type_name) expGroups.push({ typeName: cat.type_name, typeId: cat.type_id, cats: [enriched] })
     else last.cats.push(enriched)
@@ -411,6 +431,12 @@ export default async function YearDetailPage({
       {/* ── Report view ── */}
       {view === "report" && (
         <div className="space-y-5">
+          <Suspense fallback={null}>
+            <ExpenseCategoryFilter
+              categories={expenseCats.map((c) => ({ id: c.id, name: c.name, typeName: c.type_name }))}
+              excludedIds={excludedCatIds}
+            />
+          </Suspense>
           <div className="grid grid-cols-2 gap-4">
             <Link href={detail === "pendapatan" ? `${base}?view=report` : `${base}?view=report&detail=pendapatan`} className="block h-full">
               <Card className={`transition-all hover:shadow-md cursor-pointer h-full ${detail === "pendapatan" ? "ring-2 ring-emerald-500" : ""}`}>

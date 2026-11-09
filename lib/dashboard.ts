@@ -390,11 +390,12 @@ export async function getExpenseByWallet(
   userIdOrIds: string | string[],
   year: number,
   month: number | null,
-  opts: { excludeFamily?: boolean } = {},
+  opts: { excludeFamily?: boolean; extraClause?: string } = {},
 ): Promise<ExpenseByWalletData> {
   const userId = toIds(userIdOrIds)
   // Di mode personal, beban rumah tangga (is_family_expense) tidak dihitung.
-  const famClause = opts.excludeFamily ? " AND e.is_family_expense = 0" : ""
+  // extraClause: fragmen SQL tepercaya (sudah divalidasi pemanggil) untuk alias `e`.
+  const famClause = (opts.excludeFamily ? " AND e.is_family_expense = 0" : "") + (opts.extraClause ?? "")
   const monthClause = month === null ? "" : " AND e.month = ?"
 
   const rows = await db.prepare<unknown[], ExpenseByWalletItem>(
