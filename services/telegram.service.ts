@@ -132,8 +132,8 @@ function helpText(linked: boolean): string {
     "• <code>berapa pengeluaran bulan ini?</code>",
     "",
     "<b>Laporan:</b>",
-    "• <code>/rekap</code> — rekap bulan berjalan (s/d hari ini)",
-    "• <code>/rekap 2026-11</code> — rekap bulan tertentu",
+    "• <code>/rekap_bulanan</code> — rekap bulan berjalan (s/d hari ini); alias: <code>/rekap</code>",
+    "• <code>/rekap_bulanan 2026-11</code> — rekap bulan tertentu (atau <code>10</code> = bulan 10 tahun ini)",
     "• <code>/rekap_harian [tanggal]</code> — harian (default hari ini, mis. kemarin / 2026-11-01) + tren 7 hari",
     "• <code>/rekap_tahunan</code> — rekap 12 bulan",
     "• <code>/rekap_kategori</code> — pengeluaran per kategori + status anggaran",
@@ -170,7 +170,7 @@ const COMMAND_HINTS = [
   ["/riwayat", "10 transaksi terakhir"],
   ["/revisi", "perbaiki transaksi (boleh 'barusan')"],
   ["/hapus", "hapus transaksi (dengan konfirmasi)"],
-  ["/rekap", "rekap bulanan (opsional: 2026-11)"],
+  ["/rekap_bulanan [bulan]", "rekap bulanan (default bulan ini, mis. 2026-11 / 10)"],
   ["/rekap_harian [tanggal]", "harian + tren 7 hari"],
   ["/rekap_tahunan", "rekap 12 bulan (opsional: 2026)"],
   ["/rekap_kategori", "pengeluaran per kategori + status anggaran"],
@@ -384,11 +384,11 @@ function parseSearchArg(
 /** Petunjuk singkat untuk perintah laporan. */
 function laporanUsage(): string {
   return [
-    "Format: <code>/rekap [YYYY-MM | MM]</code>",
+    "Format: <code>/rekap_bulanan [YYYY-MM | MM]</code>",
     "Contoh:",
-    "<code>/rekap</code> — bulan berjalan",
-    "<code>/rekap 2026-11</code> — November 2026",
-    "<code>/rekap 11</code> — November tahun berjalan",
+    "<code>/rekap_bulanan</code> — bulan berjalan",
+    "<code>/rekap_bulanan 2026-11</code> — November 2026",
+    "<code>/rekap_bulanan 11</code> — November tahun berjalan",
   ].join("\n")
 }
 
@@ -673,7 +673,8 @@ async function handleLaporan(chatId: string, ctx: Omit<ToolContext, "today">, co
   const today = await todayFromDb()
 
   switch (command) {
-    case "/rekap": {
+    case "/rekap":
+    case "/rekap_bulanan": {
       const opts = parseMonthArg(arg, today)
       if (opts === null) {
         await sendTelegramHtml(chatId, laporanUsage())
@@ -789,6 +790,7 @@ async function handleLaporan(chatId: string, ctx: Omit<ToolContext, "today">, co
 /** Perintah laporan yang butuh akun tertaut. */
 const LAPORAN_COMMANDS = new Set([
   "/rekap",
+  "/rekap_bulanan",
   "/rekap_harian",
   "/rekap_tahunan",
   "/rekap_kategori",
