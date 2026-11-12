@@ -203,8 +203,10 @@ export async function investmentReport(session: SessionData): Promise<string> {
         total_amount: String(t.total_amount),
       })),
     )
-    // Nilai = modal − modal yang sudah terjual (SELL mengurangi nilai aktif).
-    const nilai = pl.totalModal - pl.totalHasil
+    // Modal aktif = modal − modal dari unit yang sudah terjual (harga pokok,
+    // bukan hasil jual). Mengurangi dengan hasil jual membuat angka negatif
+    // saat jual untung (beli 10jt, jual 10,6jt → seharusnya 0, bukan -600rb).
+    const nilai = Math.max(0, pl.totalModal - pl.avgCostPerUnit * pl.totalSellQty)
     // Totalan mengikuti halaman web: aset yang sudah ditutup tidak dihitung
     // sebagai investasi aktif.
     if (!a.is_closed) {
@@ -222,13 +224,13 @@ export async function investmentReport(session: SessionData): Promise<string> {
 
     lines.push(
       `• <b>${escapeHtml(a.name)}</b> (${escapeHtml(a.category_name)})${closed}\n` +
-        `   modal ${formatRp(pl.totalModal)} · nilai ${formatRp(nilai)} · P/L ${plLabel}` +
+        `   modal ${formatRp(pl.totalModal)} · modal aktif ${formatRp(nilai)} · P/L ${plLabel}` +
         (pl.totalDividen > 0 ? ` · dividen ${formatRp(pl.totalDividen)}` : ""),
     )
   }
 
   lines.push("", `💰 Total modal: ${formatRp(totalModal)}`)
-  lines.push(`📊 Total nilai aktif: ${formatRp(totalNilai)}`)
+  lines.push(`📊 Total modal aktif: ${formatRp(totalNilai)}`)
 
   // Target vs pencapaian (investment_goals).
   const goals = await db
