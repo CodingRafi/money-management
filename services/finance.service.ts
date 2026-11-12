@@ -167,6 +167,15 @@ export const financeService = {
       throw new FinanceError(`Jumlah ${inv.unit} harus bilangan bulat`)
     }
 
+    // SELL tanpa kantong: simpulkan dari kantong BUY aset ini agar modal kantong ikut berkurang.
+    if (v.type === "SELL" && !v.goalId) {
+      const buyGoals = await db.prepare(
+        "SELECT DISTINCT goal_id FROM investment_transactions WHERE investment_id=? AND type='BUY' AND goal_id IS NOT NULL"
+      ).all(investmentId) as { goal_id: string }[]
+      if (buyGoals.length === 1) v.goalId = buyGoals[0].goal_id
+      else if (buyGoals.length > 1) throw new FinanceError("Aset ini ada di beberapa kantong, pilih kantong untuk transaksi SELL")
+    }
+
     if (v.goalId) {
       const goal = await db.prepare(
         "SELECT id FROM investment_goals WHERE id=? AND user_id=? AND is_active=1"
