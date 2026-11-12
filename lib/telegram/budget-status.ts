@@ -85,20 +85,11 @@ SELECT
   FROM n, i, e, t, ys`
 
 /**
- * Scope pembacaan data.
- *
- * - Admin → mode keluarga (semua anggota), sama seperti default aplikasi.
- * - Anggota lain → mode personal (datanya sendiri saja), dan beban keluarga
- *   (is_family_expense) tidak ikut dihitung — konsisten dengan halaman Rekap.
+ * Scope pembacaan data: selalu pribadi (datanya sendiri), untuk semua peran
+ * termasuk admin. Beban keluarga (is_family_expense) tidak ikut dihitung —
+ * konsisten dengan mode pribadi di halaman Rekap.
  */
 function scopeOf(session: SessionData): { members: string; fam: string; param: string } {
-  if (session.householdId && session.householdRole === "admin") {
-    return {
-      members: "SELECT user_id FROM household_members WHERE household_id = ?",
-      fam: "",
-      param: session.householdId,
-    }
-  }
   return {
     members: "SELECT ?::text AS user_id",
     fam: " AND is_family_expense = 0",

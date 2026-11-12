@@ -16,6 +16,8 @@ export interface TxnCard {
   title: string
   /** ID lengkap transaksi di database. */
   id: string
+  /** Diisi untuk pengeluaran/pemasukan — kartu ini mendapat tombol Hapus. */
+  kind?: "expense" | "income"
   fields: CardField[]
   /** Baris tambahan di bawah (mis. petunjuk cara revisi). */
   footer?: string

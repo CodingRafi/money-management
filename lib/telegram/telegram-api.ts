@@ -37,10 +37,39 @@ async function callApi<T>(method: string, payload: Record<string, unknown> = {})
   return data.result as T
 }
 
+/** Satu tombol inline: `data` (callback, maks 64 byte) ATAU `url`. */
+export interface InlineButton {
+  text: string
+  data?: string
+  url?: string
+}
+
+/** Baris-baris tombol inline di bawah pesan. */
+export type InlineKeyboard = InlineButton[][]
+
+export type ReplyMarkup =
+  | { inline_keyboard: { text: string; callback_data?: string; url?: string }[][] }
+  | { force_reply: true; input_field_placeholder?: string; selective?: boolean }
+
 export interface TelegramSendOptions {
   parseMode?: "HTML" | "Markdown" | "MarkdownV2"
   replyToMessageId?: number
   disableWebPagePreview?: boolean
+  replyMarkup?: ReplyMarkup
+}
+
+/** Ubah daftar tombol kita menjadi format `reply_markup` Telegram. */
+export function inlineMarkup(keyboard: InlineKeyboard): ReplyMarkup {
+  return {
+    inline_keyboard: keyboard.map((row) =>
+      row.map((b) => ({ text: b.text, callback_data: b.data, url: b.url })),
+    ),
+  }
+}
+
+/** Minta klien Telegram membuka kotak balasan ke pesan bot ini. */
+export function forceReplyMarkup(placeholder?: string): ReplyMarkup {
+  return { force_reply: true, input_field_placeholder: placeholder, selective: true }
 }
 
 export { escapeHtml } from "./format"
@@ -56,7 +85,42 @@ export async function sendTelegramMessage(
     parse_mode: options.parseMode,
     reply_to_message_id: options.replyToMessageId,
     disable_web_page_preview: options.disableWebPagePreview ?? true,
+    reply_markup: options.replyMarkup,
   })
+}
+
+/**
+ * Ubah isi pesan yang sudah terkirim (dipakai saat user menekan tombol, supaya
+ * chat tidak penuh pesan baru). Mengabaikan error "message is not modified".
+ */
+export async function editTelegramHtml(
+  chatId: string | number,
+  messageId: number,
+  html: string,
+  keyboard?: InlineKeyboard,
+): Promise<void> {
+  try {
+    await callApi("editMessageText", {
+      chat_id: chatId,
+      message_id: messageId,
+      text: html,
+      parse_mode: "HTML",
+      disable_web_page_preview: true,
+      reply_markup: keyboard ? inlineMarkup(keyboard) : { inline_keyboard: [] },
+    })
+  } catch (err) {
+    if (err instanceof Error && err.message.includes("message is not modified")) return
+    throw err
+  }
+}
+
+/** Menutup indikator "loading" di tombol yang ditekan (wajib dipanggil). */
+export async function answerCallbackQuery(callbackQueryId: string, text?: string): Promise<void> {
+  try {
+    await callApi("answerCallbackQuery", { callback_query_id: callbackQueryId, text })
+  } catch {
+    // Query yang kedaluwarsa tidak boleh menggagalkan pemrosesan.
+  }
 }
 
 /** Potong pesan panjang (Telegram membatasi 4096 karakter per pesan). */
@@ -84,13 +148,18 @@ export async function sendTelegramMessageLong(
   }
 }
 
-/** Kirim pesan berformat HTML (statis/terstruktur). */
+/** Kirim pesan berformat HTML (statis/terstruktur), opsional dengan tombol inline. */
 export async function sendTelegramHtml(
   chatId: string | number,
   html: string,
-  options: Omit<TelegramSendOptions, "parseMode"> = {},
+  options: Omit<TelegramSendOptions, "parseMode" | "replyMarkup"> & { keyboard?: InlineKeyboard } = {},
 ): Promise<void> {
-  await sendTelegramMessage(chatId, html, { ...options, parseMode: "HTML" })
+  const { keyboard, ...rest } = options
+  await sendTelegramMessage(chatId, html, {
+    ...rest,
+    parseMode: "HTML",
+    replyMarkup: keyboard ? inlineMarkup(keyboard) : undefined,
+  })
 }
 
 interface TelegramFile {
@@ -121,7 +190,7 @@ export async function setTelegramWebhook(url: string, secretToken: string): Prom
   await callApi("setWebhook", {
     url,
     secret_token: secretToken,
-    allowed_updates: ["message"],
+    allowed_updates: ["message", "callback_query"],
     drop_pending_updates: false,
   })
 }

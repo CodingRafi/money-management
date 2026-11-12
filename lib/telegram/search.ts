@@ -20,7 +20,7 @@ export interface TxnRow {
   wallet_name: string | null
 }
 
-/** Cetak daftar transaksi — dipakai /riwayat, /cari, /transaksi, /top. */
+/** Cetak daftar transaksi — dipakai /riwayat. */
 export function txList(rows: TxnRow[], emptyText = "Belum ada transaksi."): string {
   if (rows.length === 0) return emptyText
   return rows
@@ -45,6 +45,12 @@ export interface SearchOptions {
   /** Filter tanggal "YYYY-MM-DD". */
   from?: string
   to?: string
+  /** Nama kategori (case-insensitive, partial match). */
+  category?: string
+  /** Nama dompet (case-insensitive, partial match). */
+  wallet?: string
+  /** Hanya pengeluaran atau pemasukan. */
+  kind?: "expense" | "income"
   /** Batasi jumlah hasil (default 20). */
   limit?: number
 }
@@ -76,6 +82,18 @@ export async function searchTransactions(
   if (opts.to) {
     where.push("t.date <= ?")
     params.push(opts.to)
+  }
+  if (opts.category) {
+    where.push("t.category_name ILIKE ?")
+    params.push(`%${opts.category}%`)
+  }
+  if (opts.wallet) {
+    where.push("t.wallet_name ILIKE ?")
+    params.push(`%${opts.wallet}%`)
+  }
+  if (opts.kind) {
+    where.push("t.kind = ?")
+    params.push(opts.kind)
   }
 
   const base = `
@@ -111,86 +129,6 @@ export async function searchTransactions(
     rows: rows.map((r) => ({ ...r, amount: Number(r.amount) })),
     total: Number(countRow?.[0]?.total ?? rows.length),
   }
-}
-
-// ── /transaksi ──────────────────────────────────────────────────────────────
-
-export interface FilterOptions {
-  /** "YYYY-MM" → filter bulan; "YYYY-MM-DD" → filter tanggal tepat. */
-  period?: string
-  /** Nama kategori (case-insensitive, partial match). */
-  category?: string
-  /** Nama dompet (case-insensitive, partial match). */
-  wallet?: string
-  /** "expense" | "income" — jenis transaksi. */
-  kind?: "expense" | "income"
-  limit?: number
-}
-
-/**
- * Daftar transaksi dengan filter (tanggal, kategori, dompet, jenis).
- * Ini "/riwayat versi berfilter".
- */
-export async function filterTransactions(
-  session: SessionData,
-  opts: FilterOptions,
-): Promise<TxnRow[]> {
-  const scope = await resolveTgScope(session)
-  const limit = Math.min(50, Math.max(1, opts.limit ?? 15))
-  const famClause = scope.excludeFamilyExpense ? " AND e.is_family_expense = 0" : ""
-
-  const where: string[] = ["t.user_id = ANY(?)"]
-  const params: unknown[] = [scope.userIds]
-
-  if (opts.period) {
-    const m = /^(\d{4})-(\d{2})$/.exec(opts.period)
-    const d = /^(\d{4})-(\d{2})-(\d{2})$/.exec(opts.period)
-    if (m) {
-      where.push("t.year = ? AND t.month = ?")
-      params.push(Number(m[1]), Number(m[2]))
-    } else if (d) {
-      where.push("t.date = ?")
-      params.push(opts.period)
-    }
-  }
-  if (opts.category) {
-    where.push("t.category_name ILIKE ?")
-    params.push(`%${opts.category}%`)
-  }
-  if (opts.wallet) {
-    where.push("t.wallet_name ILIKE ?")
-    params.push(`%${opts.wallet}%`)
-  }
-  if (opts.kind) {
-    where.push("t.kind = ?")
-    params.push(opts.kind)
-  }
-
-  const rows = await db
-    .prepare<unknown[], TxnRow>(
-      `SELECT t.id, t.date, t.name, t.amount, t.kind, t.category_name, t.wallet_name
-         FROM (
-           SELECT e.user_id, e.id, e.date, e.name, e.amount, e.year, e.month, 'expense' AS kind,
-                  ec.name AS category_name, w.name AS wallet_name
-             FROM expenses e
-             LEFT JOIN expense_categories ec ON ec.id = e.category_id
-             LEFT JOIN wallets w ON w.id = e.wallet_id
-            WHERE e.user_id = ANY(?)${famClause}
-           UNION ALL
-           SELECT i.user_id, i.id, i.date, i.name, i.amount, i.year, i.month, 'income' AS kind,
-                  ic.name AS category_name, w.name AS wallet_name
-             FROM incomes i
-             LEFT JOIN income_categories ic ON ic.id = i.category_id
-             LEFT JOIN wallets w ON w.id = i.wallet_id
-            WHERE i.user_id = ANY(?)
-         ) t
-        WHERE ${where.join(" AND ")}
-        ORDER BY t.date DESC, t.amount DESC
-        LIMIT ?`,
-    )
-    .all(scope.userIds, scope.userIds, ...params, limit) as TxnRow[]
-
-  return rows.map((r) => ({ ...r, amount: Number(r.amount) }))
 }
 
 // ── /top ─────────────────────────────────────────────────────────────────────

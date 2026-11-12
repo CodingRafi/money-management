@@ -45,24 +45,12 @@ const appUrl = process.env.NEXT_PUBLIC_APP_URL?.replace(/\/$/, "")
  * Nama perintah: huruf kecil a-z, 0-9, dan underscore (maks 32 karakter).
  */
 const BOT_COMMANDS = [
-  { command: "start", description: "Mulai & lihat cara pakai" },
-  { command: "link", description: "Hubungkan akun dengan kode koneksi" },
-  { command: "unlink", description: "Putuskan hubungan akun" },
-  { command: "riwayat", description: "Lihat 10 transaksi terakhir" },
-  { command: "revisi", description: "Perbaiki transaksi yang salah catat (atau 'barusan')" },
-  { command: "hapus", description: "Hapus transaksi (dengan konfirmasi)" },
-  { command: "rekap_bulanan", description: "Rekap bulanan (opsional: 2026-11)" },
-  { command: "rekap_harian", description: "Hari ini + tren 7 hari" },
-  { command: "rekap_tahunan", description: "Rekap 12 bulan (opsional: 2026)" },
-  { command: "rekap_kategori", description: "Pengeluaran per kategori + anggaran" },
-  { command: "anggaran", description: "Status anggaran bulan ini" },
-  { command: "cari", description: "Cari transaksi (kata kunci)" },
-  { command: "transaksi", description: "Daftar transaksi berfilter" },
-  { command: "top", description: "Pengeluaran terbesar (opsional: 5)" },
-  { command: "pinjaman", description: "Daftar pinjaman & sisa angsuran" },
-  { command: "investasi", description: "Portofolio investasi" },
-  { command: "status", description: "Lihat status koneksi akun" },
-  { command: "help", description: "Bantuan & contoh perintah" },
+  { command: "cashflow", description: "Menu transaksi: riwayat, rekap, anggaran, cari, revisi" },
+  { command: "rekap", description: "Rekap: hari ini, kemarin, bulan, tahun, kategori, anggaran" },
+  { command: "riwayat", description: "Riwayat transaksi (opsional: periode / kata kunci)" },
+  { command: "pinjaman", description: "Pinjaman: daftar, cari, bayar cicilan, revisi, hapus" },
+  { command: "investasi", description: "Investasi: portofolio, aset, transaksi" },
+  { command: "help", description: "Bantuan, hubungkan akun, dan contoh perintah" },
 ]
 
 async function api<T>(method: string, payload: Record<string, unknown> = {}): Promise<T> {
@@ -94,7 +82,7 @@ async function main() {
     await api("setWebhook", {
       url: webhookUrl,
       secret_token: secret,
-      allowed_updates: ["message"],
+      allowed_updates: ["message", "callback_query"],
       drop_pending_updates: false,
     })
   }

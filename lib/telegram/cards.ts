@@ -60,6 +60,7 @@ export function expenseCard(view: ExpenseView, title = "Pengeluaran berhasil dit
   return {
     title,
     id: view.id,
+    kind: "expense",
     fields: [
       { label: "Tanggal", value: view.date },
       { label: "Jumlah", value: formatAmount(Number(view.amount)) },
@@ -101,6 +102,7 @@ export function incomeCard(view: IncomeView, title = "Pendapatan berhasil ditamb
   return {
     title,
     id: view.id,
+    kind: "income",
     fields: [
       { label: "Tanggal", value: view.date },
       { label: "Jumlah", value: formatAmount(Number(view.amount)) },

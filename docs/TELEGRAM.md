@@ -83,18 +83,42 @@ bun scripts/telegram-setup.ts --commands-only   # pasang ulang tag saja
 bun scripts/telegram-setup.ts --skip-commands  # webhook saja
 ```
 
-Perintah yang tersedia:
+Menu `/` sengaja pendek (6 perintah). Sisanya lewat **tombol** di bawah pesan
+dan parameter.
 
 | Perintah | Fungsi |
 |---|---|
-| `/start` | Bantuan & cara pakai |
-| `/link KODE` | Hubungkan akun dengan kode koneksi |
-| `/unlink` | Putuskan hubungan akun |
-| `/riwayat` | 10 transaksi terakhir (beserta kode transaksi) |
-| `/revisi` | Perbaiki transaksi yang salah catat |
-| `/hapus` | Hapus transaksi (dengan konfirmasi) |
-| `/status` | Status koneksi akun |
+| `/cashflow` | Menu tombol: riwayat, rekap, kategori, anggaran, top, cari, revisi, hapus |
+| `/rekap [periode] [kategori \| anggaran \| top N]` | Rekap hari/bulan/tahun. Default bulan ini |
+| `/riwayat [periode] [kata kunci] [filter]` | Riwayat transaksi. Default 10 terakhir |
+| `/pinjaman [nama]` | Daftar/cari pinjaman → detail → bayar cicilan, revisi, hapus |
+| `/investasi [nama]` | Portofolio → aset → beli/jual/dividen, tutup, hapus |
 | `/help` | Bantuan |
+
+Perintah yang tidak tampil di menu tapi tetap jalan: `/start`, `/link KODE`,
+`/unlink`, `/status`, `/revisi`, `/hapus`. Awalan `cashflow_`, `pinjaman_`,
+`investasi_` juga diterima (mis. `/cashflow_riwayat`, `/pinjaman_bayar`).
+
+**Periode** (dipakai `/rekap` dan `/riwayat`): `hari ini`, `kemarin`,
+`3 hari lalu`, `7 hari terakhir`, `bulan ini`, `bulan lalu`, `tahun ini`,
+`november`, `november 2025`, `2026-10`, `2026`, `05/11`, `5 november`,
+`tanggal 15`. Boleh di awal atau akhir argumen.
+
+**Filter `/riwayat`**: `kategori X`, `dompet X`, `masuk` / `keluar`, `limit 30`;
+kata lain jadi kata kunci. Contoh: `/riwayat bulan lalu kategori makan keluar`.
+
+**Data pribadi saja.** Semua perintah bot hanya menampilkan dan mengubah data milik akun yang sedang chat, termasuk untuk admin keluarga (beban rumah tangga tidak ikut dihitung). Rekap keluarga dilihat lewat aplikasi web.
+
+**Perintah lama** dipetakan otomatis: `/rekap_bulanan`, `/rekap_harian`,
+`/rekap_tahunan`, `/rekap_kategori`, `/anggaran`, `/top` → `/rekap …`;
+`/cari`, `/transaksi` → `/riwayat …`.
+
+**Tombol & balasan.** Tombol inline membutuhkan update `callback_query`, jadi
+setelah deploy versi ini jalankan ulang `npm run telegram:setup` (memperbarui
+`allowed_updates` webhook dan menu `/`). Untuk input (jumlah cicilan, revisi,
+beli/jual aset) bot mengirim pertanyaan yang harus **dibalas (reply)**; tujuan
+jawabannya dibaca dari penanda `[ref …]` di pesan bot, jadi tidak ada state di
+server. Tambah pinjaman/aset/transaksi investasi diteruskan ke asisten AI.
 
 Untuk menambah/mengubah perintah, edit konstanta `BOT_COMMANDS` di
 `scripts/telegram-setup.ts`, lalu jalankan ulang `--commands-only`.
@@ -269,10 +293,10 @@ di halaman **Saya → Telegram**.
 | `beli saham BBCA 1 lot 2jt` | Aset + transaksi BUY investasi |
 | `berapa pengeluaran bulan ini?` | Ringkasan + sisa budget |
 | foto struk | OCR → otomatis jadi pengeluaran |
-| `/riwayat` | 10 transaksi terakhir |
+| `/riwayat kemarin` | Transaksi kemarin (atau `bulan lalu`, `5 november`, …) |
+| `/rekap tahun` | Rekap 12 bulan |
+| `/pinjaman`, `/investasi` | Menu tombol pinjaman & investasi |
 | `/status`, `/help`, `/unlink` | Informasi & pengaturan |
-
-Perintah lain yang tersedia: `/start`.
 
 ## Catatan keamanan & perilaku
 

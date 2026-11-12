@@ -1,34 +1,55 @@
 import { getSessionForUser } from "@/lib/auth-simple"
 import { telegramRepository } from "@/repositories/telegram.repository"
 import {
+  answerCallbackQuery,
   downloadTelegramFile,
+  editTelegramHtml,
   escapeHtml,
+  forceReplyMarkup,
   getTelegramFile,
+  inlineMarkup,
   sendTelegramHtml,
   sendTelegramMessage,
   sendTelegramMessageLong,
   sendTyping,
+  type InlineKeyboard,
 } from "@/lib/telegram/telegram-api"
 import { runTelegramAgent } from "@/lib/telegram/agent"
 import { GeminiError } from "@/lib/telegram/gemini"
 import type { ToolContext } from "@/lib/telegram/tools"
-import { formatCard, formatCardPlain, formatAmount, shortCode, stripHtml, type TxnCard } from "@/lib/telegram/format"
+import { formatCard, formatCardPlain, shortCode, stripHtml, type TxnCard } from "@/lib/telegram/format"
 import { historyCard } from "@/lib/telegram/cards"
 import { todayFromDb } from "@/lib/telegram/tools"
+import { PERIOD_HELP } from "@/lib/telegram/period"
+import { formatRef, parseRef, type Out, type PromptRef } from "@/lib/telegram/out"
+import { handleRekap, handleRiwayat, showCashflowMenu } from "@/lib/telegram/cashflow-bot"
 import {
-  budgetReport,
-  recapCategory,
-  recapDaily,
-  recapMonthly,
-  recapYearly,
-} from "@/lib/telegram/reports"
+  applyEdit,
+  askEditField,
+  askPayment,
+  confirmDeleteLoan,
+  confirmDeletePayment,
+  deleteLoan,
+  deletePayment,
+  findLoanIdByCode,
+  payLoan,
+  setLikelihood,
+  showEditMenu,
+  showLoanDetail,
+  showLoans,
+} from "@/lib/telegram/loan-bot"
 import {
-  filterTransactions,
-  searchTransactions,
-  topCategories,
-  txList,
-} from "@/lib/telegram/search"
-import { investmentReport, loanReport } from "@/lib/telegram/domain"
+  askNewAsset,
+  askTransaction,
+  confirmDeleteAsset,
+  confirmDeleteTx,
+  deleteAsset,
+  deleteTx,
+  investmentAiText,
+  showAsset,
+  showInvestments,
+  toggleClosed,
+} from "@/lib/telegram/investment-bot"
 import {
   REVISION_FIELD_ALIASES,
   deleteTransactionByCode,
@@ -55,8 +76,19 @@ export interface TelegramUpdate {
     chat: { id: number; type: string; username?: string; first_name?: string }
     photo?: { file_id: string; file_unique_id: string; width: number; height: number; file_size?: number }[]
     document?: { file_id: string; file_name?: string; mime_type?: string; file_size?: number }
+    /** Pesan bot yang dibalas user (dipakai untuk jawaban atas pertanyaan bot). */
+    reply_to_message?: { message_id: number; text?: string }
+  }
+  /** Penekanan tombol inline. */
+  callback_query?: {
+    id: string
+    from?: { id: number; is_bot?: boolean }
+    message?: { message_id: number; chat: { id: number; type: string } }
+    data?: string
   }
 }
+
+type BotCtx = Omit<ToolContext, "today">
 
 // ── Deduplikasi update (Telegram bisa mengirim update yang sama) ─────────────
 
@@ -115,6 +147,7 @@ function pushHistory(chatId: string, entry: { role: "user" | "model"; parts: { t
   histories.set(chatId, list)
 }
 
+
 // ── Bantuan ──────────────────────────────────────────────────────────────────
 
 const BOT_USERNAME = process.env.TELEGRAM_BOT_USERNAME?.replace(/^@/, "") ?? ""
@@ -125,29 +158,25 @@ function helpText(linked: boolean): string {
     "",
     "Kirim catatan biasa, misalnya:",
     "• <code>makan siang 25rb</code>",
-    "• <code>beli bensin 100rb di Pertamina</code>",
     "• <code>gaji 5jt</code>",
     "• <code>pinjam 2jt ke budi</code>",
     "• kirim <b>foto struk</b> — nominal &amp; merchant-nya saya baca sendiri",
     "• <code>berapa pengeluaran bulan ini?</code>",
     "",
-    "<b>Laporan:</b>",
-    "• <code>/rekap_bulanan</code> — rekap bulan berjalan (s/d hari ini); alias: <code>/rekap</code>",
-    "• <code>/rekap_bulanan 2026-11</code> — rekap bulan tertentu (atau <code>10</code> = bulan 10 tahun ini)",
-    "• <code>/rekap_harian [tanggal]</code> — harian (default hari ini, mis. kemarin / 2026-11-01) + tren 7 hari",
-    "• <code>/rekap_tahunan</code> — rekap 12 bulan",
-    "• <code>/rekap_kategori</code> — pengeluaran per kategori + status anggaran",
-    "• <code>/anggaran</code> — status anggaran bulan ini",
-    "• <code>/pinjaman</code> — daftar pinjaman &amp; sisa angsuran",
-    "• <code>/investasi</code> — portofolio investasi",
+    "<b>Menu utama</b> (tekan tombolnya, tidak perlu hafal sintaks):",
+    "• <code>/cashflow</code> — riwayat, rekap, anggaran, cari, revisi &amp; hapus",
+    "• <code>/pinjaman</code> — daftar/cari pinjaman, bayar cicilan, revisi, hapus",
+    "• <code>/investasi</code> — portofolio, tambah aset &amp; transaksi, tutup/hapus",
     "",
-    "<b>Cari &amp; filter:</b>",
-    "• <code>/cari kopi</code> — cari transaksi by kata kunci",
-    "• <code>/transaksi 2026-11 kategori TRANSPORTASI</code> — transaksi berfilter",
-    "• <code>/top 5</code> — 5 pengeluaran terbesar",
+    "<b>Pintasan:</b>",
+    "• <code>/rekap [periode]</code> — mis. <code>/rekap kemarin</code>, <code>/rekap 2026-10</code>, <code>/rekap tahun</code>",
+    "• <code>/rekap kategori [periode]</code> · <code>/rekap anggaran</code> · <code>/rekap top 5</code>",
+    "• <code>/riwayat [periode] [kata kunci]</code> — mis. <code>/riwayat hari ini</code>, <code>/riwayat bulan lalu kopi</code>",
+    "• filter riwayat: <code>kategori X</code> · <code>dompet X</code> · <code>masuk</code>/<code>keluar</code> · <code>limit 30</code>",
+    `• Periode: <code>${PERIOD_HELP}</code>`,
+    "• <code>/revisi</code> · <code>/hapus</code> — perbaiki / hapus transaksi (boleh <code>barusan</code>)",
     "",
-    "<b>Perintah:</b>",
-    ...COMMAND_HINTS.map(([cmd, desc]) => `• <code>${cmd}</code> — ${desc}`),
+    "<b>Akun:</b> <code>/link KODE</code> · <code>/status</code> · <code>/unlink</code>",
     "",
   ]
   if (linked) {
@@ -163,233 +192,11 @@ function helpText(linked: boolean): string {
   return lines.join("\n")
 }
 
-/** Daftar perintah resmi bot — satu sumber kebenaran dengan `setMyCommands`. */
-const COMMAND_HINTS = [
-  ["/start", "mulai & lihat cara pakai"],
-  ["/link", "hubungkan akun dengan kode"],
-  ["/riwayat", "10 transaksi terakhir"],
-  ["/revisi", "perbaiki transaksi (boleh 'barusan')"],
-  ["/hapus", "hapus transaksi (dengan konfirmasi)"],
-  ["/rekap_bulanan [bulan]", "rekap bulanan (default bulan ini, mis. 2026-11 / 10)"],
-  ["/rekap_harian [tanggal]", "harian + tren 7 hari"],
-  ["/rekap_tahunan", "rekap 12 bulan (opsional: 2026)"],
-  ["/rekap_kategori", "pengeluaran per kategori + status anggaran"],
-  ["/anggaran", "status anggaran bulan ini"],
-  ["/cari", "cari transaksi (kata kunci)"],
-  ["/transaksi", "daftar transaksi berfilter"],
-  ["/top", "pengeluaran terbesar (opsional: 5)"],
-  ["/pinjaman", "daftar pinjaman & sisa angsuran"],
-  ["/investasi", "portofolio investasi"],
-  ["/status", "status koneksi akun"],
-  ["/help", "bantuan"],
-  ["/unlink", "putuskan hubungan akun"],
-]
-
-async function loadContext(userId: string): Promise<Omit<ToolContext, "today"> | null> {
+async function loadContext(userId: string): Promise<BotCtx | null> {
   const session = await getSessionForUser(userId)
   if (!session) return null
   if (!session.householdId) return null
   return { session, householdId: session.householdId }
-}
-
-// ── Parsing argumen perintah laporan ────────────────────────────────────────
-
-/**
- * Parse argumen "/rekap" — bisa "YYYY-MM" (tahun & bulan) atau "MM" (bulan
- * saja, tahun berjalan) atau kosong (bulan berjalan).
- *
- * Mengembalikan `null` bila argumennya tidak valid, supaya pemanggil bisa
- * menampilkan petunjuk format.
- */
-function parseMonthArg(arg: string, today: string): { month?: number; year?: number } | null {
-  const raw = arg.trim()
-  if (!raw) return {}
-
-  const full = /^(\d{4})-(\d{1,2})$/.exec(raw)
-  if (full) {
-    const year = Number(full[1])
-    const month = Number(full[2])
-    if (month >= 1 && month <= 12) return { month, year }
-    return null
-  }
-
-  const short = /^(\d{1,2})$/.exec(raw)
-  if (short) {
-    const month = Number(short[1])
-    if (month >= 1 && month <= 12) return { month, year: Number(today.slice(0, 4)) }
-    return null
-  }
-
-  return null
-}
-
-/**
- * Parse argumen "/rekap_harian" menjadi tanggal "YYYY-MM-DD".
- * Mendukung: kosong/"hari ini", "kemarin", "lusa kemarin", "N hari lalu",
- * "YYYY-MM-DD", "DD-MM-YYYY", "DD/MM(/YYYY)", dan "DD" (bulan berjalan).
- * Mengembalikan `null` bila tidak valid.
- */
-function parseDayArg(arg: string, today: string): string | null {
-  const raw = arg.trim().toLowerCase()
-  if (!raw || raw === "hari ini" || raw === "today") return today
-
-  const shift = (days: number) => {
-    const d = new Date(`${today}T00:00:00Z`)
-    d.setUTCDate(d.getUTCDate() + days)
-    return d.toISOString().slice(0, 10)
-  }
-  if (raw === "kemarin" || raw === "yesterday") return shift(-1)
-  if (raw === "kemarin lusa" || raw === "lusa kemarin") return shift(-2)
-
-  const ago = /^(\d{1,3})\s*hari\s+(?:yang\s+)?lalu$/.exec(raw)
-  if (ago) return shift(-Number(ago[1]))
-
-  const [ty, tm] = today.split("-").map(Number)
-  let y = ty
-  let m = tm
-  let d: number
-
-  let match: RegExpExecArray | null
-  if ((match = /^(\d{4})-(\d{1,2})-(\d{1,2})$/.exec(raw))) {
-    y = Number(match[1]); m = Number(match[2]); d = Number(match[3])
-  } else if ((match = /^(\d{1,2})[-/.](\d{1,2})[-/.](\d{4})$/.exec(raw))) {
-    d = Number(match[1]); m = Number(match[2]); y = Number(match[3])
-  } else if ((match = /^(\d{1,2})[-/.](\d{1,2})$/.exec(raw))) {
-    d = Number(match[1]); m = Number(match[2])
-  } else if ((match = /^(\d{1,2})$/.exec(raw))) {
-    d = Number(match[1])
-  } else {
-    return null
-  }
-
-  // Validasi tanggal nyata (mis. tolak 31 Februari).
-  const dt = new Date(Date.UTC(y, m - 1, d))
-  if (dt.getUTCFullYear() !== y || dt.getUTCMonth() !== m - 1 || dt.getUTCDate() !== d) return null
-  return dt.toISOString().slice(0, 10)
-}
-
-/** Parse argumen "/rekap_tahunan" — "YYYY" atau kosong (tahun berjalan). */
-function parseYearArg(arg: string, today: string): { year?: number } {
-  const raw = arg.trim()
-  const m = /^(\d{4})$/.exec(raw)
-  if (m) {
-    const year = Number(m[1])
-    if (year >= 2000 && year <= 2100) return { year }
-  }
-  return { year: Number(today.slice(0, 4)) }
-}
-
-/**
- * Parse argumen "/transaksi" — sepadan key-value yang longgar:
- *   "2026-11 kategori TRANSPORTASI dompet BCA jenis pengeluaran limit 10"
- * Nilai boleh dipisah spasi atau memakai "=".
- */
-function parseFilterArg(arg: string): {
-  period?: string
-  category?: string
-  wallet?: string
-  kind?: "expense" | "income"
-  limit?: number
-  keyword?: string
-} {
-  const out: ReturnType<typeof parseFilterArg> = {}
-  const tokens = arg.trim().split(/\s+/).filter(Boolean)
-
-  const KEYS: Record<string, "period" | "category" | "wallet" | "kind" | "limit"> = {
-    periode: "period",
-    period: "period",
-    bulan: "period",
-    tanggal: "period",
-    date: "period",
-    kategori: "category",
-    category: "category",
-    dompet: "wallet",
-    wallet: "wallet",
-    jenis: "kind",
-    type: "kind",
-    limit: "limit",
-    jumlah: "limit",
-  }
-
-  for (let i = 0; i < tokens.length; i++) {
-    const token = tokens[i]
-    const [rawKey, inlineValue] = token.includes("=")
-      ? [token.slice(0, token.indexOf("=")), token.slice(token.indexOf("=") + 1)]
-      : [token, undefined]
-
-    const key = KEYS[rawKey.toLowerCase()]
-    if (!key) {
-      // Token tak dikenal → kumpulkan sebagai kata kunci bebas.
-      out.keyword = out.keyword ? `${out.keyword} ${rawKey}` : rawKey
-      continue
-    }
-
-    const value = inlineValue ?? tokens[++i]
-    if (!value) continue
-
-    if (key === "kind") {
-      const v = value.toLowerCase()
-      if (["expense", "pengeluaran", "keluar"].includes(v)) out.kind = "expense"
-      else if (["income", "pemasukan", "masuk"].includes(v)) out.kind = "income"
-      continue
-    }
-    if (key === "limit") {
-      const n = Number(value)
-      if (Number.isFinite(n) && n > 0) out.limit = Math.min(50, Math.floor(n))
-      continue
-    }
-    out[key] = value
-  }
-
-  return out
-}
-
-/**
- * Parse argumen "/cari" — kata kunci bebas, dengan penyederhanaan tanggal:
- * "hari ini", "kemarin", "minggu ini", "bulan ini", "last bulan", "tahun ini".
- */
-function parseSearchArg(
-  arg: string,
-  today: string,
-): { keyword?: string; from?: string; to?: string } {
-  const raw = arg.trim().toLowerCase()
-  const [ty, tm] = today.split("-").map(Number)
-
-  const shift = (base: string, days: number) => {
-    const d = new Date(`${base}T00:00:00Z`)
-    d.setUTCDate(d.getUTCDate() + days)
-    return d.toISOString().slice(0, 10)
-  }
-
-  const prevMonth = new Date(Date.UTC(ty, tm - 2, 1))
-  const prevMonthStart = prevMonth.toISOString().slice(0, 8) + "01"
-  const prevMonthEnd = new Date(Date.UTC(ty, tm - 1, 0)).toISOString().slice(0, 10)
-
-  const monthStart = `${ty}-${String(tm).padStart(2, "0")}-01`
-  const monthEnd = new Date(Date.UTC(ty, tm, 0)).toISOString().slice(0, 10)
-
-  const period = (from: string, to: string) => ({ from, to, keyword: undefined })
-
-  if (raw === "hari ini" || raw === "today") return period(today, today)
-  if (raw === "kemarin" || raw === "yesterday") return period(shift(today, -1), shift(today, -1))
-  if (raw === "minggu ini" || raw === "week ini") return period(shift(today, -6), today)
-  if (raw === "bulan ini" || raw === "month ini") return period(monthStart, monthEnd)
-  if (raw === "last bulan" || raw === "bulan lalu") return period(prevMonthStart, prevMonthEnd)
-  if (raw === "tahun ini" || raw === "year ini") return period(`${ty}-01-01`, `${ty}-12-31`)
-
-  // Keyword biasa — tanpa filter tanggal.
-  return { keyword: arg.trim() || undefined }
-}
-
-/** Petunjuk singkat untuk perintah laporan. */
-function laporanUsage(): string {
-  return [
-    "Format: <code>/rekap_bulanan [YYYY-MM | MM]</code>",
-    "Contoh:",
-    "<code>/rekap_bulanan</code> — bulan berjalan",
-    "<code>/rekap_bulanan 2026-11</code> — November 2026",
-    "<code>/rekap_bulanan 11</code> — November tahun berjalan",
-  ].join("\n")
 }
 
 // ── Penanganan perintah ──────────────────────────────────────────────────────
@@ -456,19 +263,6 @@ async function handleStatus(chatId: string) {
       `Chat: ${escapeHtml(link.telegram_username ? `@${link.telegram_username}` : link.chat_id)}`,
       `Terhubung sejak: ${new Date(link.created_at).toLocaleDateString("id-ID")}`,
     ].join("\n"),
-  )
-}
-
-async function handleHistory(chatId: string) {
-  const link = await telegramRepository.findByChatId(String(chatId))
-  if (!link) {
-    await sendTelegramMessage(chatId, "Belum terhubung. Kirim /link KODE dulu.")
-    return
-  }
-  const rows = await listRecent(link.user_id, 10)
-  await sendTelegramHtml(
-    chatId,
-    `🧾 <b>10 transaksi terakhir</b>\n\n${historyCard(rows)}\n\nKode = 6 karakter terakhir ID, dipakai untuk <code>/revisi</code>.`,
   )
 }
 
@@ -653,7 +447,13 @@ async function handleHapus(chatId: string, ctx: Omit<ToolContext, "today">, arg:
     }
     await sendTelegramHtml(
       chatId,
-      `${formatCard(preview.card)}\n\n⚠️ Penghapusan <b>tidak bisa dibatalkan</b>. Untuk melanjutkan kirim:\n<code>/hapus ${escapeHtml(shortCode(code))} ya</code>`,
+      `${formatCard(preview.card)}\n\n⚠️ Penghapusan <b>tidak bisa dibatalkan</b>. Tekan tombol di bawah, atau kirim:\n<code>/hapus ${escapeHtml(shortCode(code))} ya</code>`,
+      {
+        keyboard: [[
+          { text: "✅ Ya, hapus", data: `tx:y:${shortCode(code)}` },
+          { text: "Batal", data: "tx:n" },
+        ]],
+      },
     )
     return
   }
@@ -662,150 +462,406 @@ async function handleHapus(chatId: string, ctx: Omit<ToolContext, "today">, arg:
   await sendTelegramHtml(chatId, `${result.ok ? "🗑️" : "❌"} ${escapeHtml(result.message)}`)
 }
 
-// ── Perintah laporan ─────────────────────────────────────────────────────────
+// ── Cara membalas (Out) ──────────────────────────────────────────────────────
 
-/**
- * Menjalankan perintah laporan. Semua perintah ini membaca data langsung
- * dari database (tanpa AI), jadi hasilnya konsisten dan cepat.
- */
-async function handleLaporan(chatId: string, ctx: Omit<ToolContext, "today">, command: string, arg: string) {
-  const session = ctx.session
-  const today = await todayFromDb()
+async function sendPromptMessage(chatId: string, html: string, ref: PromptRef, placeholder?: string) {
+  await sendTelegramMessage(chatId, `${html}\n\n${formatRef(ref)}`, {
+    parseMode: "HTML",
+    replyMarkup: forceReplyMarkup(placeholder),
+  })
+}
 
-  switch (command) {
-    case "/rekap":
-    case "/rekap_bulanan": {
-      const opts = parseMonthArg(arg, today)
-      if (opts === null) {
-        await sendTelegramHtml(chatId, laporanUsage())
-        return
-      }
-      const html = await recapMonthly(session, today, opts)
-      await sendTelegramHtml(chatId, html)
-      return
-    }
-    case "/rekap_harian": {
-      const date = parseDayArg(arg, today)
-      if (date === null) {
-        await sendTelegramHtml(
-          chatId,
-          [
-            "Format: <code>/rekap_harian [tanggal]</code>",
-            "Contoh:",
-            "<code>/rekap_harian</code> — hari ini",
-            "<code>/rekap_harian kemarin</code>",
-            "<code>/rekap_harian 3 hari lalu</code>",
-            "<code>/rekap_harian 2026-11-01</code>",
-            "<code>/rekap_harian 01-11-2026</code> atau <code>01/11</code>",
-            "<code>/rekap_harian 15</code> — tanggal 15 bulan berjalan",
-          ].join("\n"),
-        )
-        return
-      }
-      const html = await recapDaily(session, today, date)
-      await sendTelegramHtml(chatId, html)
-      return
-    }
-    case "/rekap_tahunan": {
-      const html = await recapYearly(session, today, parseYearArg(arg, today))
-      await sendTelegramHtml(chatId, html)
-      return
-    }
-    case "/rekap_kategori": {
-      const opts = parseMonthArg(arg, today)
-      if (opts === null) {
-        await sendTelegramHtml(chatId, laporanUsage())
-        return
-      }
-      const html = await recapCategory(session, today, opts)
-      await sendTelegramHtml(chatId, html)
-      return
-    }
-    case "/anggaran": {
-      const html = await budgetReport(session, today)
-      await sendTelegramHtml(chatId, html)
-      return
-    }
-    case "/pinjaman": {
-      const html = await loanReport(session, today)
-      await sendTelegramHtml(chatId, html)
-      return
-    }
-    case "/investasi": {
-      const html = await investmentReport(session)
-      await sendTelegramHtml(chatId, html)
-      return
-    }
-    case "/cari": {
-      if (!arg.trim()) {
-        await sendTelegramHtml(
-          chatId,
-          [
-            "Format: <code>/cari &lt;kata kunci&gt;</code>",
-            "",
-            "Contoh:",
-            "<code>/cari kopi</code> — cari transaksi bernama kopi",
-            "<code>/cari bulan lalu</code> — semua transaksi bulan lalu",
-            "<code>/cari 2026-11</code> — transaksi pada November 2026",
-          ].join("\n"),
-        )
-        return
-      }
-      const opts = parseSearchArg(arg, today)
-      const { rows, total } = await searchTransactions(session, { ...opts, limit: 20 })
-      const header = `🔎 <b>Hasil pencarian</b>${opts.keyword ? ` — “${escapeHtml(opts.keyword)}”` : ""}`
-      const footer = total > rows.length
-        ? `\n\n⚠️ Menampilkan ${rows.length} dari ${total} hasil.`
-        : ""
-      await sendTelegramHtml(chatId, `${header}\n\n${txList(rows)}${footer}`)
-      return
-    }
-    case "/transaksi": {
-      const opts = parseFilterArg(arg)
-      const rows = await filterTransactions(session, opts)
-      const header = `🧾 <b>Transaksi${opts.period ? ` — ${escapeHtml(opts.period)}` : ""}</b>`
-      await sendTelegramHtml(
-        chatId,
-        `${header}\n\n${txList(rows, "Tidak ada transaksi yang cocok.")}\n\nFilter: <code>kategori</code> · <code>dompet</code> · <code>jenis</code> · <code>periode</code> · <code>limit</code>`,
-      )
-      return
-    }
-    case "/top": {
-      const limit = Number(arg.trim())
-      const n = Number.isFinite(limit) && limit > 0 ? Math.min(20, Math.floor(limit)) : 5
-      const items = await topCategories(session, today, { limit: n })
-      if (items.length === 0) {
-        await sendTelegramHtml(chatId, "🏆 <b>Top pengeluaran</b>\n\nBelum ada pengeluaran bulan ini.")
-        return
-      }
-      const lines = items.map(
-        (i) => `• ${escapeHtml(i.name)} — ${formatAmount(i.total)} (${i.pct.toLocaleString("id-ID", { maximumFractionDigits: 1 })}%)`,
-      )
-      await sendTelegramHtml(chatId, `🏆 <b>Top ${items.length} pengeluaran</b>\n\n${lines.join("\n")}`)
-      return
-    }
+/** Perintah yang diketik user: setiap balasan berupa pesan baru. */
+function messageOut(chatId: string): Out {
+  const send = (html: string, keyboard?: InlineKeyboard) => sendTelegramHtml(chatId, html, { keyboard })
+  return {
+    chatId,
+    reply: send,
+    send,
+    prompt: (html, ref, placeholder) => sendPromptMessage(chatId, html, ref, placeholder),
   }
 }
 
-/** Perintah laporan yang butuh akun tertaut. */
-const LAPORAN_COMMANDS = new Set([
-  "/rekap",
-  "/rekap_bulanan",
-  "/rekap_harian",
-  "/rekap_tahunan",
-  "/rekap_kategori",
-  "/anggaran",
-  "/cari",
-  "/transaksi",
-  "/top",
-  "/pinjaman",
-  "/investasi",
-])
+/** Tombol ditekan: ubah pesan yang sama; kalau gagal diedit, kirim pesan baru. */
+function callbackOut(chatId: string, messageId: number): Out {
+  const send = (html: string, keyboard?: InlineKeyboard) => sendTelegramHtml(chatId, html, { keyboard })
+  return {
+    chatId,
+    send,
+    reply: async (html, keyboard) => {
+      try {
+        await editTelegramHtml(chatId, messageId, html, keyboard)
+      } catch (err) {
+        console.error("[telegram] gagal mengedit pesan, kirim pesan baru:", err)
+        await send(html, keyboard)
+      }
+    },
+    prompt: (html, ref, placeholder) => sendPromptMessage(chatId, html, ref, placeholder),
+  }
+}
+
+// ── Nama perintah ────────────────────────────────────────────────────────────
+
+/**
+ * Samakan nama perintah: awalan `cashflow_` / `pinjaman_` / `investasi_` dan
+ * perintah lama (`/rekap_harian`, `/cari`, `/transaksi`, dst.) dipetakan ke
+ * perintah baru, supaya kebiasaan lama tetap jalan.
+ */
+function normalizeCommand(command: string, arg: string): { command: string; arg: string } {
+  const cashflow = /^\/cashflow_(.+)$/.exec(command)
+  if (cashflow) return normalizeCommand(`/${cashflow[1]}`, arg)
+
+  const sub = /^\/(pinjaman|investasi)_(.+)$/.exec(command)
+  if (sub) return { command: `/${sub[1]}`, arg: `${sub[2]} ${arg}`.trim() }
+
+  switch (command) {
+    case "/rekap_bulanan":
+      return { command: "/rekap", arg }
+    case "/rekap_harian": {
+      const a = arg.trim()
+      if (!a) return { command: "/rekap", arg: "hari ini" }
+      // Dulu angka telanjang = tanggal pada bulan berjalan.
+      if (/^\d{1,2}$/.test(a)) return { command: "/rekap", arg: `tanggal ${a}` }
+      return { command: "/rekap", arg: a }
+    }
+    case "/rekap_tahunan":
+      return { command: "/rekap", arg: arg.trim() ? arg : "tahun ini" }
+    case "/rekap_kategori":
+      return { command: "/rekap", arg: `kategori ${arg}`.trim() }
+    case "/anggaran":
+      return { command: "/rekap", arg: "anggaran" }
+    case "/top":
+      return { command: "/rekap", arg: `top ${arg}`.trim() }
+    case "/cari":
+    case "/transaksi":
+      return {
+        command: "/riwayat",
+        // Sintaks lama "periode 2026-11" / "tanggal 2026-11-05" → cukup tanggalnya.
+        arg: arg.replace(/\b(periode|period|date|tanggal|bulan)\s+(?=\d{4}-\d)/gi, ""),
+      }
+    default:
+      return { command, arg }
+  }
+}
+
+/** Perintah yang butuh akun tertaut. */
+const USER_COMMANDS = new Set(["/cashflow", "/rekap", "/riwayat", "/pinjaman", "/investasi", "/revisi", "/hapus"])
+
+const PINJAMAN_BAYAR_USAGE = [
+  "Format: <code>/pinjaman bayar &lt;kode&gt; &lt;jumlah&gt; [tanggal]</code>",
+  "Contoh: <code>/pinjaman bayar AB12CD 500rb</code> atau <code>/pinjaman bayar AB12CD 500rb kemarin</code>",
+  "",
+  "Kode ada di <code>/pinjaman</code> (buka detail pinjamannya). Atau tekan tombol <b>Bayar cicilan</b>.",
+].join("\n")
+
+/**
+ * `/pinjaman` → daftar, `/pinjaman budi` → cari,
+ * `/pinjaman bayar <kode> <jumlah> [tanggal]` → catat cicilan.
+ */
+async function handlePinjaman(out: Out, ctx: BotCtx, arg: string): Promise<void> {
+  const today = await todayFromDb()
+  const text = arg.trim()
+
+  if (/^bayar\b/i.test(text)) {
+    const m = /^bayar\s+(\S+)\s+(.+)$/i.exec(text)
+    if (!m) {
+      await out.send(PINJAMAN_BAYAR_USAGE)
+      return
+    }
+    const id = await findLoanIdByCode(ctx, m[1])
+    if (!id) {
+      await out.send(`Pinjaman dengan kode “${escapeHtml(m[1])}” tidak ditemukan. Lihat daftar di /pinjaman.`)
+      return
+    }
+    await payLoan(out, ctx, today, id, m[2])
+    return
+  }
+
+  await showLoans(out, ctx, today, text)
+}
+
+/** Jalankan perintah yang butuh akun tertaut (diketik maupun dari tombol). */
+async function runUserCommand(out: Out, ctx: BotCtx, command: string, arg: string): Promise<void> {
+  switch (command) {
+    case "/cashflow":
+      await showCashflowMenu(out)
+      return
+    case "/rekap":
+      await handleRekap(out, ctx, arg)
+      return
+    case "/riwayat":
+      await handleRiwayat(out, ctx, arg)
+      return
+    case "/pinjaman":
+      await handlePinjaman(out, ctx, arg)
+      return
+    case "/investasi":
+      await showInvestments(out, ctx, arg)
+      return
+    case "/revisi":
+      await handleRevisi(out.chatId, ctx, arg)
+      return
+    case "/hapus":
+      await handleHapus(out.chatId, ctx, arg)
+      return
+  }
+}
+
+// ── Hapus transaksi lewat tombol ─────────────────────────────────────────────
+
+async function confirmDeleteTransaction(out: Out, ctx: BotCtx, code: string): Promise<void> {
+  const preview = await previewDeletion(ctx, code)
+  if (!preview.ok) {
+    await out.send(escapeHtml(preview.message))
+    return
+  }
+  await out.send(`${formatCard(preview.card)}\n\n⚠️ Penghapusan <b>tidak bisa dibatalkan</b>.`, [
+    [
+      { text: "✅ Ya, hapus", data: `tx:y:${code}` },
+      { text: "Batal", data: "tx:n" },
+    ],
+  ])
+}
+
+// ── Penekanan tombol ─────────────────────────────────────────────────────────
+
+const NEW_LOAN_PROMPT = [
+  "➕ <b>Pinjaman baru</b>",
+  "",
+  "Balas dengan ceritanya, mis.:",
+  "• <code>pinjam 2jt ke budi, jatuh tempo 2026-12-31</code> (piutang)",
+  "• <code>hutang kredit motor 15jt bunga 1,5% dari dompet BCA</code>",
+].join("\n")
+
+async function dispatchCallback(out: Out, ctx: BotCtx, data: string): Promise<void> {
+  // "c:<perintah>" → sama seperti user mengetik perintah itu.
+  if (data.startsWith("c:")) {
+    const [cmd, ...rest] = data.slice(2).trim().split(/\s+/)
+    const norm = normalizeCommand(`/${cmd}`, rest.join(" "))
+    if (USER_COMMANDS.has(norm.command)) await runUserCommand(out, ctx, norm.command, norm.arg)
+    return
+  }
+
+  const [domain, action, id, extra] = data.split(":")
+
+  if (domain === "pj") {
+    switch (action) {
+      case "v": return await showLoanDetail(out, ctx, id)
+      case "b": return await askPayment(out, ctx, id)
+      case "e": return await showEditMenu(out, ctx, id)
+      case "f": return await askEditField(out, ctx, id, extra)
+      case "l": return await setLikelihood(out, ctx, id, extra)
+      case "d": return await confirmDeleteLoan(out, ctx, id)
+      case "dy": return await deleteLoan(out, ctx, id)
+      case "p": return await confirmDeletePayment(out, ctx, id)
+      case "py": return await deletePayment(out, ctx, id)
+      case "n": return await out.prompt(NEW_LOAN_PROMPT, { domain: "pj", action: "n", code: "NEW" }, "pinjam 2jt ke budi")
+    }
+    return
+  }
+
+  if (domain === "iv") {
+    switch (action) {
+      case "v": return await showAsset(out, ctx, id)
+      case "t": return await askTransaction(out, ctx, id, extra)
+      case "x": return await toggleClosed(out, ctx, id)
+      case "d": return await confirmDeleteAsset(out, ctx, id)
+      case "dy": return await deleteAsset(out, ctx, id)
+      case "q": return await confirmDeleteTx(out, ctx, id)
+      case "qy": return await deleteTx(out, ctx, id)
+      case "n": return await askNewAsset(out)
+    }
+    return
+  }
+
+  if (domain === "tx") {
+    switch (action) {
+      case "d": return await confirmDeleteTransaction(out, ctx, id)
+      case "y": {
+        const result = await deleteTransactionByCode(ctx, id)
+        return await out.reply(`${result.ok ? "🗑️" : "❌"} ${escapeHtml(result.message)}`)
+      }
+      case "n": return await out.reply("Penghapusan dibatalkan.")
+    }
+    return
+  }
+
+  if (domain === "cf") {
+    switch (action) {
+      case "e": return await handleRevisi(out.chatId, ctx, "")
+      case "h": return await handleHapus(out.chatId, ctx, "")
+      case "s":
+        return await out.prompt(
+          [
+            "🔎 <b>Cari transaksi</b>",
+            "",
+            "Balas dengan kata kunci, boleh disertai periode, mis.:",
+            "• <code>kopi</code>",
+            "• <code>bensin bulan lalu</code>",
+            "• <code>masuk 2026-11</code>",
+          ].join("\n"),
+          { domain: "cf", action: "s", code: "SEARCH" },
+          "kopi bulan ini",
+        )
+    }
+    return
+  }
+}
+
+async function handleCallbackQuery(cb: NonNullable<TelegramUpdate["callback_query"]>): Promise<void> {
+  // Selalu jawab dulu supaya tombol berhenti "loading".
+  await answerCallbackQuery(cb.id)
+
+  if (cb.from?.is_bot) return
+  const chatId = cb.message ? String(cb.message.chat.id) : null
+  const messageId = cb.message?.message_id
+  const data = cb.data?.trim()
+  if (!chatId || !messageId || !data) return
+
+  const link = await telegramRepository.findByChatId(chatId)
+  if (!link) {
+    await sendTelegramMessage(chatId, "Belum terhubung. Kirim /link KODE dulu.")
+    return
+  }
+  const ctx = await loadContext(link.user_id)
+  if (!ctx) {
+    await sendTelegramMessage(chatId, "Akun ini tidak bisa dipakai lewat Telegram.")
+    return
+  }
+
+  try {
+    await dispatchCallback(callbackOut(chatId, messageId), ctx, data)
+  } catch (err) {
+    console.error(`[telegram] gagal menjalankan tombol ${data}:`, err)
+    await sendTelegramMessage(chatId, "⚠️ Maaf, aksi itu gagal. Coba lagi sebentar.")
+  }
+}
+
+// ── Jawaban atas pertanyaan bot (force reply) ────────────────────────────────
+
+/**
+ * User membalas pertanyaan bot (mis. "Bayar cicilan — berapa?"). Penanda di
+ * pesan bot menunjukkan tujuan jawabannya. Mengembalikan true bila sudah
+ * ditangani.
+ */
+async function handlePromptReply(chatId: string, text: string, ref: PromptRef): Promise<boolean> {
+  const link = await telegramRepository.findByChatId(chatId)
+  if (!link) return false
+  const ctx = await loadContext(link.user_id)
+  if (!ctx) return false
+
+  const out = messageOut(chatId)
+  const today = await todayFromDb()
+
+  try {
+    if (ref.domain === "pj") {
+      if (ref.action === "n") {
+        await runAgentTurn(chatId, ctx, {
+          agentText: `Catat pinjaman baru (panggil create_loan). Detail dari pengguna: ${text}`,
+          historyText: text,
+        })
+        return true
+      }
+      const id = await findLoanIdByCode(ctx, ref.code)
+      if (!id) {
+        await out.send("Pinjaman tidak ditemukan (mungkin sudah dihapus). Buka /pinjaman lagi.")
+        return true
+      }
+      if (ref.action === "b") await payLoan(out, ctx, today, id, text)
+      else if (ref.action === "f") await applyEdit(out, ctx, today, id, ref.arg ?? "", text)
+      return true
+    }
+
+    if (ref.domain === "iv") {
+      const agentText = await investmentAiText(ctx, ref, text)
+      if (!agentText) {
+        await out.send("Aset tidak ditemukan (mungkin sudah dihapus). Buka /investasi lagi.")
+        return true
+      }
+      await runAgentTurn(chatId, ctx, { agentText, historyText: text })
+      return true
+    }
+
+    if (ref.domain === "cf" && ref.action === "s") {
+      await handleRiwayat(out, ctx, text)
+      return true
+    }
+  } catch (err) {
+    console.error("[telegram] gagal memproses jawaban:", err)
+    await sendTelegramMessage(chatId, friendlyErrorMessage(err))
+    return true
+  }
+  return false
+}
+
+// ── Giliran AI ───────────────────────────────────────────────────────────────
+
+/**
+ * Jalankan agen AI untuk satu pesan dan kirim balasannya.
+ * `agentText` = apa yang dibaca AI; `historyText` = apa yang dicatat di
+ * riwayat percakapan (teks asli user).
+ */
+async function runAgentTurn(
+  chatId: string,
+  ctx: BotCtx,
+  opts: { agentText: string; historyText: string; image?: { mimeType: string; base64: string } },
+): Promise<void> {
+  if (isRateLimited(chatId)) {
+    await sendTelegramMessage(chatId, "Terlalu banyak pesan dalam waktu singkat. Coba lagi sebentar.")
+    return
+  }
+
+  await sendTyping(chatId)
+
+  try {
+    const history = getHistory(chatId)
+    let cardReplied = false
+    const out = await runTelegramAgent({
+      ctx,
+      text: opts.agentText,
+      image: opts.image,
+      history,
+      deadline: Date.now() + AI_BUDGET_MS,
+      // Kirim kartu segera setelah transaksi tercatat — user tidak perlu
+      // menunggu langkah AI berikutnya selesai (yang bisa saja tidak pernah).
+      onCard: async (card: TxnCard) => {
+        await sendCard(chatId, card)
+        cardReplied = true
+      },
+    })
+
+    pushHistory(chatId, { role: "user", parts: [{ text: opts.historyText }] })
+    pushHistory(chatId, { role: "model", parts: [{ text: out.reply || "[kartu transaksi terkirim]" }] })
+
+    if (out.reply.trim()) {
+      try {
+        await sendTelegramMessageLong(chatId, out.reply, out.html ? { parseMode: "HTML" } : {})
+      } catch (err) {
+        console.error("[telegram] gagal mengirim balasan:", err)
+        if (out.html) {
+          // Telegram menolak HTML-nya → kirim ulang versi teks biasa.
+          await sendTelegramMessage(chatId, stripHtml(out.reply))
+        } else if (!cardReplied) {
+          throw err
+        }
+      }
+    }
+  } catch (err) {
+    console.error("[telegram] gagal memproses pesan:", err)
+    await sendTelegramMessage(chatId, friendlyErrorMessage(err))
+  }
+}
 
 // ── Entry point ──────────────────────────────────────────────────────────────
 
 export async function handleTelegramUpdate(update: TelegramUpdate): Promise<void> {
   if (alreadyProcessed(update.update_id)) return
+
+  if (update.callback_query) {
+    await handleCallbackQuery(update.callback_query)
+    return
+  }
+
   const message = update.message
   if (!message?.chat) return
   if (message.from?.is_bot) return
@@ -816,22 +872,20 @@ export async function handleTelegramUpdate(update: TelegramUpdate): Promise<void
   // Perintah tidak melewati rate limit AI.
   if (text.startsWith("/")) {
     const [rawCommand, ...rest] = text.split(/\s+/)
-    const command = rawCommand.split("@")[0].toLowerCase()
-    const arg = rest.join(" ")
+    const rawName = rawCommand.split("@")[0].toLowerCase()
+    const rawArg = rest.join(" ")
 
-    switch (command) {
+    switch (rawName) {
       case "/start":
-        await sendTelegramHtml(chatId, helpText(!!(await telegramRepository.findByChatId(chatId))))
-        return
       case "/help":
         await sendTelegramHtml(chatId, helpText(!!(await telegramRepository.findByChatId(chatId))))
         return
       case "/link":
-        if (!arg) {
+        if (!rawArg) {
           await sendTelegramHtml(chatId, "Format: <code>/link KODE</code>. Buat kode di aplikasi (Integrasi → Telegram).")
           return
         }
-        await handleLink(chatId, { username: message.chat.username, first_name: message.chat.first_name }, arg)
+        await handleLink(chatId, { username: message.chat.username, first_name: message.chat.first_name }, rawArg)
         return
       case "/unlink":
         await handleUnlink(chatId)
@@ -839,67 +893,39 @@ export async function handleTelegramUpdate(update: TelegramUpdate): Promise<void
       case "/status":
         await handleStatus(chatId)
         return
-      case "/riwayat":
-        await handleHistory(chatId)
-        return
-      case "/revisi": {
-        const link = await telegramRepository.findByChatId(chatId)
-        if (!link) {
-          await sendTelegramMessage(chatId, "Belum terhubung. Kirim /link KODE dulu.")
-          return
-        }
-        const revCtx = await loadContext(link.user_id)
-        if (!revCtx) {
-          await sendTelegramMessage(chatId, "Akun ini tidak bisa dipakai lewat Telegram.")
-          return
-        }
-        await handleRevisi(chatId, revCtx, arg)
-        return
-      }
-      case "/hapus": {
-        const link = await telegramRepository.findByChatId(chatId)
-        if (!link) {
-          await sendTelegramMessage(chatId, "Belum terhubung. Kirim /link KODE dulu.")
-          return
-        }
-        const delCtx = await loadContext(link.user_id)
-        if (!delCtx) {
-          await sendTelegramMessage(chatId, "Akun ini tidak bisa dipakai lewat Telegram.")
-          return
-        }
-        await handleHapus(chatId, delCtx, arg)
-        return
-      }
-      default: {
-        if (!LAPORAN_COMMANDS.has(command)) {
-          await sendTelegramMessage(chatId, `Perintah tidak dikenal: ${command}. /help untuk melihat daftar.`)
-          return
-        }
-
-        const link = await telegramRepository.findByChatId(chatId)
-        if (!link) {
-          await sendTelegramMessage(chatId, "Belum terhubung. Kirim /link KODE dulu.")
-          return
-        }
-        const repCtx = await loadContext(link.user_id)
-        if (!repCtx) {
-          await sendTelegramMessage(chatId, "Akun ini tidak bisa dipakai lewat Telegram.")
-          return
-        }
-
-        // Perintah laporan tidak melewati rate limit AI (tak memanggil model).
-        try {
-          await handleLaporan(chatId, repCtx, command, arg)
-        } catch (err) {
-          console.error(`[telegram] gagal menjalankan ${command}:`, err)
-          await sendTelegramMessage(
-            chatId,
-            "⚠️ Maaf, laporan tidak bisa dibuat. Coba lagi sebentar.",
-          )
-        }
-        return
-      }
     }
+
+    const { command, arg } = normalizeCommand(rawName, rawArg)
+    if (!USER_COMMANDS.has(command)) {
+      await sendTelegramMessage(chatId, `Perintah tidak dikenal: ${rawName}. /help untuk melihat daftar.`)
+      return
+    }
+
+    const link = await telegramRepository.findByChatId(chatId)
+    if (!link) {
+      await sendTelegramMessage(chatId, "Belum terhubung. Kirim /link KODE dulu.")
+      return
+    }
+    const userCtx = await loadContext(link.user_id)
+    if (!userCtx) {
+      await sendTelegramMessage(chatId, "Akun ini tidak bisa dipakai lewat Telegram.")
+      return
+    }
+
+    // Perintah ini tidak memanggil model, jadi tidak kena rate limit AI.
+    try {
+      await runUserCommand(messageOut(chatId), userCtx, command, arg)
+    } catch (err) {
+      console.error(`[telegram] gagal menjalankan ${command}:`, err)
+      await sendTelegramMessage(chatId, "⚠️ Maaf, perintah itu tidak bisa dijalankan. Coba lagi sebentar.")
+    }
+    return
+  }
+
+  // Balasan atas pertanyaan bot (mis. jumlah cicilan) → tangani sesuai penandanya.
+  const ref = parseRef(message.reply_to_message?.text)
+  if (ref && text && !message.photo?.length) {
+    if (await handlePromptReply(chatId, text, ref)) return
   }
 
   // Pesan biasa → butuh akun tertaut.
@@ -964,58 +990,32 @@ export async function handleTelegramUpdate(update: TelegramUpdate): Promise<void
     await sendTelegramMessage(chatId, "📸 Sedang membaca struk, sebentar ya…")
   }
 
-  try {
-    const history = getHistory(chatId)
-    let cardReplied = false
-    const out = await runTelegramAgent({
-      ctx,
-      text: text || "Tolong catat struk ini.",
-      image,
-      history,
-      deadline: Date.now() + AI_BUDGET_MS,
-      // Kirim kartu segera setelah transaksi tercatat — user tidak perlu
-      // menunggu langkah AI berikutnya selesai (yang bisa saja tidak pernah).
-      onCard: async (card: TxnCard) => {
-        await sendCard(chatId, card)
-        cardReplied = true
-      },
-    })
-
-    pushHistory(chatId, { role: "user", parts: [{ text: text || "[foto struk]" }] })
-    pushHistory(chatId, { role: "model", parts: [{ text: out.reply || "[kartu transaksi terkirim]" }] })
-
-    if (out.reply.trim()) {
-      try {
-        await sendTelegramMessageLong(chatId, out.reply, out.html ? { parseMode: "HTML" } : {})
-      } catch (err) {
-        console.error("[telegram] gagal mengirim balasan:", err)
-        if (out.html) {
-          // Telegram menolak HTML-nya → kirim ulang versi teks biasa.
-          await sendTelegramMessage(chatId, stripHtml(out.reply))
-        } else if (!cardReplied) {
-          throw err
-        }
-      }
-    }
-  } catch (err) {
-    console.error("[telegram] gagal memproses pesan:", err)
-    await sendTelegramMessage(chatId, friendlyErrorMessage(err))
-  }
+  await runAgentTurn(chatId, ctx, {
+    agentText: text || "Tolong catat struk ini.",
+    historyText: text || "[foto struk]",
+    image,
+  })
 }
 
 /**
- * Kirim kartu transaksi ke user.
+ * Kirim kartu transaksi ke user. Kartu pengeluaran/pemasukan mendapat tombol
+ * Hapus (dengan konfirmasi).
  *
  * Kalau Telegram menolak pesan HTML-nya (mis. ada karakter tak valid), kirim
  * ulang versi teks biasa — supaya konfirmasi tetap sampai.
  */
 async function sendCard(chatId: string, card: TxnCard): Promise<void> {
   const html = formatCard(card)
+  const keyboard: InlineKeyboard | undefined = card.kind
+    ? [[{ text: "🗑 Hapus", data: `tx:d:${shortCode(card.id)}` }]]
+    : undefined
   try {
-    await sendTelegramHtml(chatId, html)
+    await sendTelegramHtml(chatId, html, { keyboard })
   } catch (err) {
     console.error("[telegram] gagal kirim kartu HTML, kirim versi teks:", err)
-    await sendTelegramMessage(chatId, formatCardPlain(card))
+    await sendTelegramMessage(chatId, formatCardPlain(card), {
+      replyMarkup: keyboard ? inlineMarkup(keyboard) : undefined,
+    })
   }
 }
 

@@ -70,7 +70,7 @@ export const financeService = {
     if (!Number.isFinite(v.principalPaid) || v.principalPaid <= 0) throw new FinanceError("Jumlah pokok tidak valid")
     if (!v.date) throw new FinanceError("Tanggal wajib diisi")
 
-    await db.transaction(async () => {
+    return await db.transaction(async () => {
       const loan = await db.prepare(
         "SELECT type, principal_amount, interest_rate, interest_type, due_date, wallet_id, user_id FROM loans WHERE id=? AND is_active=1"
       ).get(loanId) as {
@@ -103,7 +103,6 @@ export const financeService = {
       await db.prepare("UPDATE loans SET status=?, updated_at=NOW() WHERE id=?").run(newStatus, loanId)
       return paymentId
     })
-    throw new FinanceError("Gagal menyimpan cicilan")
   },
 
   // ── Investasi ─────────────────────────────────────────────────────────────
